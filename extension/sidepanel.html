@@ -29,6 +29,9 @@
     button.primary:hover:not(:disabled) { background: #d8c9f7; }
     input { width: 100%; padding: 7px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--raised); color: inherit; font: inherit; outline: none; }
     input::placeholder { color: #6f6580; }
+    select { width: 100%; padding: 7px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--raised); color: inherit; font: inherit; outline: none; }
+    select:focus { border-color: var(--accent); }
+    #devicePerm { margin-top: 10px; width: 100%; font-size: 12px; }
     input:focus { border-color: var(--accent); }
     svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; display: block; }
 
@@ -55,6 +58,27 @@
       background: var(--raised); border: 1px solid var(--line); color: var(--text); font-size: 11px; white-space: nowrap; z-index: 2; }
     #inviteBox { padding: 10px 14px; border-bottom: 1px solid var(--line); }
     #inviteBox input { font-size: 12px; color: var(--accent); }
+
+    /* What we're watching + together actions */
+    #watchBar { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--line); }
+    #watchIcon { width: 16px; height: 16px; border-radius: 3px; flex: none; }
+    .wb-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .wb-label { font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+    #watchTitle { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #watchTitle.none { color: var(--muted); }
+    #watchHere { font-size: 12px; padding: 5px 8px; flex: none; }
+    #handBtn, #countdownBtn { flex: none; font-size: 12px; padding: 5px 7px; }
+    #countdownBtn { font-weight: 600; letter-spacing: .02em; }
+    #handBtn.sent { animation: pulse .6s ease-out; }
+    #followBar { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--line);
+      background: var(--raised); border-left: 3px solid var(--accent); }
+    #followText { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #followBar button { flex: none; padding: 5px 10px; font-size: 12px; }
+    #followClose { border: 0; color: var(--muted); }
+    /* Their hand-hold: the header glows for a moment */
+    .top.holding { animation: glow 2.6s ease-in-out; }
+    @keyframes glow { 0%, 100% { box-shadow: none; } 25%, 70% { box-shadow: inset 0 0 40px rgba(201, 182, 242, .45); } }
+    @keyframes pulse { 0% { transform: scale(1); } 40% { transform: scale(1.25); } 100% { transform: scale(1); } }
 
     /* Settings */
     /* Opened from the gear icon in the header */
@@ -86,6 +110,8 @@
     #remote { width: 100%; height: 100%; object-fit: cover; display: block; }
     #local { position: absolute; right: 10px; bottom: 10px; width: 28%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 4px;
       transform: scaleX(-1); background: var(--raised); box-shadow: 0 2px 8px rgba(0, 0, 0, .5); }
+    #remoteMic { position: absolute; left: 10px; top: 10px; padding: 3px 8px; border-radius: 4px; font-size: 12px;
+      background: rgba(13, 10, 17, .75); color: var(--text); }
     #placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 20px; text-align: center; color: var(--muted); }
     #faces { display: flex; }
     #faces .avatar + .avatar { margin-left: -14px; }
@@ -108,6 +134,11 @@
     .who { display: block; font-size: 11px; color: var(--muted); margin-bottom: 1px; }
     .msg.big { background: none !important; padding: 0 2px; font-size: 30px; line-height: 1.15; }
     .line.me .msg.big .who { display: none; }
+    .stamp { display: inline-block; margin-top: 3px; padding: 0 5px; border: 0; border-radius: 4px; font-size: 10px; font-variant-numeric: tabular-nums;
+      background: rgba(0, 0, 0, .18); color: inherit; opacity: .7; cursor: pointer; }
+    .stamp:hover { opacity: 1; background: rgba(0, 0, 0, .3); }
+    .msg.big .stamp { font-size: 10px; vertical-align: middle; margin-left: 4px; }
+    #typing { padding: 0 14px 6px; color: var(--muted); font-size: 12px; font-style: italic; }
     #form { display: flex; gap: 6px; padding: 10px 14px; border-top: 1px solid var(--line); }
     #form button { padding: 7px 9px; }
     #form .icon { color: var(--muted); }
@@ -140,6 +171,22 @@
   </header>
   <div id="inviteBox" hidden><input id="inviteLink" readonly /></div>
 
+  <div id="watchBar">
+    <img id="watchIcon" alt="" hidden />
+    <div class="wb-text">
+      <span class="wb-label">Watching</span>
+      <span id="watchTitle">Nothing yet</span>
+    </div>
+    <button id="watchHere" hidden title="Make the tab you're on the show you're watching together">Watch here</button>
+    <button id="handBtn" class="icon" title="Hold their hand">🤝</button>
+    <button id="countdownBtn" class="icon" title="Count down 3-2-1 and play together">3·2·1</button>
+  </div>
+  <div id="followBar" hidden>
+    <span id="followText"></span>
+    <button id="followGo" class="primary">Go</button>
+    <button id="followClose" class="icon" title="Dismiss">✕</button>
+  </div>
+
   <details id="settings" open>
     <summary hidden>Settings</summary>
     <div class="body">
@@ -150,6 +197,12 @@
           <label class="field">Name <input id="name" maxlength="30" placeholder="Shown in chat" /></label>
         </div>
         <div id="avatars" role="radiogroup" aria-label="Picture"></div>
+      </section>
+      <section class="group">
+        <h2>Camera & mic</h2>
+        <label class="field">Camera <select id="camSelect"></select></label>
+        <label class="field">Microphone <select id="micSelect"></select></label>
+        <button id="devicePerm" hidden>Allow access to see your devices</button>
       </section>
       <section class="group">
         <h2>Connection</h2>
@@ -166,6 +219,7 @@
   <div class="stage">
     <video id="remote" autoplay playsinline></video>
     <video id="local" autoplay playsinline muted hidden></video>
+    <div id="remoteMic" hidden title="Their microphone is off">🔇 Mic off</div>
     <div id="placeholder"><div id="faces"></div><div id="phText"></div></div>
   </div>
   <div class="controls">
@@ -190,6 +244,7 @@
       <div id="quick" class="quick"></div>
       <div id="emojiGrid"></div>
     </div>
+    <div id="typing" hidden></div>
     <form id="form">
       <button type="button" id="emojiBtn" class="icon" title="Emoji" aria-pressed="false">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01" /></svg>

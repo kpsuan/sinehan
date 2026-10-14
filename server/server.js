@@ -63,8 +63,23 @@ function json(res, status, data) {
 }
 const wss = new WebSocketServer({ server });
 
+// Notice dropped connections quickly (closed laptop, lost Wi-Fi) so the other side can pause:
+// every 10s we ping; anyone who didn't answer the previous ping is dropped.
+setInterval(() => {
+  for (const ws of wss.clients) {
+    if (ws.isAlive === false) {
+      ws.terminate();
+      continue;
+    }
+    ws.isAlive = false;
+    ws.ping();
+  }
+}, 10000);
+
 wss.on('connection', (ws) => {
   let room = null;
+  ws.isAlive = true;
+  ws.on('pong', () => (ws.isAlive = true));
 
   ws.on('message', (raw) => {
     let msg;

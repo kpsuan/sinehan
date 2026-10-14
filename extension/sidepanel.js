@@ -36,6 +36,14 @@ function send(msg) {
   try { port.postMessage(msg); } catch {}
 }
 
+// One-off request to the background; ignores the harmless error when it's restarting.
+function ask(msg, then) {
+  chrome.runtime.sendMessage(msg, (reply) => {
+    if (chrome.runtime.lastError) return;
+    then?.(reply);
+  });
+}
+
 function onMessage(msg) {
   if (msg.local) {
     onLocal(msg).catch((e) => console.error('[watch-party] camera hand-off', e));
@@ -43,7 +51,23 @@ function onMessage(msg) {
     if (seenChat.has(msg.id)) return;
     seenChat.add(msg.id);
     // `mine` = sent from this browser's fullscreen chat rather than this sidebar.
-    addChat(msg.name, msg.text, msg.mine ? 'me' : 'them', msg.avatar);
+    addChat(msg.name, msg.text, msg.mine ? 'me' : 'them', msg.avatar, msg.vt);
+    if (!msg.mine) showTyping(null);
+  } else if (msg.type === 'mic') {
+    if (pc && msg.on === false && theirMicOn !== false) addChat('', `${peer?.name ? `${peer.name}’s` : 'Their'} mic is off`, 'system');
+    theirMicOn = !!msg.on;
+    render();
+  } else if (msg.type === 'typing') {
+    showTyping(msg.name);
+  } else if (msg.type === 'hand') {
+    $('who').closest('.top').classList.remove('holding');
+    void $('who').offsetWidth; // restart the animation
+    $('who').closest('.top').classList.add('holding');
+  } else if (msg.type === 'now-watching') {
+    theirShow = { url: msg.url, title: msg.title };
+    renderWatch();
+  } else if (msg.type === 'show-closed') {
+    addChat('', `${peer?.name || 'They'} closed the show`, 'system');
   } else if (msg.type === 'profile') {
     peer = { name: String(msg.name || '').slice(0, 30) || 'Your person', avatar: Number(msg.avatar) || 0 };
     if (msg.ask) sendProfile(false);
@@ -55,7 +79,8 @@ function onMessage(msg) {
       addChat('', `${peer?.name || 'They'} joined`, 'system');
       sendProfile(true);
     } else {
-      addChat('', `${peer?.name || 'Your person'} left`, 'system');
+      // With only two of you, it's them; anyone else (a third browser) is just "someone".
+      addChat('', msg.count < 2 ? `${peer?.name || 'Your person'} left` : 'Someone left', 'system');
       if (msg.count < 2) {
         peer = null;
         renderProfiles();
@@ -70,12 +95,15 @@ function sendProfile(ask) {
 }
 
 // ---- Profile & connection settings ----
+const DEFAULT_SERVER = 'wss://sinehan-rhua.onrender.com';
+const LEGACY_LOCAL_SERVER = 'ws://localhost:8080'; // the old default from local testing
+
 chrome.storage.local.get(['name', 'avatar', 'server', 'room']).then(({ name, avatar, server, room }) => {
   me.name = name || '';
   me.avatar = Number.isInteger(avatar) && avatar < AVATAR_COUNT ? avatar : Math.floor(Math.random() * AVATAR_COUNT);
   chrome.storage.local.set({ avatar: me.avatar });
   $('name').value = me.name;
-  $('server').value = server || 'ws://localhost:8080';
+  $('server').value = !server || server === LEGACY_LOCAL_SERVER ? DEFAULT_SERVER : server;
   $('room').value = room || '';
   renderProfiles();
 });
@@ -107,12 +135,12 @@ Array.from({ length: AVATAR_COUNT }, (_, i) => {
 $('connect').onclick = () => {
   const server = $('server').value.trim();
   const room = $('room').value.trim();
-  if (server && room) chrome.runtime.sendMessage({ type: 'connect', server, room }, showStatus);
+  if (server && room) ask({ type: 'connect', server, room }, showStatus);
 };
 $('disconnect').onclick = () => {
   if (pc) endCall('You left');
   $('inviteBox').hidden = true;
-  chrome.runtime.sendMessage({ type: 'disconnect' }, showStatus);
+  ask({ type: 'disconnect' }, showStatus);
 };
 
 // Gear icon in the header shows/hides the settings section.
@@ -121,11 +149,13 @@ $('settings').addEventListener('toggle', () => $('settingsBtn').setAttribute('ar
 
 function showStatus(s) {
   if (!s) return;
-  const wasConnected = status.connected;
+  const prev = status;
+  const wasConnected = prev.connected;
   status = s;
   // An invite link may have connected us to a different room/server — reflect it.
-  if (s.room && document.activeElement !== $('room')) $('room').value = s.room;
-  if (s.server && document.activeElement !== $('server')) $('server').value = s.server;
+  // Only when the connection itself changed — never overwrite what someone is typing or just typed.
+  if (s.room && s.room !== prev.room && document.activeElement !== $('room')) $('room').value = s.room;
+  if (s.server && s.server !== prev.server && document.activeElement !== $('server')) $('server').value = s.server;
   $('status').textContent = !s.room ? 'Not connected'
     : !s.connected ? 'Connecting…'
     : s.peers > 1 ? 'Together'
@@ -138,8 +168,9 @@ function showStatus(s) {
   }
   if (s.peers < 2) askedPeer = false;
   render();
+  renderWatch();
 }
-const pollStatus = () => chrome.runtime.sendMessage({ type: 'status' }, showStatus);
+const pollStatus = () => ask({ type: 'status' }, showStatus);
 pollStatus();
 setInterval(pollStatus, 1000);
 
@@ -156,10 +187,11 @@ $('invite').onclick = async () => {
   let room = $('room').value.trim();
   if (!room) room = $('room').value = `party-${crypto.randomUUID().slice(0, 6)}`;
   if (!status.connected || status.room !== room) {
-    chrome.runtime.sendMessage({ type: 'connect', server, room }, showStatus);
+    ask({ type: 'connect', server, room }, showStatus);
   }
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (tab?.url?.startsWith('http')) ask({ type: 'set-watch', tabId: tab.id }, showStatus); // inviting to this = watching this
   const base = server.replace(/^ws/, 'http').replace(/\/+$/, '');
   let link = `${base}/join?room=${encodeURIComponent(room)}`;
   if (tab?.url?.startsWith('http')) link += `&to=${encodeURIComponent(tab.url)}`;
@@ -191,15 +223,63 @@ function renderProfiles() {
   render();
 }
 
+// ---- What we're watching ----
+let theirShow = null; // { url, title } — what they said they're watching
+let activeTab = null;
+
+function showKey(url) {
+  try {
+    const u = new URL(url);
+    const v = u.searchParams.get('v');
+    return u.origin + u.pathname + (v ? `?v=${v}` : '');
+  } catch {
+    return url || '';
+  }
+}
+
+async function renderWatch() {
+  const w = status.watch;
+  $('watchTitle').textContent = w ? w.title || w.url : 'Nothing yet. Open a show and click Watch here.';
+  $('watchTitle').classList.toggle('none', !w);
+  $('watchIcon').hidden = !w?.favIconUrl;
+  if (w?.favIconUrl && $('watchIcon').src !== w.favIconUrl) $('watchIcon').src = w.favIconUrl;
+  [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true }).catch(() => []);
+  $('watchHere').hidden = !(activeTab?.url?.startsWith('http') && activeTab.id !== w?.tabId);
+  $('countdownBtn').disabled = !w || !(status.connected && status.peers > 1);
+  $('handBtn').disabled = !(status.connected && status.peers > 1);
+  // Their prompt goes away once we're on the same thing.
+  const showPrompt = theirShow && showKey(theirShow.url) !== showKey(w?.url || '');
+  $('followBar').hidden = !showPrompt;
+  if (showPrompt) $('followText').textContent = `${peer?.name ? `${peer.name} is` : 'They’re'} watching ${theirShow.title ? `“${theirShow.title}”` : 'something new'}`;
+}
+
+$('watchHere').onclick = () => {
+  if (activeTab) ask({ type: 'set-watch', tabId: activeTab.id }, showStatus);
+};
+$('followGo').onclick = () => {
+  if (theirShow) ask({ type: 'follow', url: theirShow.url }, showStatus);
+};
+$('followClose').onclick = () => {
+  theirShow = null;
+  renderWatch();
+};
+$('handBtn').onclick = () => {
+  send({ type: 'hand', name: myName() });
+  $('handBtn').classList.remove('sent');
+  void $('handBtn').offsetWidth;
+  $('handBtn').classList.add('sent');
+};
+$('countdownBtn').onclick = () => send({ local: true, type: 'countdown-start' }); // the show's tab runs it
+
 // ---- Chat ----
 // History is kept by the background script, so closing the sidebar doesn't lose it.
 const seenChat = new Set();
-chrome.runtime.sendMessage({ type: 'history' }, (history = []) => {
+ask({ type: 'history' }, (history = []) => {
   const live = [...$('log').children]; // anything that arrived while history was loading
   for (const m of history) {
     if (m.id && seenChat.has(m.id)) continue;
     if (m.id) seenChat.add(m.id);
-    addChat(m.name, m.text, m.mine ? 'me' : 'them', m.avatar);
+    addChat(m.name, m.text, m.mine ? 'me' : 'them', m.avatar, m.vt);
   }
   $('log').append(...live);
   $('log').scrollTop = $('log').scrollHeight;
@@ -220,9 +300,41 @@ $('form').onsubmit = (e) => {
 
 function sendChat(text) {
   const id = crypto.randomUUID();
+  const vt = showTime();
   seenChat.add(id);
-  send({ type: 'chat', id, name: myName(), avatar: me.avatar, text });
-  addChat(myName(), text, 'me', me.avatar);
+  send({ type: 'chat', id, name: myName(), avatar: me.avatar, text, vt });
+  addChat(myName(), text, 'me', me.avatar, vt);
+}
+
+// Where the show is right now (from the show's tab), for stamping chat messages.
+function showTime() {
+  const pos = status.pos;
+  if (!pos || Date.now() - pos.at > 5000) return undefined;
+  return pos.time + (pos.paused ? 0 : (Date.now() - pos.at) / 1000);
+}
+
+function clock(seconds) {
+  const sec = Math.max(0, Math.round(seconds));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const ss = String(sec % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+}
+
+// "… is typing" — we send a ping at most every 2s while typing; theirs fades after a few seconds.
+let lastTypingSent = 0;
+$('msg').addEventListener('input', () => {
+  if (!$('msg').value.trim() || Date.now() - lastTypingSent < 2000) return;
+  lastTypingSent = Date.now();
+  send({ type: 'typing', name: myName() });
+});
+let typingTimer = null;
+function showTyping(name) {
+  clearTimeout(typingTimer);
+  $('typing').hidden = !name;
+  if (!name) return;
+  $('typing').textContent = `${name} is typing…`;
+  typingTimer = setTimeout(() => ($('typing').hidden = true), 3500);
 }
 
 // Messages that are only a few emoji (no other text) show big, and float on the other person's video.
@@ -232,7 +344,7 @@ function isEmojiOnly(text) {
     && [...new Intl.Segmenter().segment(text.replace(/\s/g, ''))].length <= 8;
 }
 
-function addChat(name, text, kind, avatar) {
+function addChat(name, text, kind, avatar, vt) {
   const line = document.createElement('div');
   line.className = `line ${kind}`;
   if (kind === 'system') {
@@ -245,6 +357,16 @@ function addChat(name, text, kind, avatar) {
     who.textContent = name;
     if (isEmojiOnly(text || '')) bubble.classList.add('big');
     bubble.append(who, document.createTextNode(text || ''));
+    // Where in the show it was said; clicking jumps you both there.
+    if (typeof vt === 'number' && Number.isFinite(vt)) {
+      const stamp = document.createElement('button');
+      stamp.className = 'stamp';
+      stamp.type = 'button';
+      stamp.textContent = clock(vt);
+      stamp.title = 'Jump here together';
+      stamp.onclick = () => send({ local: true, type: 'jump', time: vt });
+      bubble.append(document.createElement('br'), stamp);
+    }
     line.append(avatarEl(Number(avatar) || 0), bubble);
   }
   $('log').appendChild(line);
@@ -307,6 +429,89 @@ let localStream = null;
 let remoteStream = null;
 let makingOffer = false;
 let ignoreOffer = false;
+let audioTx = null;
+let theirMicOn = null; // what they told us (null = not in a call / unknown) // the transceiver our mic goes out on (track swapped in/out without renegotiating)
+// Mic on/off is remembered. Off means the microphone is fully released, which keeps Bluetooth
+// headphones in high-quality mode and stops Windows from turning the show down "for a call".
+let micOn = false;
+chrome.storage.local.get('micOn').then(({ micOn: saved }) => (micOn = saved === true));
+
+// ---- Which camera / mic (Settings) ----
+let cameraId = '';
+let micId = '';
+chrome.storage.local.get(['cameraId', 'micId']).then((saved) => {
+  cameraId = saved.cameraId || '';
+  micId = saved.micId || '';
+  listDevices();
+});
+
+const videoConstraints = () => ({ width: 640, height: 480, ...(cameraId ? { deviceId: { exact: cameraId } } : {}) });
+const audioConstraints = () => ({ echoCancellation: true, noiseSuppression: true, ...(micId ? { deviceId: { exact: micId } } : {}) });
+
+// Like getUserMedia, but if the chosen device is gone (unplugged), fall back to the default one.
+async function getMedia(kind) {
+  const constraints = () => (kind === 'video' ? { video: videoConstraints() } : { audio: audioConstraints() });
+  try {
+    return await navigator.mediaDevices.getUserMedia(constraints());
+  } catch (e) {
+    const chosen = kind === 'video' ? cameraId : micId;
+    if (!chosen || !['OverconstrainedError', 'NotFoundError', 'NotReadableError'].includes(e.name)) throw e;
+    if (kind === 'video') cameraId = '';
+    else micId = '';
+    chrome.storage.local.set({ cameraId, micId });
+    addChat('', `Your chosen ${kind === 'video' ? 'camera' : 'mic'} isn’t available, so the default one is used.`, 'system');
+    return navigator.mediaDevices.getUserMedia(constraints());
+  }
+}
+
+async function listDevices() {
+  const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+  // Chrome adds "default"/"communications" stand-ins for audio; "System default" covers those.
+  const real = (kind) => devices.filter((d) => d.kind === kind && d.deviceId && !['default', 'communications'].includes(d.deviceId));
+  fillDevices($('camSelect'), real('videoinput'), cameraId, 'Camera');
+  fillDevices($('micSelect'), real('audioinput'), micId, 'Microphone');
+  // Without camera/mic permission, Chrome hides device names.
+  $('devicePerm').hidden = devices.some((d) => d.label);
+}
+
+function fillDevices(select, list, chosen, noun) {
+  const options = [new Option('System default', '')];
+  list.forEach((d, i) => options.push(new Option(d.label || `${noun} ${i + 1}`, d.deviceId)));
+  select.replaceChildren(...options);
+  select.value = list.some((d) => d.deviceId === chosen) ? chosen : '';
+}
+
+navigator.mediaDevices.addEventListener('devicechange', listDevices);
+$('settings').addEventListener('toggle', () => $('settings').open && listDevices());
+$('devicePerm').onclick = () => chrome.tabs.create({ url: 'permission.html' });
+
+$('camSelect').onchange = async () => {
+  cameraId = $('camSelect').value;
+  chrome.storage.local.set({ cameraId });
+  // Mid-call: swap the camera in place, no hanging up.
+  const old = localStream?.getVideoTracks()[0];
+  if (!pc || !old) return;
+  try {
+    const [track] = (await getMedia('video')).getVideoTracks();
+    track.enabled = old.enabled;
+    await pc.getSenders().find((s) => s.track === old)?.replaceTrack(track);
+    old.stop();
+    localStream.removeTrack(old);
+    localStream.addTrack(track);
+    $('local').srcObject = localStream;
+  } catch (e) {
+    addChat('', `Couldn’t switch camera: ${e.message || e.name}`, 'system');
+  }
+};
+
+$('micSelect').onchange = async () => {
+  micId = $('micSelect').value;
+  chrome.storage.local.set({ micId });
+  if (pc && localStream?.getAudioTracks().length) {
+    await setMic(false);
+    await setMic(true); // reopen on the newly chosen mic
+  }
+};
 
 function signal(data) {
   send({ type: 'rtc', from: myId, name: myName(), ...data });
@@ -376,10 +581,7 @@ async function onSignal({ description, candidate, bye, from, name }) {
 
 async function turnOnCamera() {
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 640, height: 480 },
-      audio: { echoCancellation: true, noiseSuppression: true },
-    });
+    localStream = await getMedia('video');
   } catch (e) {
     if (e.name === 'NotAllowedError') {
       // The side panel can't show Chrome's permission prompt, so ask once from a normal tab.
@@ -393,8 +595,47 @@ async function turnOnCamera() {
   $('local').srcObject = localStream;
   if (!pc) createPeer();
   for (const track of localStream.getTracks()) pc.addTrack(track, localStream);
+  micTransceiver(); // ready for the mic, even if it starts off
+  if (micOn) await setMic(true);
+  listDevices(); // names are visible now that we have permission
+  send({ type: 'mic', on: !!localStream.getAudioTracks().length });
+  if (!localStream.getAudioTracks().length) addChat('', 'Your mic is off. Click the mic button to talk.', 'system');
   render();
   return true;
+}
+
+// Reuse an audio slot the other side offered, or add one; either way we can swap the mic in later.
+function micTransceiver() {
+  if (audioTx && pc.getTransceivers().includes(audioTx)) return audioTx;
+  audioTx = pc.getTransceivers().find((t) => t.receiver.track?.kind === 'audio' && !t.sender.track && t.currentDirection !== 'stopped')
+    || pc.addTransceiver('audio', { direction: 'sendrecv', streams: [localStream] });
+  if (audioTx.direction !== 'sendrecv') audioTx.direction = 'sendrecv';
+  audioTx.sender.setStreams?.(localStream);
+  return audioTx;
+}
+
+async function setMic(on) {
+  if (!pc || !localStream) return;
+  const current = localStream.getAudioTracks()[0];
+  if (on && !current) {
+    let track;
+    try {
+      [track] = (await getMedia('audio')).getAudioTracks();
+    } catch (e) {
+      addChat('', `Couldn’t turn on your mic: ${e.message || e.name}`, 'system');
+      return;
+    }
+    localStream.addTrack(track);
+    await micTransceiver().sender.replaceTrack(track);
+  } else if (!on && current) {
+    await micTransceiver().sender.replaceTrack(null);
+    current.stop(); // releases the microphone itself
+    localStream.removeTrack(current);
+  }
+  micOn = on;
+  chrome.storage.local.set({ micOn });
+  send({ type: 'mic', on });
+  render();
 }
 
 function endCall(reason, notify = false) {
@@ -403,6 +644,8 @@ function endCall(reason, notify = false) {
   if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
   pc?.close();
   pc = null;
+  audioTx = null;
+  theirMicOn = null;
   localStream?.getTracks().forEach((t) => t.stop());
   localStream = null;
   remoteStream = null;
@@ -418,7 +661,7 @@ $('start').onclick = async () => {
 $('join').onclick = turnOnCamera;
 $('hangup').onclick = () => endCall('You hung up', true);
 
-$('mic').onclick = () => toggleTrack('audio', $('mic'));
+$('mic').onclick = () => setMic(!localStream?.getAudioTracks().length);
 $('cam').onclick = () => toggleTrack('video', $('cam'));
 function toggleTrack(kind, button) {
   const track = localStream?.getTracks().find((t) => t.kind === kind);
@@ -486,9 +729,12 @@ function render() {
   $('start').disabled = !bothHere;
   $('join').hidden = !inCall || hasCamera;
   $('mic').hidden = $('cam').hidden = !hasCamera;
+  $('mic').classList.toggle('off', !localStream?.getAudioTracks().length);
+  $('mic').title = localStream?.getAudioTracks().length ? 'Mic on: click to turn it off' : 'Mic off: click to talk';
   $('pip').hidden = !seeingThem;
   $('hangup').hidden = !inCall;
   $('local').hidden = !hasCamera;
+  $('remoteMic').hidden = !(inCall && seeingThem && theirMicOn === false);
 
   $('placeholder').hidden = seeingThem;
   $('faces').replaceChildren(avatarEl(me.avatar, 52), ...(peer ? [avatarEl(peer.avatar, 52)] : []));

@@ -1,37 +1,95 @@
-// Owns the WebSocket to the relay, fans messages out to tabs, and keeps the chat history.
+// Owns the WebSocket to the relay, decides which tab is "the show" (the watch tab), routes messages
+// between the relay, that tab and the sidebar, and keeps the chat history.
 let ws = null;
 let pingTimer = null;
 let status = { connected: false, peers: 0, room: '' };
 const ports = new Set();
 const HISTORY_LIMIT = 300;
+const DEFAULT_SERVER = 'wss://sinehan-rhua.onrender.com';
+
+// The one tab that syncs. Everything from other tabs is ignored, and nothing is sent to them.
+let watch = null; // { tabId, url, title, favIconUrl }
+let lastPos = null; // { time, paused, at } — the watch tab's playback position, for chat timestamps
 
 // Toolbar icon opens the sidebar.
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(console.error);
 
-chrome.storage.local.get(['server', 'room', 'active']).then(({ server, room, active }) => {
+chrome.storage.local.get(['server', 'room', 'active', 'watch']).then(async ({ server, room, active, watch: saved }) => {
+  // Older versions defaulted to a local test server; move anyone still on it to the real one.
+  if (server === 'ws://localhost:8080') {
+    server = DEFAULT_SERVER;
+    chrome.storage.local.set({ server });
+  }
+  // Tab ids don't survive a browser restart, so only keep the watch tab if it still exists.
+  if (saved?.tabId != null) {
+    const tab = await chrome.tabs.get(saved.tabId).catch(() => null);
+    if (tab) setWatchState(tab);
+    else chrome.storage.local.remove('watch');
+  }
   if (active && server && room) connect(server, room);
 });
 
-// Tabs connect as 'party', the sidebar as 'panel'.
+// ---- Ports: tabs connect as 'party', the sidebar as 'panel' ----
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'party' && port.name !== 'panel') return;
+  port.tabId = port.sender?.tab?.id;
   ports.add(port);
+  if (port.name === 'party') sendRole(port);
+
   port.onMessage.addListener((msg) => {
-    // Sidebar ↔ tab messages (handing her camera to a fullscreen tab) never leave this browser.
+    // Sidebar ↔ tab messages (camera hand-off, jump to a chat timestamp, countdown) never leave this browser.
     if (msg.local) {
-      for (const p of ports) if (p !== port) p.postMessage(msg);
+      for (const p of ports) if (p !== port) postTo(p, msg);
       return;
     }
+    const fromTab = port.name === 'party';
+    const fromWatchTab = fromTab && isWatchTab(port);
+
+    if (msg.type === 'claim') {
+      // A tab with a real player, and no show picked yet: make it the show.
+      if (!watch && port.tabId != null) setWatchTab(port.tabId, true);
+      return;
+    }
+    if (msg.type === 'position') {
+      if (fromWatchTab) lastPos = { time: msg.time, paused: msg.paused, at: Date.now() };
+      return;
+    }
+    // Playback messages only count from the show's tab; stray videos elsewhere can't control anything.
+    if (fromTab && !fromWatchTab && msg.type !== 'chat') return;
+
     if (msg.type === 'chat') {
       remember({ ...msg, mine: true });
       // Keep this browser's other chat views in step (sidebar ↔ fullscreen chat).
-      for (const p of ports) if (p !== port) p.postMessage({ ...msg, mine: true });
+      for (const p of ports) if (p !== port && wantsMessage(p)) postTo(p, { ...msg, mine: true });
     }
     send(msg);
   });
-  port.onDisconnect.addListener(() => ports.delete(port));
+  port.onDisconnect.addListener(() => {
+    void chrome.runtime.lastError;
+    ports.delete(port);
+  });
 });
 
+function postTo(port, msg) {
+  try {
+    port.postMessage(msg);
+  } catch {
+    ports.delete(port); // that page is gone or frozen in the back/forward cache
+  }
+}
+
+const isWatchTab = (port) => watch != null && port.tabId === watch.tabId;
+// The sidebar hears everything; tabs only if they're the show.
+const wantsMessage = (port) => port.name === 'panel' || isWatchTab(port);
+
+function sendRole(port) {
+  postTo(port, { type: 'role', watching: isWatchTab(port), hasWatch: !!watch });
+}
+function broadcastLocal(msg) {
+  for (const p of ports) if (wantsMessage(p)) postTo(p, msg);
+}
+
+// ---- One-off requests (sidebar, invite page, banners) ----
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg.type === 'history') {
     // Wait for pending writes so the sidebar doesn't miss the newest message.
@@ -40,7 +98,11 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   }
   if (msg.type === 'join-invite') {
     // Clicked "Join" on an invite page: open the sidebar while we still have the click, then join.
-    if (sender.tab) chrome.sidePanel.open({ windowId: sender.tab.windowId }).catch(() => {});
+    // That tab is about to become the show, so it's the watch tab.
+    if (sender.tab) {
+      chrome.sidePanel.open({ windowId: sender.tab.windowId }).catch(() => {});
+      setWatchTab(sender.tab.id, false);
+    }
     const room = String(msg.room || '').slice(0, 64);
     if (room) joinRoom(msg.server, room);
   } else if (msg.type === 'connect') {
@@ -48,9 +110,19 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   } else if (msg.type === 'disconnect') {
     chrome.storage.local.set({ active: false });
     disconnect();
+  } else if (msg.type === 'set-watch') {
+    setWatchTab(msg.tabId, true).then(() => reply(statusView()));
+    return true;
+  } else if (msg.type === 'follow') {
+    follow(msg.url).then(() => reply(statusView()));
+    return true;
   }
-  reply(status);
+  reply(statusView());
 });
+
+function statusView() {
+  return { ...status, watch, pos: lastPos };
+}
 
 function joinRoom(server, room) {
   // A different room means a different party, so start its chat fresh.
@@ -64,17 +136,97 @@ function joinRoom(server, room) {
   connect(server, room);
 }
 
-// Chat history lives here (not in the sidebar) so it survives closing the sidebar,
+// ---- Watch tab ----
+async function setWatchTab(tabId, announce) {
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (!tab) return;
+  const from = watch?.url;
+  setWatchState(tab);
+  if (announce && showKey(from || '') !== showKey(tab.url || '')) announceShow(from);
+}
+
+function setWatchState(tab) {
+  const changed = watch?.tabId !== tab.id;
+  watch = { tabId: tab.id, url: tab.url || '', title: tab.title || '', favIconUrl: tab.favIconUrl || '' };
+  chrome.storage.local.set({ watch });
+  if (changed) {
+    lastPos = null;
+    for (const p of ports) if (p.name === 'party') sendRole(p);
+  }
+}
+
+function clearWatch() {
+  watch = null;
+  lastPos = null;
+  chrome.storage.local.remove('watch');
+  for (const p of ports) if (p.name === 'party') sendRole(p);
+}
+
+// Tell the other person what we're watching. `from` is what we were on before: if they're still
+// there (we were watching together), their tab follows automatically; otherwise they get a prompt.
+function announceShow(from) {
+  if (watch && /^https?:/.test(watch.url)) send({ type: 'now-watching', url: watch.url, title: watch.title, from });
+}
+
+// Go where they are: reuse the show's tab if we have one, otherwise open a new one.
+async function follow(url) {
+  if (!/^https?:\/\//.test(url || '')) return;
+  if (watch) {
+    await chrome.tabs.update(watch.tabId, { url, active: true }).catch(() => clearWatch());
+    if (watch) return;
+  }
+  const tab = await chrome.tabs.create({ url });
+  setWatchState(tab);
+}
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (tabId !== watch?.tabId) return;
+  clearWatch();
+  send({ type: 'show-closed' }); // the other side pauses instead of carrying on alone
+});
+
+// The show's tab moved to a different page (new episode or show): tell the other side.
+let announceTimer = null;
+let announceFrom = null;
+chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+  if (tabId !== watch?.tabId) return;
+  const urlChanged = info.url && showKey(info.url) !== showKey(watch.url);
+  if (urlChanged && !announceTimer) announceFrom = watch.url; // where we were before this run of changes
+  watch = { tabId, url: tab.url || watch.url, title: tab.title || watch.title, favIconUrl: tab.favIconUrl || watch.favIconUrl };
+  chrome.storage.local.set({ watch });
+  if (urlChanged) {
+    clearTimeout(announceTimer);
+    announceTimer = setTimeout(() => {
+      announceTimer = null;
+      announceShow(announceFrom); // after a moment, so the page has set its real title
+    }, 1000);
+  }
+});
+
+// Same show = same page, ignoring tracking/query noise (but keeping YouTube's ?v=).
+function showKey(url) {
+  try {
+    const u = new URL(url);
+    const v = u.searchParams.get('v');
+    return u.origin + u.pathname + (v ? `?v=${v}` : '');
+  } catch {
+    return url || '';
+  }
+}
+
+// ---- Chat history ----
+// Lives here (not in the sidebar) so it survives closing the sidebar,
 // and messages that arrive while it's closed are still there when it reopens.
 let historyWrite = Promise.resolve();
 function remember(msg) {
-  const entry = { id: msg.id, name: msg.name, text: msg.text, avatar: msg.avatar, mine: msg.mine, at: Date.now() };
+  const entry = { id: msg.id, name: msg.name, text: msg.text, avatar: msg.avatar, vt: msg.vt, mine: msg.mine, at: Date.now() };
   historyWrite = historyWrite
     .then(() => chrome.storage.local.get('history'))
     .then(({ history = [] }) => chrome.storage.local.set({ history: [...history, entry].slice(-HISTORY_LIMIT) }))
     .catch(console.error);
 }
 
+// ---- Relay connection ----
 function connect(server, room) {
   disconnect();
   status = { connected: false, peers: 0, room, server };
@@ -83,25 +235,32 @@ function connect(server, room) {
   ws.onopen = () => {
     status.connected = true;
     ws.send(JSON.stringify({ type: 'join', room }));
+    broadcastLocal({ type: 'connection', up: true });
     // Keeps the relay connection (and this service worker) alive.
     pingTimer = setInterval(() => send({ type: 'ping' }), 20000);
   };
 
   ws.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
+    let msg;
+    try { msg = JSON.parse(e.data); } catch { return; }
     if (msg.type === 'joined' || msg.type === 'peer') status.peers = msg.count;
+    if (msg.type === 'joined' && msg.count > 1) setTimeout(announceShow, 500); // let a returning partner know
+    if (msg.type === 'peer' && msg.joined) setTimeout(announceShow, 500);
     if (msg.type === 'chat') {
       remember({ ...msg, mine: false });
-      // Lets tabs know whether to flash the message on the video (sidebar closed or hidden by fullscreen).
+      // Lets the show's tab know whether to flash the message on the video (sidebar closed or hidden by fullscreen).
       msg.panelOpen = [...ports].some((p) => p.name === 'panel');
     }
-    for (const port of ports) port.postMessage(msg);
+    for (const port of ports) if (wantsMessage(port)) postTo(port, msg);
   };
 
-  // Dropped connection (not a manual Leave — disconnect() unhooks this first): retry.
+  // Dropped connection (not a manual Leave — disconnect() unhooks this first): pause the show, then retry.
   ws.onclose = () => {
     clearInterval(pingTimer);
+    const wasConnected = status.connected;
     status.connected = false;
+    status.peers = 0;
+    if (wasConnected) broadcastLocal({ type: 'connection', up: false });
     chrome.storage.local.get('active').then(({ active }) => {
       if (active) setTimeout(() => connect(server, room), 3000);
     });

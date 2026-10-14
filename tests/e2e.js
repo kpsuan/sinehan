@@ -110,7 +110,13 @@ async function launch(label) {
   let [sw] = ctx.serviceWorkers();
   if (!sw) sw = await ctx.waitForEvent('serviceworker');
   const extId = sw.url().split('/')[2];
-  const watch = (p) => p.on('pageerror', (e) => pageErrors.push(`[${label}] ${p.url()}: ${e.message}`));
+  const watch = (p) => {
+    p.on('pageerror', (e) => pageErrors.push(`[${label}] ${p.url()}: ${e.message}`));
+    // Chrome logs blocked extension-resource loads (e.g. fonts) as console errors, not page errors.
+    p.on('console', (m) => {
+      if (m.type() === 'error' && /chrome-extension:|Unsafe attempt/i.test(m.text())) pageErrors.push(`[${label}] ${p.url()}: ${m.text()}`);
+    });
+  };
   ctx.pages().forEach(watch);
   ctx.on('page', watch);
   return { label, ctx, extId };
@@ -126,7 +132,7 @@ async function openVideo(user) {
   const p = await user.ctx.newPage();
   await p.goto(`${SITE}/watch`);
   await p.waitForFunction(() => document.getElementById('v').readyState >= 1);
-  await sleep(1300); // content script attaches on a 1s interval
+  await sleep(2500); // content script attaches on a 1s interval, then the tab is picked as the show
   return p;
 }
 async function connect(panel, name, room, server = RELAY) {
@@ -328,6 +334,7 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     section('Reactions & notices on the video');
     await chat(pA, '🔥');
     check('emoji floats over B’s video', await until(() => vB.evaluate(() => [...document.body.children].some((e) => e.textContent === '🔥'))));
+    check('overlay font (Inter) loads on the page', await until(() => vB.evaluate(() => document.fonts.check('13px WatchPartyInter'))));
     check('own emoji does not float on A’s video', !(await vA.evaluate(() => [...document.body.children].some((e) => e.textContent === '🔥'))));
 
     await pB.close(); // B's sidebar closed
@@ -347,9 +354,41 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     await pB2.click('#join');
     check('caller sees callee', await until(() => pA.$eval('#remote', (v) => v.videoWidth > 0), 10000));
     check('call controls visible', await pA.$eval('#mic', (b) => !b.hidden) && await pA.$eval('#hangup', (b) => !b.hidden));
+    check('calls start with the mic off (released)', await pA.$eval('#mic', (b) => b.classList.contains('off')));
+    check('they see a "Mic off" badge on your video', await until(() => pB2.$eval('#remoteMic', (b) => !b.hidden)));
+    check('you get a hint that your mic is off', (await logLines(pA)).some((l) => l.text.includes('Your mic is off')));
     await pA.click('#mic');
-    check('mute toggles', await pA.$eval('#mic', (b) => b.classList.contains('off')));
+    check('mic turns on', await until(() => pA.$eval('#mic', (b) => !b.classList.contains('off'))));
+    check('…and their "Mic off" badge goes away', await until(() => pB2.$eval('#remoteMic', (b) => b.hidden)));
+    check('…and the other side receives audio', await until(() => pB2.evaluate(() => document.getElementById('remote').srcObject?.getAudioTracks().some((t) => t.readyState === 'live')), 8000));
+    // Audio really flows (bytes arriving), in both directions.
+    const audioIn = (p) => p.evaluate(async () => {
+      let bytes = 0;
+      (await pc.getStats()).forEach((r) => { if (r.type === 'inbound-rtp' && r.kind === 'audio') bytes += r.bytesReceived || 0; });
+      return bytes;
+    });
+    const flowing = async (p) => { const b1 = await audioIn(p); await sleep(1500); return (await audioIn(p)) > b1 + 500; };
+    check('B actually hears A (audio bytes arriving)', await until(() => flowing(pB2), 10000));
+    await pB2.click('#mic');
+    check('B turns their mic on too', await until(() => pB2.$eval('#mic', (b) => !b.classList.contains('off'))));
+    check('A actually hears B', await until(() => flowing(pA), 10000));
+    await pB2.click('#mic');
     await pA.click('#mic');
+    check('mic turns off again', await until(() => pA.$eval('#mic', (b) => b.classList.contains('off'))));
+    check('…and is really released', await pA.evaluate(() => !document.getElementById('local').srcObject?.getAudioTracks().length));
+
+    // Settings lists the real camera/mic and switches mid-call.
+    await pA.click('#settingsBtn');
+    const cams = await until(async () => { const o = await pA.$$eval('#camSelect option', (os) => os.map((x) => ({ v: x.value, t: x.textContent }))); return o.length > 1 ? o : false; });
+    check('settings lists cameras by name', cams && cams.some((o) => o.v && /fake|camera/i.test(o.t)), JSON.stringify(cams));
+    check('settings lists microphones', (await pA.$$eval('#micSelect option', (os) => os.length)) > 1);
+    check('no permission prompt needed once allowed', await pA.$eval('#devicePerm', (b) => b.hidden));
+    await pA.selectOption('#camSelect', cams.find((o) => o.v).v);
+    await sleep(1500);
+    check('switching camera mid-call keeps video going', await pA.$eval('#local', (v) => v.videoWidth > 0 && v.srcObject.getVideoTracks()[0].readyState === 'live'));
+    check('…and the other side still sees you', await until(() => pB2.$eval('#remote', (v) => v.videoWidth > 0)));
+    check('camera choice is remembered', (await pA.evaluate(() => chrome.storage.local.get('cameraId'))).cameraId === cams.find((o) => o.v).v);
+    await pA.click('#settingsBtn');
 
     // ---------------------------------------------------------------
     section('Fullscreen overlay');
@@ -386,8 +425,103 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     check('hang up ends call on both sides', await until(async () => !(await pB2.$eval('#start', (b) => b.hidden)) && !(await pA.$eval('#start', (b) => b.hidden))));
     check('callee told the call ended', (await logLines(pB2)).some((l) => l.text.includes('hung up')));
 
+
+    // ---------------------------------------------------------------
+    section('Watch tab & watching together');
+    const watchTitle = (p) => p.$eval('#watchTitle', (e) => (e.classList.contains('none') ? '' : e.textContent));
+    const shown = (p, re) => p.evaluate((src) => [...document.querySelectorAll('[data-sinehan]')].some((e) => new RegExp(src).test(e.textContent)), re.source);
+    check('each side picked its show tab', await until(async () => (await watchTitle(pA)) && (await watchTitle(pB2))));
+
+    // A second tab with a video can't control anything, and isn't controlled.
+    await vA.evaluate(() => document.getElementById('v').pause());
+    await until(async () => (await vstate(vB)).paused);
+    const vA2 = await A.ctx.newPage();
+    await vA2.goto(`${SITE}/other`);
+    await vA2.waitForFunction(() => document.getElementById('v').readyState >= 1);
+    await sleep(2500);
+    await vA2.evaluate(() => document.getElementById('v').play());
+    await sleep(2000);
+    check('a second video tab doesn’t control the other side', (await vstate(vB)).paused);
+    await vA2.evaluate(() => document.getElementById('v').pause());
+    await vB.evaluate(() => document.getElementById('v').play());
+    check('the show tab still follows', await until(async () => !(await vstate(vA)).paused));
+    check('…but the other tab isn’t touched', (await vstate(vA2)).paused);
+    await vB.evaluate(() => document.getElementById('v').pause());
+    await until(async () => (await vstate(vA)).paused);
+
+    // "Watch here" moves the show; they were watching together, so B follows on its own.
+    await vA2.bringToFront();
+    check('"Watch here" offered for another tab', await until(() => pA.$eval('#watchHere', (b) => !b.hidden)));
+    await pA.click('#watchHere');
+    check('B follows to the new show automatically', await until(() => vB.url().endsWith('/other'), 10000), vB.url());
+    await vB.waitForFunction(() => document.getElementById('v').readyState >= 1);
+    await sleep(2500);
+    await vA2.evaluate(() => document.getElementById('v').play());
+    check('the new show tab syncs', await until(async () => !(await vstate(vB)).paused, 6000), await both());
+    await vA2.evaluate(() => document.getElementById('v').pause());
+    await until(async () => (await vstate(vB)).paused);
+    await vA.evaluate(() => document.getElementById('v').play());
+    await sleep(1500);
+    check('the old tab no longer syncs', (await vstate(vB)).paused);
+    await vA.evaluate(() => document.getElementById('v').pause());
+
+    // Not watching the same thing: a prompt instead of moving them.
+    const WS = require('../server/node_modules/ws');
+    const raw = new WS(RELAY);
+    await new Promise((r) => raw.on('open', r));
+    raw.send(JSON.stringify({ type: 'join', room: 'r1' }));
+    await sleep(1500); // let A's own "now watching" (sent when someone joins) go by first
+    raw.send(JSON.stringify({ type: 'now-watching', url: `${SITE}/somewhere-else`, title: 'Another Show', from: `${SITE}/not-here` }));
+    check('when not together: "Go" prompt in the sidebar', await until(() => pB2.$eval('#followBar', (b) => !b.hidden && b.textContent.includes('Another Show'))));
+    check('…and on the video', await until(() => shown(vB, /Another Show/)));
+    check('…without moving anyone', vB.url().endsWith('/other'));
+    await pB2.click('#followClose');
+    check('prompt can be dismissed', await pB2.$eval('#followBar', (b) => b.hidden));
+    raw.close();
+    await sleep(600);
+
+    section('Typing, timestamps, hand-holding');
+    await pA.fill('#msg', '');
+    await pA.locator('#msg').pressSequentially('typing something');
+    check('typing indicator on the other side', await until(async () => !(await pB2.$eval('#typing', (t) => t.hidden)) && (await text(pB2, '#typing')).includes('fran')));
+    await pA.fill('#msg', '');
+
+    await vA2.evaluate(() => { document.getElementById('v').currentTime = 30; });
+    await until(async () => Math.abs((await vstate(vB)).t - 30) < 1.5);
+    await sleep(1600); // the show position reaches the sidebar
+    await chat(pA, 'this scene!');
+    const stamp = await until(() => pB2.$$eval('#log .msg', (ms) => ms.find((m) => m.textContent.includes('this scene!'))?.querySelector('.stamp')?.textContent));
+    check('chat messages carry the show time', stamp === '0:30', stamp);
+    check('typing indicator clears when the message arrives', await pB2.$eval('#typing', (t) => t.hidden));
+    await vA2.evaluate(() => { document.getElementById('v').currentTime = 80; });
+    await until(async () => Math.abs((await vstate(vB)).t - 80) < 1.5);
+    await pB2.locator('#log .msg', { hasText: 'this scene!' }).locator('.stamp').click();
+    check('clicking a timestamp takes both back there', await until(async () => Math.abs((await vstate(vB)).t - 30) < 1.5 && Math.abs((await vstate(vA2)).t - 30) < 1.5), await both());
+
+    await pA.click('#handBtn');
+    check('hold hand: their video glows with a note', await until(() => shown(vB, /holding your hand/)));
+    check('hold hand: their sidebar glows', await until(() => pB2.$eval('.top', (t) => t.classList.contains('holding'))));
+
+    await vA2.evaluate(() => { document.getElementById('v').currentTime = 95; });
+    check('big jumps are announced', await until(() => shown(vB, /skipped ahead/)));
+
+    section('Countdown, buffering');
+    await until(() => pA.$eval('#countdownBtn', (b) => !b.disabled));
+    await pA.click('#countdownBtn');
+    check('3-2-1 shows on both screens', await until(async () => (await shown(vA2, /^[321]$/)) && (await shown(vB, /^[321]$/))));
+    check('…then both play together', await until(async () => { const a = await vstate(vA2); const b = await vstate(vB); return !a.paused && !b.paused && Math.abs(a.t - b.t) < 1; }, 6000), await both());
+
+    await vA2.evaluate(() => { const v = document.getElementById('v'); v.playbackRate = 0; v.dispatchEvent(new Event('waiting')); });
+    check('when one side is loading, the other waits', await until(async () => (await vstate(vB)).paused, 5000), await both());
+    check('…and is told why', await until(() => shown(vB, /loading/i)));
+    await vA2.evaluate(() => { const v = document.getElementById('v'); v.playbackRate = 1; v.dispatchEvent(new Event('playing')); });
+    check('…then both continue', await until(async () => !(await vstate(vB)).paused && !(await vstate(vA2)).paused, 5000), await both());
+    await vA2.evaluate(() => document.getElementById('v').pause());
+    await until(async () => (await vstate(vB)).paused);
+
     // ---------------------------------------------------------------
     section('Invite link');
+    await vA2.bringToFront(); // invite from the show's tab
     await pA.click('#invite');
     check('link icon shows "copied"', await until(() => pA.$eval('#invite', (b) => b.classList.contains('copied'))));
     const link = await pA.evaluate(() => navigator.clipboard.readText()).catch(() => '') || await pA.inputValue('#inviteLink');
@@ -398,7 +532,7 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     check('join page detects the extension', await until(() => join.evaluate(() => document.documentElement.dataset.wpReady === '1')));
     check('join page shows Join button', await join.locator('#wp-join').isVisible());
     await join.click('#wp-join');
-    if (link.includes('&to=')) check('after Join: taken to the show', await until(() => join.url().startsWith(`${SITE}/watch`)), join.url());
+    if (link.includes('&to=')) check('after Join: taken to the show', await until(() => join.url().startsWith(`${SITE}/other`)), join.url());
     else check('after Join: confirmation shown', await until(() => join.locator('#wp-done').isVisible()));
     const pC = await openPanel(C);
     check('invitee is connected to the same room', await until(async () => (await pC.inputValue('#room')) === 'r1' && (await text(pC, '#status')) === 'Together'));
@@ -423,7 +557,10 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
 
     // ---------------------------------------------------------------
     section('Leaving, rooms, and server restarts');
+    await vA2.evaluate(() => document.getElementById('v').play());
+    await until(async () => !(await vstate(vB)).paused);
     await leave(pB2);
+    check('partner leaving pauses the show', await until(async () => (await vstate(vA2)).paused), await both());
     check('partner leaving is announced', await until(async () => (await logLines(pA)).filter((l) => l.text.includes('left')).length >= 2));
     check('partner removed from header', await until(async () => (await text(pA, '#names')) === 'fran'));
     check('status back to waiting', await until(async () => (await text(pA, '#status')) === 'Waiting for them to join'));
@@ -438,12 +575,23 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     await connect(pB2, 'Bob', 'r1');
     check('rejoin original room', await until(async () => (await text(pA, '#status')) === 'Together'));
 
+    await sleep(1500);
+    await vA2.evaluate(() => document.getElementById('v').play());
+    await until(async () => !(await vstate(vB)).paused);
     await stopRelay();
+    check('connection lost pauses the show', await until(async () => (await vstate(vA2)).paused), await both());
     check('server down: shows reconnecting', await until(async () => (await text(pA, '#status')) === 'Connecting…'));
     await startRelay();
     check('server back: both reconnect on their own', await until(async () => (await text(pA, '#status')) === 'Together' && (await text(pB2, '#status')) === 'Together', 15000));
     await chat(pA, 'after restart');
     check('chat works after reconnect', await until(async () => (await logLines(pB2)).some((l) => l.text.includes('after restart'))));
+
+    await vA2.evaluate(() => document.getElementById('v').play());
+    check('sync works after reconnect', await until(async () => !(await vstate(vB)).paused));
+    await vA2.close();
+    check('closing the show pauses the other side', await until(async () => (await vstate(vB)).paused), JSON.stringify(await vstate(vB)));
+    check('…and tells them', await until(() => shown(vB, /closed the show/)));
+    check('…and the closed tab is no longer the show', await until(async () => !(await watchTitle(pA)).includes('/other')), await watchTitle(pA));
   } catch (e) {
     check('test run crashed', false, e.stack);
   } finally {
