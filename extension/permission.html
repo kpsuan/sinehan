@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Sinehan: camera access</title>
+  <style>
+    @font-face { font-family: 'Inter'; src: url('fonts/inter.woff2') format('woff2'); font-weight: 100 900; font-display: swap; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; box-sizing: border-box;
+      background: #16111c; color: #ece6f3; font: 15px/1.5 'Inter', system-ui, sans-serif; }
+    main { max-width: 380px; }
+    h1 { font-size: 24px; font-weight: 600; line-height: 1.2; letter-spacing: -0.02em; margin: 0 0 12px; }
+    p { color: #b7adc4; margin: 0 0 18px; }
+    button { padding: 9px 16px; border: 0; border-radius: 6px; background: #c9b6f2; color: #1b1325; font: inherit; font-weight: 600; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Camera and mic</h1>
+    <p id="msg">Click “Allow” in the prompt Chrome shows at the top left.</p>
+    <button id="retry">Ask again</button>
+  </main>
+  <script src="permission.js"></script>
+</body>
+</html>

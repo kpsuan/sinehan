@@ -1,0 +1,42 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- The Sinehan extension looks for this tag to wire up the Join button. -->
+  <meta name="watch-party-join" content="1" />
+  <title>Sinehan invite</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; box-sizing: border-box;
+      background: #16111c; color: #ece6f3; font: 15px/1.5 'Inter', system-ui, sans-serif; }
+    main { max-width: 380px; }
+    .eyebrow { color: #978ca6; font-size: 13px; margin: 0; }
+    h1 { font-size: 28px; font-weight: 600; line-height: 1.2; letter-spacing: -0.02em; margin: 6px 0 14px; }
+    p { color: #b7adc4; margin: 0 0 18px; }
+    button { padding: 10px 18px; border: 0; border-radius: 6px; background: #c9b6f2; color: #1b1325; font: inherit; font-weight: 600; cursor: pointer; }
+    button:hover { background: #d8c9f7; }
+    .has-ext { display: none; }
+    html[data-wp-ready] .has-ext { display: block; }
+    html[data-wp-ready] .needs-ext { display: none; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Sinehan</p>
+    <h1>You've been invited to watch together.</h1>
+    <div class="has-ext">
+      <p>Joining takes you to the show. Playback stays in sync, and chat and video open in the sidebar.</p>
+      <button id="wp-join">Join</button>
+      <p id="wp-done" hidden>You're in. Open the show you're watching.</p>
+    </div>
+    <div class="needs-ext">
+      <p>This needs the Sinehan extension in Chrome. Install it, then refresh this page.</p>
+    </div>
+  </main>
+</body>
+</html>

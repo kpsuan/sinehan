@@ -1,0 +1,6 @@
+{
+  "name": "sinehan-e2e",
+  "private": true,
+  "scripts": { "test": "node e2e.js" },
+  "devDependencies": { "playwright": "1.52.0" }
+}
