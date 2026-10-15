@@ -19,21 +19,42 @@
     button { font: inherit; color: inherit; border: 0; cursor: pointer; background: none; }
     a { color: inherit; text-decoration: none; }
 
-    /* Header: the show's artwork, blurred behind its poster and name */
-    .hero { position: relative; isolation: isolate; overflow: hidden; padding: max(16px, env(safe-area-inset-top)) 16px 22px; }
-    .backdrop { position: absolute; inset: -40px; z-index: -2; background: center 25% / cover no-repeat; filter: blur(28px) saturate(1.3) brightness(.5); opacity: 0; transition: opacity .8s; }
-    .backdrop.on { opacity: 1; }
-    .hero::after { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(rgba(12, 10, 16, .2), var(--bg) 96%); }
-    .wrap { max-width: 1240px; margin: 0 auto; }
-    .brand { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; font-weight: 600; }
-    .brand img { width: 22px; height: 22px; }
-    .head { display: flex; align-items: flex-end; gap: 18px; margin-top: 26px; }
-    .poster { flex: none; width: 108px; aspect-ratio: 2 / 3; border-radius: 10px; object-fit: cover; background: var(--raised); box-shadow: 0 18px 40px rgba(0, 0, 0, .45); }
-    .kicker { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
-    h1 { margin: 4px 0 2px; font-size: clamp(28px, 6vw, 40px); line-height: 1.1; letter-spacing: -0.025em; overflow-wrap: anywhere; }
-    .topic { margin: 0; font-size: 17px; font-weight: 500; color: var(--accent); }
-    .show-meta { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
-    .progress { margin-top: 22px; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; color: var(--muted); }
+    /* Header: the show's wide key art on the right, fading into the page; poster, name and what's next */
+    .hero { position: relative; isolation: isolate; overflow: hidden; padding: max(18px, env(safe-area-inset-top)) 16px 26px;
+      min-height: clamp(380px, 56vh, 600px); display: flex; flex-direction: column; }
+    .backdrop { position: absolute; inset: 0 0 0 auto; width: min(100%, 1100px); z-index: -2; background: center 20% / cover no-repeat; opacity: 0; transition: opacity 1s;
+      -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 45%); mask-image: linear-gradient(to right, transparent 0%, #000 45%); }
+    .backdrop.on { opacity: .9; }
+    /* Only a poster to go on (films): blur it across the whole header instead */
+    .backdrop.soft { inset: -40px; width: auto; filter: blur(30px) saturate(1.3) brightness(.55); -webkit-mask-image: none; mask-image: none; }
+    /* Films: their posters lined up on the right, like a shelf */
+    .shelf { position: absolute; inset: 0 0 0 auto; width: min(100%, 980px); z-index: -2; display: flex; align-items: center; justify-content: flex-end; gap: 14px;
+      padding: 40px 24px; opacity: 0; transition: opacity 1s; -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 55%); mask-image: linear-gradient(to right, transparent 0%, #000 55%); }
+    .shelf.on { opacity: .75; }
+    .shelf img { height: min(80%, 400px); aspect-ratio: 2 / 3; object-fit: cover; border-radius: 10px; box-shadow: 0 20px 50px rgba(0, 0, 0, .5); }
+    .shelf img:nth-child(even) { transform: translateY(26px); }
+    .hero::after { content: ''; position: absolute; inset: 0; z-index: -1;
+      background: linear-gradient(to top, var(--bg) 2%, rgba(12, 10, 16, .55) 38%, rgba(12, 10, 16, .1) 70%),
+        linear-gradient(to right, var(--bg) 18%, rgba(12, 10, 16, .4) 55%, transparent 80%); }
+    .wrap { max-width: 1240px; margin: 0 auto; width: 100%; }
+    .hero .wrap { flex: 1; display: flex; flex-direction: column; }
+    .brand { display: inline-flex; align-items: center; gap: 8px; color: var(--text); font-size: 15px; font-weight: 600; }
+    .brand img { width: 24px; height: 24px; }
+    .head { display: flex; align-items: flex-end; gap: 28px; margin-top: auto; padding-top: 48px; }
+    .poster { flex: none; width: 168px; aspect-ratio: 2 / 3; border-radius: 12px; object-fit: cover; background: var(--raised); box-shadow: 0 24px 60px rgba(0, 0, 0, .55); }
+    .kicker { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+    h1 { margin: 6px 0 4px; font-size: clamp(36px, 7vw, 68px); line-height: 1.02; letter-spacing: -0.035em; overflow-wrap: anywhere; text-shadow: 0 2px 24px rgba(0, 0, 0, .45); }
+    .topic { margin: 0; font-size: clamp(18px, 2.4vw, 24px); font-weight: 500; color: var(--text); opacity: .92; }
+    .show-meta { margin: 10px 0 0; color: var(--muted); font-size: 14px; }
+    .summary { margin: 12px 0 0; max-width: 560px; color: #cfc7da; font-size: 15px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    .head-text { min-width: 0; }
+    .cta { display: inline-flex; align-items: center; gap: 10px; margin-top: 20px; padding: 12px 20px 12px 16px; border-radius: 10px; background: var(--accent); color: var(--ink);
+      font-weight: 600; font-size: 15px; max-width: 100%; }
+    .cta:hover { background: #d8c9f7; }
+    .cta svg { flex: none; width: 18px; height: 18px; fill: currentColor; }
+    .cta span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cta small { font-weight: 500; opacity: .7; font-size: 14px; }
+    .progress { margin-top: 26px; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; color: var(--muted); }
     .progress b { color: var(--text); }
     .sync { display: inline-flex; align-items: center; gap: 6px; }
     .sync::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #5a5066; }
@@ -85,7 +106,18 @@
     .empty { max-width: 760px; margin: 60px auto; padding: 0 16px; color: var(--muted); }
 
     @media (max-width: 560px) {
-      .poster { width: 84px; }
+      .hero { min-height: 0; }
+      .head { gap: 16px; padding-top: 28px; align-items: flex-end; }
+      .poster { width: 92px; }
+      .summary { display: none; }
+      /* Phones: the key art as a banner on top, the name and button below it */
+      .backdrop { inset: 0 0 auto 0; width: 100%; height: 230px; -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); }
+      .backdrop.soft { inset: -40px; height: auto; }
+      .backdrop.on ~ .wrap .head, .shelf.on ~ .wrap .head { padding-top: 150px; }
+      .hero::after { background: linear-gradient(to top, var(--bg) 30%, rgba(12, 10, 16, .35) 70%, transparent); }
+      .shelf { inset: 0 0 auto 0; width: 100%; height: 240px; padding: 20px 16px; gap: 10px; justify-content: center; -webkit-mask-image: linear-gradient(to bottom, #000 40%, transparent 100%); mask-image: linear-gradient(to bottom, #000 40%, transparent 100%); }
+      .shelf img { height: 170px; }
+      .cta { margin-top: 14px; padding: 10px 16px 10px 13px; font-size: 14px; }
       .grid { grid-template-columns: 1fr; gap: 24px; }
       .grid.films { grid-template-columns: repeat(2, 1fr); gap: 20px 12px; }
       .ep-title { font-size: 16px; }
@@ -95,15 +127,18 @@
 <body>
   <header class="hero" id="hero" hidden>
     <div class="backdrop" id="backdrop"></div>
+    <div class="shelf" id="shelf" aria-hidden="true"></div>
     <div class="wrap">
       <a class="brand" href="/"><img src="/static/logo.png" alt="" />sinehan</a>
       <div class="head">
         <img class="poster" id="poster" alt="" hidden />
-        <div>
+        <div class="head-text">
           <p class="kicker">Watch guide</p>
           <h1 id="show"></h1>
           <p class="topic" id="topic" hidden></p>
           <p class="show-meta" id="showMeta" hidden></p>
+          <p class="summary" id="summary" hidden></p>
+          <button class="cta" id="cta" hidden><svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z" /></svg><span id="ctaText"></span></button>
         </div>
       </div>
       <div class="progress"><span id="count"></span><span class="sync" id="sync">Saved on this device</span></div>
@@ -202,6 +237,21 @@
         $('season').replaceChildren(...options.map(([v, label]) => new Option(label, v, false, v === showing)));
         $('season').parentElement.hidden = false;
 
+        // The header's button: what's next, and a jump to it.
+        $('cta').hidden = !next;
+        if (next) {
+          const what = next.kind ? next.title : `${next.key.replace(/^S(\d+)E(\d+)$/, 'S$1 E$2')}${next.title ? ` · ${next.title}` : ''}`;
+          $('ctaText').innerHTML = '';
+          $('ctaText').append('Up next ', Object.assign(document.createElement('small'), { textContent: what }));
+          $('cta').onclick = () => {
+            if (showing !== 'all' && sectionOf(next) !== showing) {
+              showing = sectionOf(next);
+              render();
+            }
+            document.querySelector(`[data-key="${CSS.escape(next.key)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          };
+        }
+
         const list = showing === 'all' ? episodes : episodes.filter((e) => sectionOf(e) === showing);
         $('shown').textContent = plural(list.length);
         $('list').classList.toggle('films', films);
@@ -218,6 +268,7 @@
           const extra = info.get(e.key) || {};
           const card = document.createElement('article');
           card.className = `ep${isDone(e.key) ? ' done' : ''}`;
+          card.dataset.key = e.key;
           const href = linkFor(e);
           const linkTo = (el) => {
             if (!href) return el;
@@ -284,6 +335,13 @@
         firstRender = false;
       }
 
+      function setBackdrop(url, soft) {
+        if (!url) return;
+        $('backdrop').style.backgroundImage = `url("${url}")`;
+        $('backdrop').classList.toggle('soft', !!soft);
+        $('backdrop').classList.add('on');
+      }
+
       // ---- Pictures and details ----
       const longDate = (d) => (d ? new Date(`${d}T12:00:00`).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '');
       async function seriesDetails() {
@@ -297,8 +355,17 @@
           if (show.image?.medium) {
             $('poster').src = art(show.image.medium);
             $('poster').hidden = false;
-            $('backdrop').style.backgroundImage = `url("${art(show.image.original)}")`;
-            $('backdrop').classList.add('on');
+          }
+          // The wide key art for the header (or the poster, blurred, if there's none).
+          fetch(`https://api.tvmaze.com/shows/${show.id}/images`).then((x) => x.json()).then((images) => {
+            const wide = images.filter((x) => x.type === 'background').sort((a, b) => (b.resolutions?.original?.width || 0) - (a.resolutions?.original?.width || 0))[0];
+            const url = wide?.resolutions?.original?.url;
+            setBackdrop(url ? art(url) : art(show.image?.original), !url);
+          }).catch(() => setBackdrop(art(show.image?.original), true));
+          const about = String(show.summary || '').replace(/<[^>]+>/g, '').trim();
+          if (about) {
+            $('summary').textContent = about;
+            $('summary').hidden = false;
           }
           const eps = show._embedded?.episodes || [];
           const seasons = new Set(eps.map((e) => e.season)).size;
@@ -330,10 +397,11 @@
         await Promise.all(Array.from({ length: 4 }, async () => {
           while (queue.length) await one(queue.shift());
         }));
-        const first = info.get(list[0]?.key)?.img;
-        if (first) {
-          $('backdrop').style.backgroundImage = `url("${first}")`;
-          $('backdrop').classList.add('on');
+        // The films' posters, lined up in the header.
+        const posters = list.map((e) => info.get(e.key)?.img).filter(Boolean).slice(0, window.innerWidth < 560 ? 4 : 5);
+        if (posters.length) {
+          $('shelf').replaceChildren(...posters.map((src) => Object.assign(document.createElement('img'), { src, alt: '' })));
+          $('shelf').classList.add('on');
         }
         render();
       }
