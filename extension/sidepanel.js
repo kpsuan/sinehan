@@ -68,6 +68,8 @@ function onMessage(msg) {
   } else if (msg.type === 'now-watching') {
     theirShow = { url: msg.url, title: msg.title };
     renderWatch();
+  } else if (msg.type === 'watchlist-changed') {
+    if (!$('listView').hidden) listItems();
   } else if (msg.type === 'show-closed') {
     addChat('', `${peer?.name || 'They'} closed the show`, 'system');
   } else if (msg.type === 'profile') {
@@ -80,6 +82,9 @@ function onMessage(msg) {
     if (msg.joined ?? msg.count > 1) {
       addChat('', `${peer?.name || 'They'} joined`, 'system');
       sendProfile(true);
+    } else if (msg.dropped && msg.count < 2) {
+      // Lost connection, not leaving: keep their name, and the call if it's still connected.
+      addChat('', `${peer?.name ? `${peer.name}’s` : 'Their'} connection dropped`, 'system');
     } else {
       // With only two of you, it's them; anyone else (a third browser) is just "someone".
       addChat('', msg.count < 2 ? `${peer?.name || 'Your person'} left` : 'Someone left', 'system');
@@ -160,7 +165,7 @@ $('settings').addEventListener('toggle', () => $('settingsBtn').setAttribute('ar
 
 // ---- Welcome (not in a party yet) ----
 function renderWelcome() {
-  const show = !status.room && !$('settings').open && $('historyView').hidden;
+  const show = !status.room && !$('settings').open && $('historyView').hidden && $('listView').hidden;
   $('welcome').hidden = !show;
   document.body.classList.toggle('welcome', show);
 }
@@ -211,7 +216,7 @@ function showStatus(s) {
   if (s.room && s.room !== prev.room && document.activeElement !== $('room')) $('room').value = s.room;
   if (s.server && s.server !== prev.server && document.activeElement !== $('server')) $('server').value = s.server;
   $('status').textContent = !s.room ? 'Not connected'
-    : !s.connected ? 'Connecting…'
+    : !s.connected ? (s.retrying ? 'Connection lost. Reconnecting…' : 'Connecting…')
     : s.peers > 1 ? 'Together'
     : 'Waiting for them to join';
   $('status').dataset.state = !s.connected ? 'off' : s.peers > 1 ? 'live' : 'waiting';
@@ -538,6 +543,7 @@ function addChat(name, text, kind, avatar, vt, into = $('log')) {
 // ---- Past parties ----
 let openSession = null;
 function showHistory(on) {
+  if (on) showList(false);
   document.body.classList.toggle('show-history', on);
   $('historyView').hidden = !on;
   renderWelcome();
@@ -597,6 +603,83 @@ $('sessionDelete').onclick = () => {
 $('historyClear').onclick = () => {
   if (confirm('Delete all past parties? This can’t be undone.')) ask({ type: 'clear-sessions' }, listSessions);
 };
+
+// ---- Watchlist ----
+// Shared: what either of you saves shows up for both (the background keeps and syncs it).
+function showList(on) {
+  if (on) showHistory(false);
+  document.body.classList.toggle('show-list', on);
+  $('listView').hidden = !on;
+  $('listBtn').setAttribute('aria-pressed', String(on));
+  renderWelcome();
+  if (on) listItems();
+}
+$('listBtn').onclick = () => showList($('listView').hidden);
+$('listBack').onclick = () => showList(false);
+
+$('listSave').onclick = async () => {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }).catch(() => []);
+  if (!tab?.url?.startsWith('http')) return flashSave('Open a show first');
+  $('listSave').disabled = true;
+  ask({ type: 'watchlist-save', tabId: tab.id, by: myName() }, (r) => {
+    $('listSave').disabled = false;
+    flashSave(r?.ok ? 'Saved' : 'Couldn’t save');
+    listItems();
+  });
+};
+let saveTimer = null;
+function flashSave(text) {
+  $('listSave').textContent = text;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => ($('listSave').textContent = 'Save this tab'), 1600);
+}
+
+function siteName(url) {
+  try {
+    return new URL(url).hostname.replace(/^(www|m)\./, '');
+  } catch {
+    return '';
+  }
+}
+
+function listItems() {
+  ask({ type: 'watchlist' }, (items = []) => {
+    $('items').replaceChildren(...items.map((x) => {
+      const row = document.createElement('div');
+      row.className = 'item';
+      const thumb = document.createElement('span');
+      thumb.className = 'thumb';
+      if (/^https:\/\//.test(x.image || '')) thumb.style.backgroundImage = `url("${encodeURI(x.image)}")`;
+      else thumb.textContent = siteName(x.url).split('.')[0].slice(0, 10);
+      const text = document.createElement('span');
+      text.className = 'i-text';
+      const title = document.createElement('span');
+      title.className = 'i-title';
+      title.textContent = x.title || siteName(x.url);
+      title.title = x.title || x.url;
+      const meta = document.createElement('span');
+      meta.className = 'i-meta';
+      meta.textContent = `${siteName(x.url)} · saved by ${x.by === myName() ? 'you' : x.by || 'them'}`;
+      text.append(title, meta);
+      const watchBtn = document.createElement('button');
+      watchBtn.className = 'primary';
+      watchBtn.textContent = 'Watch';
+      watchBtn.title = status.connected ? 'Open it and bring them along' : 'Open it';
+      watchBtn.onclick = () => {
+        ask({ type: 'follow', url: x.url }, showStatus); // the show's tab goes there; they get "watching …"
+        showList(false);
+      };
+      const remove = document.createElement('button');
+      remove.className = 'i-remove';
+      remove.title = 'Remove from the watchlist (for both of you)';
+      remove.setAttribute('aria-label', 'Remove');
+      remove.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>'; // fixed markup
+      remove.onclick = () => ask({ type: 'watchlist-delete', id: x.id }, listItems);
+      row.append(thumb, text, watchBtn, remove);
+      return row;
+    }));
+  });
+}
 
 // ---- Emoji tray ----
 const QUICK_REACTIONS = '😂 😭 😍 😱 🔥 👏 ❤️ 💀';
@@ -795,6 +878,70 @@ $('micSelect').onchange = async () => {
   }
 };
 
+// ---- Call audio: their voice, and turning the show down while they talk ----
+let duckLevel = 0.5; // the show's volume while they talk, as a share of yours (0 = leave it alone)
+chrome.storage.local.get(['duckLevel', 'voiceVol']).then((saved) => {
+  if (typeof saved.duckLevel === 'number') duckLevel = saved.duckLevel;
+  $('duckSelect').value = String(duckLevel);
+  if (typeof saved.voiceVol === 'number') $('voiceVol').value = String(saved.voiceVol);
+  $('remote').volume = Number($('voiceVol').value);
+});
+$('duckSelect').onchange = () => {
+  duckLevel = Number($('duckSelect').value);
+  chrome.storage.local.set({ duckLevel });
+  if (!duckLevel) setDucked(false);
+};
+$('voiceVol').oninput = () => {
+  $('remote').volume = Number($('voiceVol').value);
+  chrome.storage.local.set({ voiceVol: Number($('voiceVol').value) });
+};
+
+// Listens to their side of the call: a few loud moments in a row = talking; a second or so of quiet = done.
+let voiceMeter = null; // { ctx, timer, track }
+let ducked = false;
+function watchTheirVoice() {
+  const track = remoteStream?.getAudioTracks()[0];
+  if (!track || voiceMeter?.track === track) return;
+  stopVoiceMeter();
+  try {
+    const ctx = new AudioContext();
+    ctx.resume?.();
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 1024;
+    ctx.createMediaStreamSource(new MediaStream([track])).connect(analyser); // only measured, not played again
+    const samples = new Float32Array(analyser.fftSize);
+    let loud = 0;
+    let lastLoud = 0;
+    const timer = setInterval(() => {
+      analyser.getFloatTimeDomainData(samples);
+      let sum = 0;
+      for (const x of samples) sum += x * x;
+      const now = Date.now();
+      loud = Math.sqrt(sum / samples.length) > 0.025 ? loud + 1 : 0;
+      if (loud >= 2) lastLoud = now;
+      setDucked(duckLevel > 0 && theirMicOn !== false && now - lastLoud < 1200);
+    }, 100);
+    voiceMeter = { ctx, timer, track };
+  } catch (e) {
+    console.warn('[watch-party] voice meter', e);
+  }
+}
+let duckRepeat = 0;
+function setDucked(on) {
+  // While on, repeat every second, so the show comes back up by itself if this sidebar goes away.
+  if (on === ducked && (!on || Date.now() - duckRepeat < 1000)) return;
+  ducked = on;
+  duckRepeat = Date.now();
+  send({ local: true, type: 'duck', on, level: duckLevel });
+}
+function stopVoiceMeter() {
+  if (!voiceMeter) return;
+  clearInterval(voiceMeter.timer);
+  voiceMeter.ctx.close().catch(() => {});
+  voiceMeter = null;
+  setDucked(false);
+}
+
 function signal(data) {
   send({ type: 'rtc', from: myId, name: myName(), ...data });
 }
@@ -820,6 +967,7 @@ function createPeer() {
   };
   pc.ontrack = ({ track }) => {
     remoteStream.addTrack(track);
+    if (track.kind === 'audio') watchTheirVoice();
     $('remote').srcObject = remoteStream;
     $('remote').play().catch(() => {});
     track.onunmute = render;
@@ -961,6 +1109,7 @@ function endCall(reason, notify = false) {
   if (incoming) stopRinging();
   if (notify) signal({ bye: true });
   stopAllRelays();
+  stopVoiceMeter();
   if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
   pc?.close();
   pc = null;

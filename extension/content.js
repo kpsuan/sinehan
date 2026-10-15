@@ -226,23 +226,38 @@ function onRemote(msg) {
   if (msg.type === 'connection') {
     if (!msg.up) {
       clearTheirHolds();
-      pauseFor('Connection lost. Paused until it’s back.');
+      connectionDropped('me');
     }
     return;
   }
   if (msg.type === 'peer') {
     const joined = msg.joined ?? msg.count > 1;
     if (joined) {
+      if (dropped === 'them' || dropResumeFresh()) return theyreBack();
       toast('They joined');
       sendState('state'); // bring the newcomer to where we are
     } else if (msg.count < 2) {
       clearTheirHolds(); // don't stay held for someone who left mid-ad
-      pauseFor('They left. Paused.');
+      if (msg.dropped) connectionDropped('them');
+      else pauseFor('They left. Paused.');
     }
     return;
   }
   if (msg.type === 'joined') {
-    toast(msg.count > 1 ? 'Connected. You’re both here.' : 'Connected. Waiting for them to join.');
+    if (dropped === 'me') {
+      netBar.hide();
+      if (msg.count > 1) {
+        // They stayed connected, so they count us both back in (or just line us up if it was paused).
+        dropped = null;
+        dropResume = null;
+        toast('Reconnected. Back in sync.');
+      } else {
+        dropped = 'them'; // they're gone too; whoever was here first counts us in when they're back
+        toast('Reconnected. Waiting for them.');
+      }
+    } else {
+      toast(msg.count > 1 ? 'Connected. You’re both here.' : 'Connected. Waiting for them to join.');
+    }
     if (msg.count > 1 && video) post({ type: 'sync-request' }); // (re)connected: line up with them
     return;
   }
@@ -569,41 +584,94 @@ function toggleBreak() {
   post({ local: true, type: 'break-state', active: myBreak });
 }
 
-let breakEl = null;
-let breakTick = null;
+const breakBar = topBar(16);
 function breakBanner(text, mine = false) {
-  clearInterval(breakTick);
-  breakEl?.remove();
-  breakEl = null;
-  if (!text) return;
-  ensureFont();
-  const started = Date.now();
-  breakEl = document.createElement('div');
-  breakEl.dataset.sinehan = '';
-  breakEl.style.cssText = 'position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:2147483647;display:flex;align-items:center;gap:12px;' +
-    'padding:9px 10px 9px 16px;border-radius:9px;background:rgba(22,18,30,.62);backdrop-filter:blur(18px) saturate(140%);color:#efeaf6;' +
-    `font:13px/1.4 ${FONT};box-shadow:0 8px 28px rgba(0,0,0,.35)`;
-  const label = document.createElement('span');
-  const clockEl = document.createElement('span');
-  clockEl.style.cssText = 'font-variant-numeric:tabular-nums;color:#b9b0c7';
-  breakEl.append(label, clockEl);
-  label.textContent = text;
-  if (mine) {
-    const back = document.createElement('button');
-    back.textContent = 'I’m back';
-    back.style.cssText = 'border:0;border-radius:7px;padding:6px 12px;background:#c9b6f2;color:#1b1325;font:inherit;font-weight:600;cursor:pointer';
-    back.onclick = () => myBreak && toggleBreak();
-    breakEl.append(back);
-  } else {
-    breakEl.style.paddingRight = '16px';
-  }
-  const tick = () => {
-    clockEl.textContent = clock((Date.now() - started) / 1000);
-    const host = document.fullscreenElement || document.body;
-    if (breakEl && breakEl.parentNode !== host) host.appendChild(breakEl); // follows into fullscreen
+  if (!text) return breakBar.hide();
+  breakBar.show(text, mine ? { label: 'I’m back', onClick: () => myBreak && toggleBreak() } : null);
+}
+
+// A bar at the top of the video with how long it's been (CR breaks, dropped connections).
+function topBar(top) {
+  let el = null;
+  let tick = null;
+  const hide = () => {
+    clearInterval(tick);
+    el?.remove();
+    el = null;
   };
-  tick();
-  breakTick = setInterval(tick, 1000);
+  const show = (text, action) => {
+    hide();
+    ensureFont();
+    const started = Date.now();
+    el = document.createElement('div');
+    el.dataset.sinehan = '';
+    el.style.cssText = `position:fixed;left:50%;top:${top}px;transform:translateX(-50%);z-index:2147483647;display:flex;align-items:center;gap:12px;` +
+      'padding:9px 10px 9px 16px;border-radius:9px;background:rgba(22,18,30,.62);backdrop-filter:blur(18px) saturate(140%);color:#efeaf6;' +
+      `font:13px/1.4 ${FONT};box-shadow:0 8px 28px rgba(0,0,0,.35)`;
+    const label = document.createElement('span');
+    const clockEl = document.createElement('span');
+    clockEl.style.cssText = 'font-variant-numeric:tabular-nums;color:#b9b0c7';
+    label.textContent = text;
+    el.append(label, clockEl);
+    if (action) {
+      const b = document.createElement('button');
+      b.textContent = action.label;
+      b.style.cssText = 'border:0;border-radius:7px;padding:6px 12px;background:#c9b6f2;color:#1b1325;font:inherit;font-weight:600;cursor:pointer';
+      b.onclick = action.onClick;
+      el.append(b);
+    } else {
+      el.style.paddingRight = '16px';
+    }
+    const update = () => {
+      clockEl.textContent = clock((Date.now() - started) / 1000);
+      const host = document.fullscreenElement || document.body;
+      if (el && el.parentNode !== host) host.appendChild(el); // follows into fullscreen
+    };
+    update();
+    tick = setInterval(update, 1000);
+  };
+  return { show, hide };
+}
+
+// ---- Dropped connections ----
+// Losing the connection (ours or theirs) pauses the show with a bar that stays until it's back. Then we
+// line up again, and if the show was playing, the one who stayed connected counts you both back in.
+const netBar = topBar(62);
+let dropped = null; // 'me' | 'them' while waiting for the connection to come back
+let dropResume = null; // { at } if the show was playing when it dropped
+let dropGiveUp = null;
+function connectionDropped(who) {
+  if (video && !dropped && !dropResume) dropResume = !video.paused || countingDown ? { at: Date.now() } : null;
+  dropped = who;
+  if (video && !video.paused) {
+    applied = { paused: true, time: video.currentTime, until: Date.now() + 1500 };
+    video.pause();
+  }
+  netBar.show(who === 'me' ? 'Connection lost. Reconnecting…' : 'Their connection dropped. Waiting for them…');
+  clearTimeout(dropGiveUp);
+  // They may not be coming back soon: stop the bar after two minutes (we still count you in if they do).
+  dropGiveUp = setTimeout(() => {
+    if (dropped !== 'them') return;
+    netBar.hide();
+    toast('They’re not back yet. Paused.');
+  }, 120000);
+}
+const dropResumeFresh = () => !!dropResume && Date.now() - dropResume.at < 10 * 60 * 1000;
+function theyreBack() {
+  const resume = dropResumeFresh();
+  dropped = null;
+  dropResume = null;
+  clearTimeout(dropGiveUp);
+  netBar.hide();
+  if (resume && video && !myAd) {
+    toast('They’re back');
+    const time = video.currentTime;
+    post({ type: 'countdown', time });
+    startCountdown(time);
+  } else {
+    toast('They’re back. Back in sync.');
+    sendState('state');
+  }
 }
 
 // The picture this page publishes for link previews, so invites can show the show.
@@ -673,6 +741,26 @@ function showInfo() {
   }
   return { image: pagePicture(), title: '' };
 }
+// Saving this page to the watchlist: its show name and picture (Netflix's looked up from the title page).
+if (window.top === window) {
+  chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
+    if (msg.type === 'toast') {
+      toast(msg.text);
+      return;
+    }
+    if (msg.type !== 'page-info') return;
+    const id = isNetflix && location.pathname.match(/^\/(?:watch|title)\/(\d+)/)?.[1];
+    const jbv = isNetflix && new URLSearchParams(location.search).get('jbv'); // a title opened over the browse page
+    const netflixId = id || (/^\d+$/.test(jbv || '') ? jbv : '');
+    if (!netflixId) {
+      reply({ title: '', image: pagePicture() });
+      return;
+    }
+    netflixLookup(netflixId).then((r) => reply({ title: r.title, image: r.image }), () => reply(null));
+    return true;
+  });
+}
+
 let reported = null;
 every(2000, () => {
   if (!isWatchTab || window.top !== window) return;
@@ -765,6 +853,8 @@ async function onLocal(msg) {
       post({ type: 'countdown', time });
       startCountdown(time);
     }
+  } else if (msg.type === 'duck') {
+    if (isWatchTab) duckShow(!!msg.on, Number(msg.level));
   } else if (msg.type === 'call-state') {
     overlay?.setCallState(msg);
   } else if (msg.type === 'cam-available') {
@@ -785,6 +875,49 @@ async function onLocal(msg) {
   } else if (msg.type === 'cam-bye') {
     closeCam();
   }
+}
+
+// ---- Turning the show down while they talk ----
+// The sidebar hears them on the call and says when to duck. We fade the show's own volume down and
+// back up, and leave it alone if you changed the volume yourself in the meantime. If the sidebar goes
+// quiet (closed mid-sentence), the volume comes back by itself.
+let duck = null; // { video, from } while turned down
+let volumeSet = null; // the last volume we set
+let rampTimer = null;
+let duckSafety = null;
+function duckShow(on, level) {
+  clearTimeout(duckSafety);
+  if (on && video) {
+    duckSafety = setTimeout(() => duckShow(false), 4000); // the sidebar repeats "on" while they talk
+    if (duck?.video === video) return;
+    if (!(level > 0 && level < 1)) return;
+    duck = { video, from: video.volume };
+    rampVolume(video, video.volume * level);
+  } else if (duck) {
+    const { video: v, from } = duck;
+    duck = null;
+    if (volumeSet == null || Math.abs(v.volume - volumeSet) < 0.02) rampVolume(v, from);
+  }
+}
+function rampVolume(v, to) {
+  clearInterval(rampTimer);
+  const from = v.volume;
+  volumeSet = from;
+  const steps = 8;
+  let i = 0;
+  rampTimer = setInterval(() => {
+    i += 1;
+    // You moved the volume yourself mid-fade: stop and keep yours.
+    if (volumeSet != null && Math.abs(v.volume - volumeSet) > 0.02) {
+      clearInterval(rampTimer);
+      duck = null;
+      volumeSet = null;
+      return;
+    }
+    volumeSet = Math.min(1, Math.max(0, from + ((to - from) * i) / steps));
+    v.volume = volumeSet;
+    if (i >= steps) clearInterval(rampTimer);
+  }, 35);
 }
 
 function closeCam() {

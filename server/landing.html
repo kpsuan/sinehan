@@ -156,8 +156,19 @@
     .end { padding: 140px 0 120px; text-align: center; }
     .end h2 { margin: 0 0 10px; font-size: clamp(34px, 4vw, 48px); }
     .end p { margin: 0 0 30px; color: var(--muted); font-size: 18px; }
-    footer { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 28px 0 48px; color: var(--faint); font-size: 14px; }
-    footer a:hover { color: var(--text); }
+    footer { margin-top: 20px; padding: 56px 0 40px; color: var(--muted); font-size: 14px; }
+    footer a:not(.pill):hover { color: var(--text); }
+    .f-top { display: grid; grid-template-columns: 1.2fr 2fr; gap: 48px; }
+    .f-brand { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+    .f-brand p { margin: 0; max-width: 22em; color: var(--muted); font-size: 15px; }
+    .f-brand .brand { color: var(--text); }
+    .f-cols { display: grid; align-items: start; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+    .f-cols div { display: flex; flex-direction: column; gap: 10px; }
+    .f-cols h3 { margin: 0 0 4px; color: var(--text); font-size: 13px; font-weight: 600; }
+    .f-cols span { color: var(--faint); }
+    .f-word { margin: 72px 0 0; font: 600 clamp(80px, 21vw, 300px)/.8 'Inter', system-ui, sans-serif; letter-spacing: -0.06em; text-align: center;
+      color: var(--panel-2); user-select: none; overflow: hidden; }
+    .f-bottom { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 28px; color: var(--faint); font-size: 13px; }
     .credits { flex-basis: 100%; margin: 6px 0 0; font-size: 12px; color: var(--faint); }
     .credits a { text-decoration: underline; text-decoration-color: rgba(255, 255, 255, .2); }
 
@@ -240,6 +251,9 @@
       .row { grid-template-columns: 1fr; gap: 14px; padding-top: 88px; }
       .row .tag { justify-self: start; }
       .pair, .steps { grid-template-columns: 1fr; }
+      .f-top { grid-template-columns: 1fr; gap: 36px; }
+      .f-cols { grid-template-columns: repeat(2, 1fr); }
+      .f-word { margin-top: 48px; }
       .phones { gap: 16px; padding: 24px 12px; }
       .couch-frame { min-height: 300px; }
       .mini-phone { position: relative; right: auto; bottom: auto; margin: -60px auto 20px; }
@@ -257,6 +271,7 @@
         <a class="brand" href="/"><img src="/static/logo.png" alt="" />Sinehan</a>
         <div class="nav-links">
           <a class="hide-sm" href="#how">How it works</a>
+          <a class="hide-sm" href="#private">Privacy</a>
           <a class="hide-sm" href="#install">Install</a>
           <a class="pill light" href="/download">Download</a>
         </div>
@@ -382,6 +397,19 @@
       </div>
     </section>
 
+    <section id="private">
+      <div class="row">
+        <h2 class="display">Just the two of you<br /><span>no accounts, nothing tracked.</span></h2>
+        <p>No sign-up, no email, no location. You pick <b>a name and a picture</b>, and they stay in your browser.</p>
+        <span class="tag">Private</span>
+      </div>
+      <div class="steps">
+        <div class="step"><span class="n">No account</span><b>A name and a link.</b> That's all it takes to start or join. Nothing to sign up for, no password to forget.</div>
+        <div class="step"><span class="n">No location</span><b>Nobody sees where you are.</b> Sinehan never asks for your location or contacts, and there's no ad profile.</div>
+        <div class="step"><span class="n">Nothing kept</span><b>Your chat stays on your laptop.</b> The server only passes messages between you two and keeps none of them. Calls go straight from one browser to the other.</div>
+      </div>
+    </section>
+
     <section id="install">
       <div class="row">
         <h2 class="display">Set up in a minute<br /><span>no account needed.</span></h2>
@@ -402,8 +430,41 @@
     </section>
 
     <footer>
-      <span>Sinehan · sinehan.live</span>
-      <a href="/download">Download</a>
+      <div class="f-top">
+        <div class="f-brand">
+          <a class="brand" href="/"><img src="/static/logo.png" alt="" />sinehan</a>
+          <p>A movie theater for two. Same show, same second, from two places.</p>
+          <a class="pill light" href="/download">Download for Chrome</a>
+        </div>
+        <div class="f-cols" role="navigation" aria-label="Footer">
+          <div>
+            <h3>Product</h3>
+            <a href="#how">How it works</a>
+            <a href="#phone-row">Phone remote</a>
+            <a href="#private">Privacy</a>
+            <a href="#install">Install</a>
+          </div>
+          <div>
+            <h3>Works with</h3>
+            <span>YouTube</span>
+            <span>Netflix</span>
+            <span>Prime Video</span>
+            <span>HBO Max</span>
+            <span>Crunchyroll</span>
+          </div>
+          <div>
+            <h3>Get it</h3>
+            <a href="/download">Download the zip</a>
+            <a href="/party">Phone companion</a>
+            <span>Chrome and Edge</span>
+          </div>
+        </div>
+      </div>
+      <div class="f-word" aria-hidden="true">sinehan</div>
+      <div class="f-bottom">
+        <span>© 2026 sinehan · made for long-distance movie nights</span>
+        <span>No accounts. No tracking.</span>
+      </div>
       <p class="credits">Film stills from Blender open movies: <a href="https://mango.blender.org">Tears of Steel</a> and <a href="https://durian.blender.org">Sintel</a> (CC BY 3.0), <a href="https://gooseberry.blender.org">Cosmos Laundromat</a> (CC BY-SA 4.0), © Blender Foundation. Cropped and compressed.</p>
     </footer>
   </div>

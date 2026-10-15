@@ -131,10 +131,19 @@ wss.on('connection', (ws) => {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
 
-    if (msg.type === 'ping') return;
+    // The answer lets the extension notice a connection that died without closing (it reconnects).
+    if (msg.type === 'ping') return send(ws, { type: 'pong' });
+
+    // Leaving on purpose, so the other side hears "left" rather than "connection dropped".
+    if (msg.type === 'leave') {
+      ws.leftOnPurpose = true;
+      return leave();
+    }
 
     if (msg.type === 'join') {
+      ws.leftOnPurpose = true; // switching rooms counts as leaving the old one
       leave();
+      ws.leftOnPurpose = false;
       room = String(msg.room).slice(0, 64);
       // A phone companion (chat + remote) doesn't count as a person watching, and comes and goes quietly.
       ws.companion = msg.companion === true;
@@ -156,7 +165,7 @@ wss.on('connection', (ws) => {
     const members = rooms.get(room);
     members.delete(ws);
     if (!members.size) rooms.delete(room);
-    else if (!ws.companion) broadcast(room, null, { type: 'peer', count: watchers(room), joined: false });
+    else if (!ws.companion) broadcast(room, null, { type: 'peer', count: watchers(room), joined: false, dropped: !ws.leftOnPurpose });
     room = null;
   }
 });
