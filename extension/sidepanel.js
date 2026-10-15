@@ -186,6 +186,7 @@ $('disconnect').onclick = async () => {
   peer = null;
   askedPeer = false;
   renderProfiles();
+  $('room').value = ''; // the next party gets a new room
   document.body.classList.add('just-left');
   setTimeout(() => document.body.classList.remove('just-left'), 700);
   $('settings').open = false; // back to the welcome screen
@@ -193,6 +194,24 @@ $('disconnect').onclick = async () => {
   button.disabled = $('connect').disabled = false;
   leaving = false;
 };
+
+// A different party: its own chat (the old one is in Past parties), no one else here yet.
+function startFresh() {
+  $('log').replaceChildren();
+  seenChat.clear();
+  theirShow = null;
+  peer = null;
+  askedPeer = false;
+  renderProfiles();
+  // After the background has filed the old chat away, show whatever this party already has.
+  setTimeout(() => ask({ type: 'history' }, (history = []) => {
+    for (const m of history) {
+      if (m.id && seenChat.has(m.id)) continue;
+      if (m.id) seenChat.add(m.id);
+      addChat(m.name, m.text, m.mine ? 'me' : 'them', m.avatar, m.vt, $('log'), m.guide);
+    }
+  }), 400);
+}
 
 // Gear icon in the header shows/hides the settings section.
 $('settingsBtn').onclick = () => ($('settings').open = !$('settings').open);
@@ -249,6 +268,8 @@ function showStatus(s) {
   // An invite link may have connected us to a different room/server — reflect it.
   // Only when the connection itself changed — never overwrite what someone is typing or just typed.
   if (s.room && s.room !== prev.room && document.activeElement !== $('room')) $('room').value = s.room;
+  // Straight from one party into another (an invite link while the sidebar is open): start this one fresh.
+  if (s.room && prev.room && s.room !== prev.room) startFresh();
   if (s.server && s.server !== prev.server && document.activeElement !== $('server')) $('server').value = s.server;
   $('status').textContent = !s.room ? 'Not connected'
     : !s.connected ? (s.retrying ? 'Connection lost. Reconnecting…' : 'Connecting…')
@@ -289,8 +310,9 @@ $('invite').onclick = async () => {
     $('server').focus();
     return;
   }
-  let room = $('room').value.trim();
-  if (!room) room = $('room').value = newRoomId();
+  // In a party: invite to it. Otherwise always a brand-new room, never one left over from an old party
+  // (its chat would carry over, and the old partner's link would still work).
+  const room = status.room || ($('room').value = newRoomId());
   if (!status.connected || status.room !== room) {
     ask({ type: 'connect', server, room }, showStatus);
   }
