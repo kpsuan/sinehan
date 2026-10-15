@@ -266,6 +266,9 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     check('pause on A pauses on B', await until(async () => (await vstate(vB)).paused));
     await vA.evaluate(() => { document.getElementById('v').currentTime = 42; });
     check('seek on A seeks B', await until(async () => Math.abs((await vstate(vB)).t - 42) < 1.5), JSON.stringify(await vstate(vB)));
+    check('their chat says who paused and where', await until(async () => (await logLines(pB)).some((l) => /paused at \d+:\d\d/.test(l.text))), JSON.stringify((await logLines(pB)).slice(-3)));
+    check('…and that they jumped', await until(async () => (await logLines(pB)).some((l) => /jumped to 0:4[12]/.test(l.text))));
+    check('your own chat shows it too', await until(async () => (await logLines(pA)).some((l) => /^You (paused|jumped)/.test(l.text))));
     await vB.evaluate(() => document.getElementById('v').play());
     check('play on B plays on A (both directions)', await until(async () => !(await vstate(vA)).paused));
     await vB.evaluate(() => document.getElementById('v').pause());
@@ -513,6 +516,8 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     section('Watch tab & watching together');
     const watchTitle = (p) => p.$eval('#watchTitle', (e) => (e.classList.contains('none') ? '' : e.textContent));
     check('each side picked its show tab', await until(async () => (await watchTitle(pA)) && (await watchTitle(pB2))));
+    await sleep(3500);
+    check('a show tab that syncs shows no refresh notice', await pA.$eval('#staleBar', (b) => b.hidden) && await pA.evaluate(() => status.watchLive === true));
 
     // A second tab with a video can't control anything, and isn't controlled.
     await vA.evaluate(() => document.getElementById('v').pause());
@@ -596,6 +601,12 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     await gp.reload();
     check('the page remembers ticks on that device', await until(() => gp.$$eval('.ep', (r) => r[1]?.classList.contains('done'))));
     await gp.close();
+    // Add your own episode: it lands in order and shows up on their side.
+    await pA.evaluate(() => { Reddit.episodeGuide = async () => null; });
+    await pA.fill('#guideAdd', 'S1E5');
+    await pA.click('.g-add button');
+    check('you can add an episode yourself', await until(async () => (await pA.$$eval('.g-ep', (r) => r.length)) === 4));
+    check('…and it shows up on their side', await until(async () => (await pB2.$$eval('.g-ep', (r) => r.length)) === 4));
     await pB2.click('.g-back');
     check('their saved guides list it', await until(async () => (await pB2.$$eval('.g-saved .t-title', (t) => t.map((x) => x.textContent))).includes('Test Show · The Arc')),
       await pB2.evaluate(() => `mode=${episodesMode} open=${!!openGuide} results=${$('bestResults').textContent.slice(0, 160)}`));

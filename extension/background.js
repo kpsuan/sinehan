@@ -69,6 +69,10 @@ chrome.runtime.onConnect.addListener((port) => {
     if (fromTab && !fromWatchTab && msg.type !== 'chat') return;
 
     if (msg.type === 'goodnight' && fromWatchTab) saveSpot(msg);
+    // Your own play / pause / jump, for the sidebar's chat (theirs arrive from the relay).
+    if (fromWatchTab && ['play', 'pause', 'seeked'].includes(msg.type)) {
+      for (const p of ports) if (p.name === 'panel') postTo(p, { type: 'playback', action: msg.type, time: msg.time, mine: true });
+    }
     if (msg.type === 'chat') {
       remember({ ...msg, mine: true });
       // Keep this browser's other chat views in step (sidebar ↔ fullscreen chat).
@@ -160,7 +164,8 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   } else if (msg.type === 'guide-save') {
     const guide = cleanGuide(msg.guide);
     if (!guide) return reply(null);
-    saveGuides([guide], true).then(() => readGuides()).then((list) => reply(list.find((g) => g.id === guide.id) || null));
+    if (status.connected && status.room) guide.room = status.room;
+    saveGuides([guide], !!guide.room && guide.room === status.room).then(() => readGuides()).then((list) => reply(list.find((g) => g.id === guide.id) || null));
     return true;
   } else if (msg.type === 'guide-tick') {
     const tick = { id: String(msg.id || ''), key: String(msg.key || ''), v: !!msg.v, at: Date.now() };
@@ -192,6 +197,10 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   } else if (msg.type === 'resume-dismiss') {
     chrome.storage.local.remove('resume').then(() => reply(true));
     return true;
+  } else if (msg.type === 'refresh-watch') {
+    if (watch) chrome.tabs.reload(watch.tabId).catch(() => {});
+    reply(true);
+    return;
   } else if (msg.type === 'set-watch') {
     setWatchTab(msg.tabId, true).then(() => reply(statusView()));
     return true;
@@ -203,7 +212,10 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 });
 
 function statusView() {
-  return { ...status, retrying, watch, pos: lastPos };
+  // watchLive: the show's tab is running our page script. It isn't in tabs that were open before the
+  // extension was reloaded or updated, until they're refreshed.
+  const watchLive = !!watch && [...ports].some((p) => p.name === 'party' && p.tabId === watch.tabId);
+  return { ...status, retrying, watch, watchLive, pos: lastPos };
 }
 
 function joinRoom(server, room) {
@@ -261,6 +273,7 @@ function cleanGuide(g) {
     id: str(g.id, 200),
     show: str(g.show, 100),
     topic: str(g.topic, 100),
+    room: str(g.room, 64), // the party it was saved in: it only syncs there
     wiki: /^[a-z0-9-]+(\.[a-z0-9-]+)*\.fandom\.com$/.test(g.wiki || '') ? g.wiki : '',
     by: str(g.by, 30),
     at: Number(g.at) || Date.now(),
@@ -269,6 +282,7 @@ function cleanGuide(g) {
       kind: str(e.kind, 20), order: Number(e.order) || 0,
       reason: str(e.reason, 160), pasted: !!e.pasted, guides: Number(e.guides) || 0, comments: Number(e.comments) || 0, summary: !!e.summary, summaryTerm: str(e.summaryTerm, 40), fandom: !!e.fandom,
       url: /^https:\/\//.test(e.url || '') ? str(e.url, 400) : '',
+      added: !!e.added,
     })).filter((e) => GUIDE_KEY.test(e.key)),
     threads: (Array.isArray(g.threads) ? g.threads : []).slice(0, 6).map((t) => ({
       title: str(t.title, 200), sub: str(t.sub, 60), upvotes: Number(t.upvotes) || 0, url: /^https:\/\//.test(t.url || '') ? str(t.url, 400) : '', pasted: !!t.pasted,
@@ -281,7 +295,7 @@ function mergeGuide(mine, theirs) {
   const newer = theirs.at > mine.at ? theirs : mine;
   const done = { ...mine.done };
   for (const [k, t] of Object.entries(theirs.done)) if (!done[k] || t.at > done[k].at) done[k] = t;
-  return { ...newer, done };
+  return { ...newer, room: mine.room || theirs.room, done };
 }
 function guideSummary(g) {
   return { id: g.id, show: g.show, topic: g.topic, by: g.by, at: g.at, count: g.episodes.length,
@@ -306,6 +320,7 @@ function saveGuides(incoming, share, from = null) {
       panels({ type: 'guides-changed', added });
       // One guide per message keeps each well under the relay's size limit.
       if (share) for (const g of incoming) send({ type: 'guide-sync', guide: list.find((x) => x.id === g.id) || g });
+      if (share) send({ type: 'guide-channels', ids: incoming.map((g) => g.id) });
     })
     .catch(console.error);
   return guidesWrite;
@@ -320,13 +335,19 @@ function tickGuide(tick, share) {
       if (!g.done[tick.key] || tick.at >= g.done[tick.key].at) g.done[tick.key] = { v: tick.v, at: tick.at };
       await chrome.storage.local.set({ guides: list });
       panels({ type: 'guides-changed', added: [], id: tick.id });
-      if (share) send({ type: 'guide-tick', ...tick });
+      // Only into the party it belongs to.
+      if (share && g.room && g.room === status.room) send({ type: 'guide-tick', ...tick });
     })
     .catch(console.error);
   return guidesWrite;
 }
+// When you're both here: catch each other up on this party's guides (never other parties').
 function shareGuides() {
-  guidesWrite.then(readGuides).then((list) => list.forEach((g) => send({ type: 'guide-sync', guide: g })));
+  guidesWrite.then(readGuides).then((list) => {
+    const mine = list.filter((g) => g.room && g.room === status.room);
+    mine.forEach((g) => send({ type: 'guide-sync', guide: g }));
+    if (mine.length) send({ type: 'guide-channels', ids: mine.map((g) => g.id) });
+  });
 }
 
 // ---- Stop for tonight ----
@@ -530,9 +551,19 @@ function connect(server, room) {
     if (msg.type === 'rtc') onCallSignal(msg);
     if (msg.type === 'goodnight') saveSpot(msg);
     if ((msg.type === 'joined' && msg.count > 1) || (msg.type === 'peer' && msg.joined)) shareGuides();
+    // Tell the relay about this party's guides, so their pages can sync even before anyone ticks.
+    if (msg.type === 'joined') {
+      guidesWrite.then(readGuides).then((list) => {
+        const ids = list.filter((g) => g.room === status.room).map((g) => g.id);
+        if (ids.length) send({ type: 'guide-channels', ids });
+      });
+    }
     if (msg.type === 'guide-sync') {
       const g = cleanGuide(msg.guide);
-      if (g) saveGuides([g], false, 'them');
+      if (g) {
+        g.room = status.room; // sent within this party
+        saveGuides([g], false, 'them');
+      }
     }
     if (msg.type === 'guide-tick') tickGuide({ id: str(msg.id, 200), key: str(msg.key, 104), v: !!msg.v, at: Number(msg.at) || Date.now() }, false);
     if (msg.type === 'chat') {

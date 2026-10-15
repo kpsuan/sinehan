@@ -115,6 +115,10 @@ function onMessage(msg) {
         }
       });
     }
+  } else if (msg.type === 'play' || msg.type === 'pause' || msg.type === 'seeked') {
+    playbackLine(peer?.name || 'They', msg.type, msg.time);
+  } else if (msg.type === 'playback') {
+    playbackLine('You', msg.action, msg.time);
   } else if (msg.type === 'goodnight') {
     addChat('', `${msg.name || peer?.name || 'They'} stopped for tonight${typeof msg.time === 'number' ? ` at ${clock(msg.time)}` : ''}`, 'system');
     setTimeout(loadResume, 400);
@@ -505,7 +509,23 @@ function showKey(url) {
   }
 }
 
+// The show's tab without our page script (open since before an extension reload): offer a refresh.
+// Only after a few seconds, so a tab that's just loading doesn't flash it.
+let staleSince = 0;
+function renderStale() {
+  const stale = status.connected && status.watch && status.watchLive === false;
+  if (!stale) staleSince = 0;
+  else if (!staleSince) staleSince = Date.now();
+  $('staleBar').hidden = !(stale && Date.now() - staleSince > 3000);
+}
+$('staleGo').onclick = () => {
+  ask({ type: 'refresh-watch' });
+  staleSince = Date.now();
+  $('staleBar').hidden = true;
+};
+
 async function renderWatch() {
+  renderStale();
   const w = status.watch;
   if (!status.connected) {
     // Not in a party: nothing to show, and no need to keep checking tabs.
@@ -621,6 +641,25 @@ function renderBreak() {
   $('breakBtn').classList.toggle('on', onBreak);
   $('breakLabel').textContent = onBreak ? 'I’m back' : 'Break';
   $('breakBtn').title = onBreak ? 'End your break: count down 3-2-1 and play' : 'CR break: pause for both of you';
+}
+
+// ---- Who paused, played or jumped, in the chat ----
+// "sapi paused at 12:34". Quick repeats by the same person (a few seeks while scrubbing) update one line.
+let lastPlayback = null; // { who, el, at }
+function playbackLine(who, action, time) {
+  if (typeof time !== 'number' || !Number.isFinite(time)) return;
+  const at = clock(time);
+  const text = action === 'pause' ? `${who} paused at ${at}` : action === 'play' ? `${who} pressed play at ${at}` : `${who} jumped to ${at}`;
+  const log = $('log');
+  // Only jumps merge (scrubbing through a scene); a pause or play always gets its own line.
+  if (action === 'seeked' && lastPlayback?.action === 'seeked' && lastPlayback.who === who && Date.now() - lastPlayback.at < 4000 && lastPlayback.el === log.lastElementChild) {
+    lastPlayback.el.textContent = text;
+    lastPlayback.at = Date.now();
+    return;
+  }
+  addChat('', text, 'system');
+  log.lastElementChild.classList.add('playback');
+  lastPlayback = { who, action, el: log.lastElementChild, at: Date.now() };
 }
 
 // ---- Chat ----
@@ -1010,7 +1049,13 @@ async function guidePageLink(g) {
     f: g.wiki || '', // the fan wiki, so the page can link each episode to its page
   };
   const server = ($('server').value.trim() || DEFAULT_SERVER).replace(/\/+$/, '');
-  if (g.saved && status.connected && status.room) Object.assign(data, { r: status.room, w: server });
+  // Live ticks with this party: a code made from the room and the guide (the relay matches it up). The
+  // room itself never goes in the link, so the link can't be used to read your party.
+  if (g.saved && g.room && g.room === status.room && status.connected) {
+    const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${g.room}|${g.id}`));
+    const channel = [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 24);
+    Object.assign(data, { c: channel, w: server });
+  }
   const squeezed = new Blob([JSON.stringify(data)]).stream().pipeThrough(new CompressionStream('deflate-raw'));
   const bytes = new Uint8Array(await new Response(squeezed).arrayBuffer());
   let bin = '';
@@ -1035,6 +1080,43 @@ $('bestClear').onclick = () => {
 };
 for (const id of ['bestQuery', 'guideTopic', 'guideLink']) $(id).addEventListener('input', updateClear);
 new MutationObserver(updateClear).observe($('bestResults'), { childList: true });
+
+// Add an episode (or, in a franchise, a title) you typed. Looks it up in the show's episode list.
+async function addToGuide(g, text) {
+  const franchise = g.franchise || g.episodes.some((e) => e.kind);
+  let entry = null;
+  if (franchise) {
+    const title = text.slice(0, 120);
+    entry = { key: `T:${norm(title).slice(0, 100)}`, kind: /\bseries|season\b/i.test(title) ? 'Series' : 'Films', season: 0, number: 0, label: 'Film', title };
+  } else {
+    const guide = await Reddit.episodeGuide(g.show).catch(() => null);
+    let key = [...Reddit.episodesIn(text).keys()].find((k) => /^S\d+E\d+$/.test(k));
+    if (!key && guide) key = Reddit.titleIn(text, guide) || guide.eps.find((e) => norm(e.name) === norm(text))?.key;
+    // "episode 5" in a one-season show
+    if (!key && guide?.seasons === 1) key = [...Reddit.episodesIn(text).keys()].map((k) => k.replace(/^E/, 'S1E')).find((k) => /^S1E\d+$/.test(k));
+    if (!key) return { ok: false, message: 'Couldn’t tell which episode. Try S2E5, or its exact title.' };
+    if (guide && !guide.byKey.has(key)) return { ok: false, message: `${key.replace(/^S(\d+)E(\d+)$/, 'S$1 E$2')} isn’t in ${g.show}’s episode list.` };
+    const [, s, n] = key.match(/^S(\d+)E(\d+)$/);
+    entry = { key, season: Number(s), number: Number(n), label: `S${s} E${n}`, title: guide?.byKey.get(key)?.name || '' };
+  }
+  if (g.episodes.some((e) => e.key === entry.key)) return { ok: false, message: `${entry.title || entry.label} is already in this guide.` };
+  const episodes = [...g.episodes, { ...entry, reason: '', pasted: false, guides: 0, comments: 0, summary: false, fandom: false, url: '', added: true }]
+    .sort((a, b) => (a.kind || b.kind ? 0 : a.season - b.season || a.number - b.number));
+  const name = entry.title ? `${entry.label === 'Film' ? '' : `${entry.label} · `}${entry.title}` : entry.label;
+  if (g.saved) {
+    // Saved: keep it, and it shows up on their side too.
+    const { problems, saved, shown, ...rest } = g;
+    const stored = await askP({ type: 'guide-save', guide: { ...rest, episodes, at: Date.now() } });
+    if (stored && openGuide === g) {
+      openGuide = { ...stored, saved: true, problems: g.problems, shown: true };
+      renderGuide(openGuide);
+    }
+  } else {
+    g.episodes = episodes;
+    renderGuide(g);
+  }
+  return { ok: true, message: `Added ${name}.` };
+}
 
 // Save (and send to them) or, once saved, post its card in chat again.
 async function saveGuide(g) {
@@ -1168,6 +1250,7 @@ async function renderGuide(g, fresh = false) {
     if (!e.guides && e.comments) chip(`Suggested in ${e.comments} comments`);
     if (e.summary) chip(`Summary mentions ${e.summaryTerm || g.topic}`);
     if (e.fandom) chip('Fandom wiki');
+    if (e.added) chip('Added by you', true);
     body.append(src);
     row.append(box, body);
     // Tick it off as you watch; the list remembers.
@@ -1188,6 +1271,28 @@ async function renderGuide(g, fresh = false) {
     out.push(row);
     if (e === next) nextRow = row;
   }
+
+  // Add your own: "S2E5", "2x05", "season 2 episode 5", or its title (a film or series in a franchise).
+  const add = document.createElement('form');
+  add.className = 'g-add';
+  const addInput = Object.assign(document.createElement('input'), { id: 'guideAdd', maxLength: 100, autocomplete: 'off',
+    placeholder: g.franchise || g.episodes.some((e) => e.kind) ? 'Add a film or series by its title' : 'Add an episode: S2E5, 2x05 or its title' });
+  const addBtn = Object.assign(document.createElement('button'), { type: 'submit', textContent: 'Add' });
+  const addNote = Object.assign(document.createElement('p'), { className: 'g-add-note' });
+  addNote.hidden = true;
+  add.append(addInput, addBtn, addNote);
+  add.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const text = addInput.value.trim();
+    if (!text) return;
+    addBtn.disabled = true;
+    const result = await addToGuide(g, text);
+    addBtn.disabled = false;
+    if (result.ok) addInput.value = '';
+    addNote.textContent = result.message;
+    addNote.hidden = false;
+  };
+  out.push(add);
 
   if (g.threads.length) {
     const box = document.createElement('div');

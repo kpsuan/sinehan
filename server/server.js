@@ -2,6 +2,7 @@
 const fs = require('fs');
 const http = require('http');
 const path = require('path');
+const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 
 const PORT = process.env.PORT || 8080;
@@ -130,6 +131,22 @@ const BURST = 120; // messages a connection may send at once (a call setup sends
 const PER_SECOND = 40; // ...refilled at this rate; beyond it, messages are dropped
 const wss = new WebSocketServer({ server, maxPayload: MAX_MESSAGE });
 
+// ---- Guide pages ----
+// A watch guide opened as a page (any device) syncs its ticks through a "guide channel": a code made
+// from the party's room and the guide, which can't be turned back into the room. The page joins only
+// that channel and can only send ticks for that guide; it never sees the party's chat.
+const guideChannel = (room, id) => crypto.createHash('sha256').update(`${room}|${id}`).digest('hex').slice(0, 24);
+const channelSockets = new Map(); // channel -> Set<ws> (guide pages)
+const channelRoom = new Map(); // channel -> room (learned when the party's sidebars mention the guide)
+function learnChannel(room, id) {
+  if (!id) return null;
+  const ch = guideChannel(room, String(id).slice(0, 200));
+  channelRoom.delete(ch);
+  channelRoom.set(ch, room);
+  if (channelRoom.size > 5000) channelRoom.delete(channelRoom.keys().next().value);
+  return ch;
+}
+
 // Notice dropped connections quickly (closed laptop, lost Wi-Fi) so the other side can pause:
 // every 10s we ping; anyone who didn't answer the previous ping is dropped.
 setInterval(() => {
@@ -195,10 +212,49 @@ wss.on('connection', (ws) => {
       return;
     }
 
+    // A guide page: ticks for its guide only, passed to the party and to other pages of the same guide.
+    if (msg.type === 'guide-join') {
+      leave();
+      leaveChannel();
+      ws.channel = /^[0-9a-f]{24}$/.test(msg.channel || '') ? msg.channel : null;
+      if (!ws.channel) return;
+      if (!channelSockets.has(ws.channel)) channelSockets.set(ws.channel, new Set());
+      channelSockets.get(ws.channel).add(ws);
+      return;
+    }
+    if (ws.channel) {
+      if (msg.type !== 'guide-tick') return;
+      const tick = { type: 'guide-tick', id: String(msg.id || '').slice(0, 200), key: String(msg.key || '').slice(0, 104), v: !!msg.v, at: Number(msg.at) || Date.now() };
+      const partyRoom = channelRoom.get(ws.channel);
+      if (partyRoom && guideChannel(partyRoom, tick.id) === ws.channel) broadcast(partyRoom, null, tick);
+      for (const page of channelSockets.get(ws.channel) || []) if (page !== ws) send(page, tick);
+      return;
+    }
+
+    // The party's own guide messages also reach any open pages of that guide.
+    if (room && (msg.type === 'guide-tick' || msg.type === 'guide-sync')) {
+      const ch = learnChannel(room, msg.type === 'guide-tick' ? msg.id : msg.guide?.id);
+      for (const page of channelSockets.get(ch) || []) send(page, msg);
+    }
+    if (room && msg.type === 'guide-channels') {
+      for (const id of (Array.isArray(msg.ids) ? msg.ids : []).slice(0, 50)) learnChannel(room, id);
+      return;
+    }
+
     if (room) broadcast(room, ws, msg);
   });
 
-  ws.on('close', leave);
+  ws.on('close', () => {
+    leave();
+    leaveChannel();
+  });
+  function leaveChannel() {
+    if (!ws.channel) return;
+    const pages = channelSockets.get(ws.channel);
+    pages?.delete(ws);
+    if (pages && !pages.size) channelSockets.delete(ws.channel);
+    ws.channel = null;
+  }
 
   function leave() {
     if (!room) return;

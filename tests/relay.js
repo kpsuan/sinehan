@@ -72,6 +72,26 @@ const closed = (ws) => new Promise((r) => (ws.readyState === WebSocket.CLOSED ? 
     await sleep(200);
     check('…and does not receive the room’s messages', !late.got.some((m) => m.type === 'chat'));
 
+    // A guide page joins a guide channel: it gets ticks for that guide, never the party's chat.
+    const crypto = require('crypto');
+    const p1 = await client('guides-1');
+    const p2 = await client('guides-1');
+    await sleep(200);
+    p1.send(JSON.stringify({ type: 'guide-channels', ids: ['show|arc'] }));
+    const page = await client(null);
+    page.send(JSON.stringify({ type: 'guide-join', channel: crypto.createHash('sha256').update('guides-1|show|arc').digest('hex').slice(0, 24) }));
+    await sleep(200);
+    p1.send(JSON.stringify({ type: 'chat', text: 'private' }));
+    p1.send(JSON.stringify({ type: 'guide-tick', id: 'show|arc', key: 'S1E1', v: true, at: 1 }));
+    await sleep(300);
+    check('a guide page gets ticks for its guide', page.got.some((m) => m.type === 'guide-tick' && m.key === 'S1E1'));
+    check('…but never the party’s chat', !page.got.some((m) => m.type === 'chat'));
+    page.send(JSON.stringify({ type: 'guide-tick', id: 'show|arc', key: 'S1E2', v: true, at: 2 }));
+    page.send(JSON.stringify({ type: 'chat', text: 'sneaky' }));
+    await sleep(300);
+    check('ticks from the page reach the party', p2.got.some((m) => m.type === 'guide-tick' && m.key === 'S1E2'));
+    check('…and nothing else from it does', !p2.got.some((m) => m.text === 'sneaky'));
+
     // Pings are answered (the extension uses this to notice dead connections).
     a.send(JSON.stringify({ type: 'ping' }));
     await sleep(200);

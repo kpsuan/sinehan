@@ -470,10 +470,11 @@
         if (ws?.readyState === 1) ws.send(JSON.stringify({ type: 'guide-tick', id, key, v, at: t.at }));
       }
       function connect() {
-        if (!g.r || !/^wss?:\/\//.test(g.w || '')) return;
+        // Only links made for a party carry a guide channel (never the party's room).
+        if (!/^[0-9a-f]{24}$/.test(g.c || '') || !/^wss?:\/\//.test(g.w || '')) return;
         ws = new WebSocket(g.w);
         ws.onopen = () => {
-          ws.send(JSON.stringify({ type: 'join', room: String(g.r).slice(0, 64), companion: true }));
+          ws.send(JSON.stringify({ type: 'guide-join', channel: g.c }));
           $('sync').textContent = 'Syncing with your party';
           $('sync').classList.add('live');
         };

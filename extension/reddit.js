@@ -905,7 +905,7 @@
     return t.replace(/^[\s\-–—:|,.*!]+/, '').trim();
   }
 
-  const api = { cleanReason, bestEpisodes, watchGuide, listedIn, threadPath, findWiki, fandomTopic, episodesNamed, listsIn, titlesIn, sameShow, episodesIn, rank, label, snippet, makeGuide, wikiSummaries, describedIn, titleIn, stems, searchUrl: (show) => `https://www.reddit.com/search/?q=${encodeURIComponent(`${show} best episodes`)}` };
+  const api = { episodeGuide, cleanReason, bestEpisodes, watchGuide, listedIn, threadPath, findWiki, fandomTopic, episodesNamed, listsIn, titlesIn, sameShow, episodesIn, rank, label, snippet, makeGuide, wikiSummaries, describedIn, titleIn, stems, searchUrl: (show) => `https://www.reddit.com/search/?q=${encodeURIComponent(`${show} best episodes`)}` };
   if (typeof module !== 'undefined') module.exports = api;
   else self.Reddit = api;
 })();
