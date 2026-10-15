@@ -58,7 +58,9 @@ chrome.runtime.onConnect.addListener((port) => {
     if (msg.type === 'meta') {
       // The show's link-preview picture, for invite pages.
       if (fromWatchTab && watch) {
-        watch.image = /^https:\/\//.test(msg.image || '') && msg.image.length < 600 ? msg.image : '';
+        const pic = (x) => (/^https:\/\//.test(x || '') && x.length < 600 ? x : '');
+        watch.image = pic(msg.image);
+        watch.fallbackImage = pic(msg.fallbackImage); // the page's biggest image, if it publishes none
         watch.showTitle = String(msg.title || '').slice(0, 120); // e.g. Netflix's real show name
       }
       return;

@@ -284,9 +284,14 @@ $('invite').onclick = async () => {
   let link = `${base}/join?room=${encodeURIComponent(room)}`;
   // Who's inviting and to what, so the invite page can say so.
   link += `&n=${encodeURIComponent(myName())}&a=${me.avatar}`;
-  const niceTitle = status.watch?.tabId === tab?.id && status.watch?.showTitle;
-  if (tab?.url?.startsWith('http')) link += `&to=${encodeURIComponent(tab.url)}&t=${encodeURIComponent((niceTitle || tab.title || '').slice(0, 120))}`;
-  const picture = showPicture(tab?.url, status.watch?.tabId === tab?.id ? status.watch?.image : null);
+  const onShow = status.watch?.tabId === tab?.id;
+  const title = inviteTitle((onShow && status.watch?.showTitle) || tab?.title || '');
+  if (tab?.url?.startsWith('http')) link += `&to=${encodeURIComponent(tab.url)}&t=${encodeURIComponent(title.slice(0, 120))}`;
+  // The show's picture: YouTube's thumbnail or the page's own, else the show's artwork from TVmaze,
+  // else the biggest image on the page.
+  const picture = showPicture(tab?.url, onShow ? status.watch?.image : null)
+    || (title && await tvPicture(title))
+    || showPicture(null, onShow ? status.watch?.fallbackImage : null);
   if (picture) link += `&img=${encodeURIComponent(picture)}`;
 
   try {
@@ -304,6 +309,29 @@ $('invite').onclick = async () => {
 };
 let copiedTimer = null;
 $('inviteLink').onclick = () => $('inviteLink').select();
+
+// Just the show's name: "Prime Video: The Mentalist - Season 3" -> "The Mentalist"
+// (the invite page shows the platform separately).
+function inviteTitle(raw) {
+  return tidyTitle(String(raw || '').replace(/^(Prime Video|Amazon\.com|Watch)\s*:\s*/i, '')).replace(/[\s\-–—:|·]+$/, '');
+}
+
+// A TV show's artwork from TVmaze (free, no key), for pages that publish no picture. Quick, or nothing.
+const tvPictures = new Map();
+async function tvPicture(title) {
+  const name = tidyTitle(title).replace(/[\s\-–—:|·]+$/, '');
+  if (!name) return '';
+  if (tvPictures.has(name)) return tvPictures.get(name);
+  let pic = '';
+  try {
+    const r = await fetch(`https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(name)}`, { signal: AbortSignal.timeout(1500) });
+    const show = r.ok ? await r.json() : null;
+    // Only if it's really this show, not just the closest name.
+    if (show && norm(show.name) === norm(name)) pic = String(show.image?.original || '').replace(/^http:/, 'https:');
+  } catch {}
+  tvPictures.set(name, pic);
+  return pic;
+}
 
 // A picture of the show for the invite page: YouTube's own thumbnail, otherwise the image the page
 // publishes for link previews (reported by the show's tab).

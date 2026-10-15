@@ -774,14 +774,31 @@ function showInfo() {
   }
   return { image: pagePicture(), title: '' };
 }
+// Last resort for invites when the page publishes no picture (Prime Video): the biggest image on
+// the page, which on a show's page is its artwork.
+function biggestPicture() {
+  let best = null;
+  let bestArea = 0;
+  for (const img of document.images) {
+    const src = img.currentSrc || img.src;
+    if (!/^https:\/\//.test(src) || src.length > 600 || img.closest('[data-sinehan]')) continue;
+    const area = img.naturalWidth * img.naturalHeight;
+    if (img.naturalWidth >= 480 && img.naturalHeight >= 240 && area > bestArea) {
+      best = src;
+      bestArea = area;
+    }
+  }
+  return best || '';
+}
 let reported = null;
 every(2000, () => {
   if (!isWatchTab || window.top !== window) return;
   const info = showInfo();
-  const key = `${info.image}|${info.title}`;
+  const fallback = info.image ? '' : biggestPicture();
+  const key = `${info.image}|${info.title}|${fallback}`;
   if (key !== reported) {
     reported = key;
-    post({ type: 'meta', image: info.image, title: info.title });
+    post({ type: 'meta', image: info.image, title: info.title, fallbackImage: fallback });
   }
 });
 
