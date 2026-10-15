@@ -151,6 +151,25 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       .then(({ sessions = [] }) => chrome.storage.local.set({ sessions: msg.type === 'clear-sessions' ? [] : sessions.filter((x) => x.id !== msg.id) }));
     historyWrite.then(() => reply({ ok: true }));
     return true;
+  } else if (msg.type === 'guides') {
+    guidesWrite.then(readGuides).then((list) => reply(list.map(guideSummary)));
+    return true;
+  } else if (msg.type === 'guide-get') {
+    guidesWrite.then(readGuides).then((list) => reply(list.find((g) => g.id === msg.id) || null));
+    return true;
+  } else if (msg.type === 'guide-save') {
+    const guide = cleanGuide(msg.guide);
+    if (!guide) return reply(null);
+    saveGuides([guide], true).then(() => readGuides()).then((list) => reply(list.find((g) => g.id === guide.id) || null));
+    return true;
+  } else if (msg.type === 'guide-tick') {
+    const tick = { id: String(msg.id || ''), key: String(msg.key || ''), v: !!msg.v, at: Date.now() };
+    tickGuide(tick, true).then(() => readGuides()).then((list) => reply(list.find((g) => g.id === tick.id) || null));
+    return true;
+  } else if (msg.type === 'guide-delete') {
+    guidesWrite = guidesWrite.then(readGuides).then((list) => chrome.storage.local.set({ guides: list.filter((g) => g.id !== msg.id) }));
+    guidesWrite.then(() => reply(true));
+    return true;
   } else if (msg.type === 'resume') {
     chrome.storage.local.get('resume').then(({ resume }) => reply(resume || null));
     return true;
@@ -219,6 +238,91 @@ function noteShow(title) {
     .then(() => chrome.storage.local.get('partyShows'))
     .then(({ partyShows = [] }) => (partyShows.includes(title) ? null : chrome.storage.local.set({ partyShows: [...partyShows, title].slice(-5) })))
     .catch(console.error);
+}
+
+// ---- Saved watch guides ----
+// Saving a guide keeps it here and sends it to the other person, so it shows up in their list too.
+// Ticks are shared (you watch together); for each episode the latest tick or untick wins.
+const MAX_GUIDES = 12;
+let guidesWrite = Promise.resolve();
+async function readGuides() {
+  return (await chrome.storage.local.get('guides')).guides || [];
+}
+const str = (x, n) => String(x ?? '').slice(0, n);
+function cleanGuide(g) {
+  if (!g || typeof g !== 'object' || !g.id || !g.show) return null;
+  const done = {};
+  for (const [k, t] of Object.entries(g.done || {}).slice(0, 300)) {
+    if (/^S\d+E\d+$/.test(k) && t && typeof t.at === 'number') done[k] = { v: !!t.v, at: t.at };
+  }
+  return {
+    id: str(g.id, 200),
+    show: str(g.show, 100),
+    topic: str(g.topic, 60),
+    by: str(g.by, 30),
+    at: Number(g.at) || Date.now(),
+    episodes: (Array.isArray(g.episodes) ? g.episodes : []).slice(0, 150).map((e) => ({
+      key: str(e.key, 12), season: Number(e.season) || 0, number: Number(e.number) || 0, label: str(e.label, 20), title: str(e.title, 120),
+      reason: str(e.reason, 160), pasted: !!e.pasted, guides: Number(e.guides) || 0, comments: Number(e.comments) || 0, summary: !!e.summary, fandom: !!e.fandom,
+      url: /^https:\/\//.test(e.url || '') ? str(e.url, 400) : '',
+    })).filter((e) => /^S\d+E\d+$/.test(e.key)),
+    threads: (Array.isArray(g.threads) ? g.threads : []).slice(0, 6).map((t) => ({
+      title: str(t.title, 200), sub: str(t.sub, 60), upvotes: Number(t.upvotes) || 0, url: /^https:\/\//.test(t.url || '') ? str(t.url, 400) : '', pasted: !!t.pasted,
+    })),
+    done,
+  };
+}
+function mergeGuide(mine, theirs) {
+  if (!mine) return theirs;
+  const newer = theirs.at > mine.at ? theirs : mine;
+  const done = { ...mine.done };
+  for (const [k, t] of Object.entries(theirs.done)) if (!done[k] || t.at > done[k].at) done[k] = t;
+  return { ...newer, done };
+}
+function guideSummary(g) {
+  return { id: g.id, show: g.show, topic: g.topic, by: g.by, at: g.at, count: g.episodes.length,
+    watched: g.episodes.filter((e) => g.done[e.key]?.v).length };
+}
+const panels = (msg) => {
+  for (const p of ports) if (p.name === 'panel') postTo(p, msg);
+};
+// Save guides (ours, or ones they sent). `share` sends them on to the other person.
+function saveGuides(incoming, share, from = null) {
+  guidesWrite = guidesWrite
+    .then(readGuides)
+    .then(async (list) => {
+      const added = [];
+      for (const g of incoming) {
+        const i = list.findIndex((x) => x.id === g.id);
+        if (i < 0 && from) added.push({ show: g.show, topic: g.topic, by: g.by });
+        if (i < 0) list.unshift(g);
+        else list[i] = mergeGuide(list[i], g);
+      }
+      await chrome.storage.local.set({ guides: list.slice(0, MAX_GUIDES) });
+      panels({ type: 'guides-changed', added });
+      // One guide per message keeps each well under the relay's size limit.
+      if (share) for (const g of incoming) send({ type: 'guide-sync', guide: list.find((x) => x.id === g.id) || g });
+    })
+    .catch(console.error);
+  return guidesWrite;
+}
+function tickGuide(tick, share) {
+  if (!tick.id || !/^S\d+E\d+$/.test(tick.key)) return guidesWrite;
+  guidesWrite = guidesWrite
+    .then(readGuides)
+    .then(async (list) => {
+      const g = list.find((x) => x.id === tick.id);
+      if (!g) return;
+      if (!g.done[tick.key] || tick.at >= g.done[tick.key].at) g.done[tick.key] = { v: tick.v, at: tick.at };
+      await chrome.storage.local.set({ guides: list });
+      panels({ type: 'guides-changed', added: [], id: tick.id });
+      if (share) send({ type: 'guide-tick', ...tick });
+    })
+    .catch(console.error);
+  return guidesWrite;
+}
+function shareGuides() {
+  guidesWrite.then(readGuides).then((list) => list.forEach((g) => send({ type: 'guide-sync', guide: g })));
 }
 
 // ---- Stop for tonight ----
@@ -320,6 +424,8 @@ function showKey(url) {
 let historyWrite = Promise.resolve();
 function remember(msg) {
   const entry = { id: msg.id, name: msg.name, text: msg.text, avatar: msg.avatar, vt: msg.vt, mine: msg.mine, at: Date.now() };
+  // A shared watch guide shows as a card with an Open button.
+  if (msg.guide?.id) entry.guide = { id: str(msg.guide.id, 200), show: str(msg.guide.show, 100), topic: str(msg.guide.topic, 60), count: Number(msg.guide.count) || 0 };
   historyWrite = historyWrite
     .then(() => chrome.storage.local.get('history'))
     .then(({ history = [] }) => chrome.storage.local.set({ history: [...history, entry].slice(-HISTORY_LIMIT) }))
@@ -419,6 +525,12 @@ function connect(server, room) {
     if (msg.type === 'companion-hello') setTimeout(announceShow, 300); // a phone joined: tell it what's on
     if (msg.type === 'rtc') onCallSignal(msg);
     if (msg.type === 'goodnight') saveSpot(msg);
+    if ((msg.type === 'joined' && msg.count > 1) || (msg.type === 'peer' && msg.joined)) shareGuides();
+    if (msg.type === 'guide-sync') {
+      const g = cleanGuide(msg.guide);
+      if (g) saveGuides([g], false, 'them');
+    }
+    if (msg.type === 'guide-tick') tickGuide({ id: str(msg.id, 200), key: str(msg.key, 12), v: !!msg.v, at: Number(msg.at) || Date.now() }, false);
     if (msg.type === 'chat') {
       remember({ ...msg, mine: false });
       // Lets the show's tab know whether to flash the message on the video (sidebar closed or hidden by fullscreen).

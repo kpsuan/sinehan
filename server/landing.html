@@ -256,7 +256,7 @@
     .bp-search .bp-q { flex: 1; min-height: 32px; padding: 7px 10px; border-radius: 7px; background: rgba(255, 255, 255, .06); white-space: nowrap; overflow: hidden; }
     .bp-go { flex: none; padding: 7px 10px; border-radius: 7px; background: #c9b6f2; color: #1b1325; font-weight: 600; transition: transform .1s, filter .1s; }
     .bp-go.tap { transform: scale(.94); filter: brightness(1.15); }
-    .bp-pane { display: flex; flex-direction: column; gap: 6px; min-height: 352px; } /* same height for both tabs, so the panel doesn't jump */
+    .bp-pane { display: flex; flex-direction: column; gap: 6px; min-height: 410px; } /* same height for both tabs, so the panel doesn't jump */
     .bp-pane[hidden] { display: none; }
     /* Rows start as soft loading placeholders, then fill in */
     .bp-ep, .bp-g { position: relative; display: flex; gap: 10px; padding: 9px 10px; border-radius: 8px; background: rgba(255, 255, 255, .045); transition: background .3s; }
@@ -274,6 +274,11 @@
     .bp-shared.on { opacity: 1; }
     .bp-progress { display: flex; flex-direction: column; gap: 6px; margin-bottom: 2px; color: #9a90aa; font-size: 11px; }
     .bp-progress b { color: #efeaf6; font-weight: 600; }
+    .bp-ghead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .bp-progress .bp-save { flex: none; padding: 4px 9px; border-radius: 6px; background: #c9b6f2; color: #1b1325; font-size: 11px; font-weight: 600; opacity: 0; transition: opacity .3s, transform .1s, background .3s, color .3s; }
+    .bp-progress .bp-save.on { opacity: 1; }
+    .bp-progress .bp-save.tap { transform: scale(.92); }
+    .bp-progress .bp-save.done { background: rgba(255, 255, 255, .08); color: #9a90aa; }
     .bp-bar { height: 4px; border-radius: 999px; background: rgba(255, 255, 255, .07); overflow: hidden; }
     .bp-bar i { display: block; width: 0; height: 100%; border-radius: inherit; background: #c9b6f2; transition: width .5s ease; }
     .bp-box { flex: none; width: 17px; height: 17px; margin-top: 1px; border-radius: 5px; background: rgba(255, 255, 255, .09); display: grid; place-items: center; color: #1b1325; transition: background .25s; }
@@ -482,7 +487,7 @@
     <section id="best-row">
       <div class="row">
         <h2 class="display">Ask Reddit for the best episodes<br /><span>or just the ones you need.</span></h2>
-        <p><b>Tap the star</b> for Reddit's favorite episodes, ranked by upvotes. Or make a <b>watch guide</b>: only the episodes for one story, from a guide thread you trust, with a checklist that remembers where you are.</p>
+        <p><b>Tap the star</b> for Reddit's favorite episodes, ranked by upvotes. Or make a <b>watch guide</b>: only the episodes for one story, from a guide thread you trust, with a checklist that remembers where you are. <b>Save it</b> and it's on their side too, ticks and all.</p>
         <span class="tag">Episodes</span>
       </div>
       <div class="visual best" id="best">
@@ -498,11 +503,12 @@
             <div class="bp-shared">Shared in chat: S2 E6</div>
           </div>
           <div class="bp-pane" data-pane="guide" hidden>
-            <div class="bp-progress"><span class="bp-count">The Keeper · 5 episodes · <b>0</b> watched</span><span class="bp-bar"><i></i></span></div>
+            <div class="bp-progress"><span class="bp-ghead"><span class="bp-count">The Keeper · 5 episodes · <b>0</b> watched</span><b class="bp-save">Save &amp; share</b></span><span class="bp-bar"><i></i></span></div>
             <div class="bp-g skel"><span class="bp-box"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg></span><div><b>S1 E1 · Arrival</b><p>where the Keeper story starts</p><em>Your thread</em></div></div>
             <div class="bp-g skel"><span class="bp-box"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg></span><div><b>S1 E7 · Fog Signal</b><p>first real clue</p><em>In 3 guides</em></div></div>
             <div class="bp-g skel"><span class="bp-box"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg></span><div><b>S2 E6 · The Lighthouse</b><p>the reveal</p><em>Your thread</em></div></div>
             <div class="bp-g skel"><span class="bp-box"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg></span><div><b>S3 E2 · Undertow</b><p>the Keeper returns</p><em>Summary mentions the Keeper</em></div></div>
+            <div class="bp-shared bp-sent">Saved and sent to Jessa</div>
           </div>
         </div>
       </div>
@@ -702,6 +708,7 @@
         const tabs = [...root.querySelectorAll('.bp-tab')], panes = [...root.querySelectorAll('.bp-pane')];
         const eps = [...root.querySelectorAll('.bp-ep')], rows = [...root.querySelectorAll('.bp-g')];
         const count = root.querySelector('.bp-count b'), bar = root.querySelector('.bp-bar i');
+        const save = root.querySelector('.bp-save'), sent = root.querySelector('.bp-sent');
         const tab = (name) => {
           tabs.forEach((t) => t.classList.toggle('on', t.dataset.tab === name));
           panes.forEach((p) => (p.hidden = p.dataset.pane !== name));
@@ -727,8 +734,13 @@
           // Watch guide
           tab('guide');
           rows.forEach((r) => r.classList.add('skel')); tick(0); rows.forEach((r) => r.classList.remove('next'));
+          save.className = 'bp-save'; save.textContent = 'Save & share'; sent.classList.remove('on');
           await type('Midnight Harbor · the Keeper'); await wait(350); await tap();
           await wait(1100); await reveal(rows); tick(0);
+          // Save it: it's sent to them, then you both tick episodes off.
+          save.classList.add('on'); await wait(700);
+          save.classList.add('tap'); await wait(160); save.classList.remove('tap');
+          save.classList.add('done'); save.textContent = 'Saved'; sent.classList.add('on');
           await wait(900); tick(1);
           await wait(900); tick(2);
           await wait(3200);

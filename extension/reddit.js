@@ -203,7 +203,7 @@
       const phrase = ` ${norm(e.name)} `;
       return texts.filter((t) => t.includes(phrase)).length <= 2;
     });
-    return { eps, byKey, idf, titled, seasons: new Set(eps.map((e) => e.season)).size };
+    return { name: data?.name || "", eps, byKey, idf, titled, seasons: new Set(eps.map((e) => e.season)).size };
   }
 
   // An episode named by its title in the comment ("Dear Billy was incredible").
@@ -480,6 +480,71 @@
       comments, url: `https://www.reddit.com${d.permalink || path}` };
   }
 
+  // ---- Fandom wikis ----
+  // Most shows have a fan wiki with full episode pages and pages for big story events ("Ferry Crash",
+  // "Hospital Shooting") that list the episodes they happen in. Its search understands topics like
+  // "mass casualty" that episode summaries never spell out.
+  const wikis = new Map(); // show -> { host, name } or null
+  async function fandomJson(host, params) {
+    const r = await fetch(`https://${host}/api.php?${params}&format=json&formatversion=2&origin=*`, { credentials: 'omit' });
+    if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) throw new Error(`fandom ${r.status}`);
+    return r.json();
+  }
+  async function findWiki(show, guide) {
+    const key = norm(show);
+    if (wikis.has(key)) return wikis.get(key);
+    const names = [show, guide?.name].filter(Boolean);
+    const slugs = [...new Set(names.flatMap((n) => {
+      const flat = norm(n).replace(/ /g, '');
+      return [flat, flat.replace(/^the/, '')];
+    }))].filter((x) => x.length >= 3);
+    let wiki = null;
+    for (const slug of slugs.slice(0, 4)) {
+      try {
+        const info = await fandomJson(`${slug}.fandom.com`, 'action=query&meta=siteinfo');
+        if (info?.query?.general) {
+          wiki = { host: `${slug}.fandom.com`, name: info.query.general.sitename || `${show} Wiki` };
+          break;
+        }
+      } catch {}
+    }
+    wikis.set(key, wiki);
+    return wiki;
+  }
+  const plain = (html) => String(html || '').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#0?39;/g, "'").replace(/\s+/g, ' ').trim();
+  // "Walk on Water", "The Other Side of This Life, Part 1", "Flight (episode)" -> the guide's episodes
+  function episodesNamed(title, guide) {
+    const base = (t) => norm(String(t).replace(/\s*\((episode|part \d+|\d+|[^)]*\bseason\b[^)]*)\)\s*$/i, '').replace(/,?\s*part\s+\w+$/i, ''));
+    const want = base(title);
+    return want ? guide.eps.filter((e) => base(e.name) === want) : [];
+  }
+  // -> [{ key, reason }] for a topic, from the wiki's search
+  async function fandomTopic(wiki, topic, guide) {
+    const found = [];
+    const search = await fandomJson(wiki.host, `action=query&list=search&srsearch=${encodeURIComponent(topic)}&srlimit=40&srnamespace=0`);
+    const others = [];
+    for (const r of search?.query?.search || []) {
+      if (r.title.includes('/')) continue; // transcripts and sub-pages
+      const eps = episodesNamed(r.title, guide);
+      if (eps.length) for (const e of eps) found.push({ key: e.key, reason: plain(r.snippet).slice(0, 150) || `Its wiki page mentions “${topic}”` });
+      else others.push(r.title);
+    }
+    // Event and story pages: the episodes their infobox lists.
+    if (others.length) {
+      const pages = await fandomJson(wiki.host, `action=query&prop=revisions&rvprop=content&rvslots=main&titles=${encodeURIComponent(others.slice(0, 15).join('|'))}`);
+      for (const pg of pages?.query?.pages || []) {
+        const text = pg.revisions?.[0]?.slots?.main?.content || '';
+        const field = text.match(/\|\s*episodes?\s*=([\s\S]*?)(?=\n\s*\|\s*[a-z_ ]+=|\n\}\})/i)?.[1];
+        if (!field) continue;
+        const caption = plain(text.match(/\|\s*caption\s*=\s*([^\n]*)/i)?.[1]?.replace(/\[\[(?:[^|\]]*\|)?([^\]]*)\]\]/g, '$1') || '');
+        for (const [, link] of field.matchAll(/\[\[([^|\]#]+)/g)) {
+          for (const e of episodesNamed(link, guide)) found.push({ key: e.key, reason: caption ? `${pg.title}: ${caption}` : pg.title });
+        }
+      }
+    }
+    return found;
+  }
+
   async function watchGuide(show, topic = '', link = '') {
     const name = String(show || '').trim().slice(0, 100);
     if (!name) throw new Error('no show');
@@ -487,7 +552,7 @@
     const guide = await episodeGuide(name);
     const entries = new Map(); // key -> { key, pasted, guides: Set, comments, summary, reason, url }
     const entry = (key) => {
-      if (!entries.has(key)) entries.set(key, { key, pasted: false, guides: new Set(), comments: 0, summary: false, reason: '', url: '' });
+      if (!entries.has(key)) entries.set(key, { key, pasted: false, guides: new Set(), comments: 0, summary: false, fandom: false, reason: '', url: '' });
       return entries.get(key);
     };
     const threads = [];
@@ -567,20 +632,39 @@
       }
     }
 
-    // In: listed by your thread or a guide, said by 2+ comments, or (for a topic) in a summary.
+    // 4. The show's fan wiki (for a topic).
+    if (topic && guide) {
+      try {
+        const wiki = await findWiki(name, guide);
+        if (wiki) {
+          const hits = await fandomTopic(wiki, topic, guide);
+          for (const { key, reason } of hits) {
+            const e = entry(key);
+            e.fandom = true;
+            if (!e.reason && reason) e.reason = reason;
+          }
+          if (hits.length) {
+            threads.push({ title: `${wiki.name}: “${topic}”`, sub: 'fandom.com', upvotes: 0, comments: 0, pasted: false,
+              url: `https://${wiki.host}/wiki/Special:Search?query=${encodeURIComponent(topic)}` });
+          }
+        }
+      } catch {}
+    }
+
+    // In: listed by your thread, a guide or the fan wiki, said by 2+ comments, or (for a topic) in a summary.
     const episodes = [...entries.values()]
-      .filter((e) => e.pasted || e.guides.size || e.comments >= 2 || e.summary)
+      .filter((e) => e.pasted || e.guides.size || e.comments >= 2 || e.summary || e.fandom)
       .filter((e) => !guide || guide.byKey.has(e.key))
       .map((e) => {
         const [, s, n] = e.key.match(/^S(\d+)E(\d+)$/);
         return { key: e.key, season: Number(s), number: Number(n), label: label(e.key), title: guide?.byKey.get(e.key)?.name || '',
-          pasted: e.pasted, guides: e.guides.size, comments: e.comments, summary: e.summary, reason: e.reason, url: e.url };
+          pasted: e.pasted, guides: e.guides.size, comments: e.comments, summary: e.summary, fandom: e.fandom, reason: e.reason, url: e.url };
       })
       .sort((a, b) => a.season - b.season || a.number - b.number);
     return { show: name, topic, episodes, threads, problems, hasGuide: !!guide };
   }
 
-  const api = { bestEpisodes, watchGuide, listedIn, threadPath, episodesIn, rank, label, snippet, makeGuide, wikiSummaries, describedIn, titleIn, stems, searchUrl: (show) => `https://www.reddit.com/search/?q=${encodeURIComponent(`${show} best episodes`)}` };
+  const api = { bestEpisodes, watchGuide, listedIn, threadPath, findWiki, fandomTopic, episodesNamed, episodesIn, rank, label, snippet, makeGuide, wikiSummaries, describedIn, titleIn, stems, searchUrl: (show) => `https://www.reddit.com/search/?q=${encodeURIComponent(`${show} best episodes`)}` };
   if (typeof module !== 'undefined') module.exports = api;
   else self.Reddit = api;
 })();

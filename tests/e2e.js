@@ -469,6 +469,22 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     await pA.click('#hangup');
     check('hang up ends call on both sides', await until(async () => !(await pB2.$eval('#start', (b) => b.hidden)) && !(await pA.$eval('#start', (b) => b.hidden))));
     check('callee told the call ended', (await logLines(pB2)).some((l) => l.text.includes('hung up')));
+    check('out of a call, the video area tucks away to just the buttons', await pA.$eval('.call', (c) => c.classList.contains('compact')) && !(await pA.$eval('.stage', (s) => s.checkVisibility())));
+
+    // ---------------------------------------------------------------
+    section('Voice call');
+    await pA.click('#startVoice');
+    check('voice call: they can join with voice', await until(() => pB2.$eval('#joinVoice', (b) => !b.hidden), 8000));
+    await pB2.click('#joinVoice');
+    check('…both connect, mics on, no cameras', await until(async () => {
+      const side = (p) => p.evaluate(() => pc?.connectionState === 'connected' && !!localStream?.getAudioTracks().length && !localStream.getVideoTracks().length);
+      return (await side(pA)) && (await side(pB2));
+    }, 15000));
+    check('…with a short stage instead of the video area', await pA.$eval('.call', (c) => c.classList.contains('voice')));
+    await pA.click('#cam');
+    check('turning the camera on mid-call shows them your video', await until(() => pB2.$eval('#remote', (v) => v.videoWidth > 0), 15000));
+    await pA.click('#hangup');
+    await until(async () => !(await pB2.$eval('#start', (b) => b.hidden)));
 
     // ---------------------------------------------------------------
     section('Ringing');
@@ -547,6 +563,32 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     raw.close();
     await sleep(600);
 
+    section('Saved watch guides');
+    // (Reddit is mocked; this checks saving, sharing and shared ticks)
+    await pA.evaluate(async () => {
+      const ep = (n, title) => ({ key: `S1E${n}`, season: 1, number: n, label: `S1 E${n}`, title, reason: '', pasted: true, guides: 1, comments: 0, summary: false, url: '' });
+      Reddit.watchGuide = async (show, topic) => ({ show, topic, hasGuide: true, problems: [], threads: [], episodes: [ep(1, 'Pilot'), ep(2, 'Two'), ep(3, 'Three')] });
+      setEpisodesMode('guide');
+      showBest(true);
+      $('bestQuery').value = 'Test Show';
+      $('guideTopic').value = 'The Arc';
+      await makeGuide();
+    });
+    check('a new guide offers Save & share', await until(async () => (await text(pA, '.g-head button')) === 'Save & share'));
+    await pA.click('.g-head button');
+    check('saving posts a guide card in their chat', await until(() => pB2.$$eval('#log .gc-open', (b) => b.length > 0)));
+    check('…not a long list of episodes', !(await logLines(pB2)).some((l) => /S1E1, S1E2/.test(l.text)));
+    await pB2.locator('#log .gc-open').last().click();
+    check('…and Open guide opens it on their side', await until(async () => (await pB2.$$eval('.g-ep', (r) => r.length)) === 3));
+    await pA.locator('.g-ep').first().click();
+    check('ticking an episode ticks it for both', await until(() => pB2.$eval('.g-ep', (r) => r.classList.contains('done'))));
+    await pB2.click('.g-back');
+    check('their saved guides list it', await until(async () => (await pB2.$$eval('.g-saved .t-title', (t) => t.map((x) => x.textContent))).includes('Test Show · The Arc')),
+      await pB2.evaluate(() => `mode=${episodesMode} open=${!!openGuide} results=${$('bestResults').textContent.slice(0, 160)}`));
+    await pA.evaluate(() => showBest(false));
+    await pB2.evaluate(() => showBest(false));
+
+    // ---------------------------------------------------------------
     section('Typing, timestamps, hand-holding');
     await pA.fill('#msg', '');
     await pA.locator('#msg').pressSequentially('typing something');

@@ -51,7 +51,7 @@ function onMessage(msg) {
     if (seenChat.has(msg.id)) return;
     seenChat.add(msg.id);
     // `mine` = sent from this browser's fullscreen chat rather than this sidebar.
-    addChat(msg.name, msg.text, msg.mine ? 'me' : 'them', msg.avatar, msg.vt);
+    addChat(msg.name, msg.text, msg.mine ? 'me' : 'them', msg.avatar, msg.vt, $('log'), msg.guide);
     if (!msg.mine) showTyping(null);
   } else if (msg.type === 'mic') {
     if (pc && msg.on === false && theirMicOn !== false) addChat('', `${peer?.name ? `${peer.name}’s` : 'Their'} mic is off`, 'system');
@@ -71,6 +71,18 @@ function onMessage(msg) {
   } else if (msg.type === 'room-full') {
     $('wlError').textContent = `That party is full (${msg.max || 10} people at most). Ask them for a new invite link.`;
     $('wlError').hidden = false;
+  } else if (msg.type === 'guides-changed') {
+    if ($('bestView').hidden || episodesMode !== 'guide') return;
+    if (!openGuide) listGuides();
+    else if (openGuide.saved && (!msg.id || msg.id === openGuide.id)) {
+      const scroll = openGuide;
+      ask({ type: 'guide-get', id: openGuide.id }, (g) => {
+        if (g && openGuide === scroll) {
+          openGuide = { ...g, saved: true, problems: scroll.problems, shown: true };
+          renderGuide(openGuide);
+        }
+      });
+    }
   } else if (msg.type === 'goodnight') {
     addChat('', `${msg.name || peer?.name || 'They'} stopped for tonight${typeof msg.time === 'number' ? ` at ${clock(msg.time)}` : ''}`, 'system');
     setTimeout(loadResume, 400);
@@ -81,7 +93,8 @@ function onMessage(msg) {
     if (msg.ask) sendProfile(false);
     renderProfiles();
   } else if (msg.type === 'rtc' && msg.from !== myId) {
-    onSignal(msg).catch((e) => console.error('[watch-party] rtc', e));
+    // Call setup hiccups (a late duplicate, a race) sort themselves out; note them without raising an error.
+    onSignal(msg).catch((e) => console.warn('[watch-party] call setup:', e?.name, e?.message));
   } else if (msg.type === 'peer') {
     if (msg.joined ?? msg.count > 1) {
       addChat('', `${peer?.name || 'They'} joined`, 'system');
@@ -560,7 +573,7 @@ ask({ type: 'history' }, (history = []) => {
   for (const m of history) {
     if (m.id && seenChat.has(m.id)) continue;
     if (m.id) seenChat.add(m.id);
-    addChat(m.name, m.text, m.mine ? 'me' : 'them', m.avatar, m.vt);
+    addChat(m.name, m.text, m.mine ? 'me' : 'them', m.avatar, m.vt, $('log'), m.guide);
   }
   $('log').append(...live);
   $('log').scrollTop = $('log').scrollHeight;
@@ -579,12 +592,12 @@ $('form').onsubmit = (e) => {
   closeTrays();
 };
 
-function sendChat(text) {
+function sendChat(text, extra = {}) {
   const id = crypto.randomUUID();
   const vt = showTime();
   seenChat.add(id);
-  send({ type: 'chat', id, name: myName(), avatar: me.avatar, text, vt });
-  addChat(myName(), text, 'me', me.avatar, vt);
+  send({ type: 'chat', id, name: myName(), avatar: me.avatar, text, vt, ...extra });
+  addChat(myName(), text, 'me', me.avatar, vt, $('log'), extra.guide);
 }
 
 // Where the show is right now (from the show's tab), for stamping chat messages.
@@ -626,7 +639,7 @@ function isEmojiOnly(text) {
 }
 
 // `into` = which list (the live chat, or a past party being read); past parties' timestamps aren't clickable.
-function addChat(name, text, kind, avatar, vt, into = $('log')) {
+function addChat(name, text, kind, avatar, vt, into = $('log'), guide = null) {
   const live = into === $('log');
   const line = document.createElement('div');
   line.className = `line ${kind}`;
@@ -638,8 +651,28 @@ function addChat(name, text, kind, avatar, vt, into = $('log')) {
     const who = document.createElement('span');
     who.className = 'who';
     who.textContent = name;
-    if (isEmojiOnly(text || '')) bubble.classList.add('big');
-    bubble.append(who, document.createTextNode(text || ''));
+    if (isEmojiOnly(text || '') && !guide) bubble.classList.add('big');
+    if (guide?.id) {
+      // A shared watch guide: a small card with a way to open it.
+      bubble.classList.add('card-msg');
+      const label = document.createElement('span');
+      label.className = 'gc-label';
+      label.textContent = 'Watch guide';
+      const title = document.createElement('b');
+      title.className = 'gc-title';
+      title.textContent = guide.topic ? `${guide.show} · ${guide.topic}` : guide.show;
+      const meta = document.createElement('span');
+      meta.className = 'gc-meta';
+      meta.textContent = `${guide.count} episode${guide.count === 1 ? '' : 's'}`;
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'gc-open';
+      open.textContent = 'Open guide';
+      open.onclick = () => openGuideFromChat(guide.id);
+      bubble.append(who, label, title, meta, open);
+    } else {
+      bubble.append(who, document.createTextNode(text || ''));
+    }
     // Where in the show it was said; clicking jumps you both there.
     if (typeof vt === 'number' && Number.isFinite(vt)) {
       const stamp = document.createElement('button');
@@ -730,7 +763,7 @@ function showBest(on) {
   renderWelcome();
   if (!on) return;
   const w = status.watch;
-  const name = w ? w.showTitle || tidyTitle(w.title) : '';
+  const name = w ? inviteTitle(w.showTitle || w.title) : ''; // just the show: "The Mentalist"
   if (name && name !== $('bestQuery').dataset.for) {
     $('bestQuery').value = name;
     $('bestQuery').dataset.for = name;
@@ -759,8 +792,8 @@ function setEpisodesMode(mode) {
   bestRun += 1; // drop whatever the other tab was loading
   $('bestResults').replaceChildren();
   if (mode === 'guide') {
-    if (lastGuide && norm(lastGuide.show) === norm($('bestQuery').value)) renderGuide(lastGuide);
-    else $('guideTopic').focus();
+    if (openGuide) renderGuide(openGuide);
+    else listGuides();
   } else if ($('bestQuery').value.trim()) {
     askReddit();
   }
@@ -770,18 +803,65 @@ $('modeGuide').onclick = () => setEpisodesMode('guide');
 const norm = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 
 // ---- Watch guide ----
-// Ticked episodes are remembered per show (in this browser).
-let lastGuide = null;
-async function guideDone(show) {
-  const { guideDone: all = {} } = await chrome.storage.local.get('guideDone');
-  return all[norm(show)] || {};
+// A guide you make can be saved: it's kept, sent to the other person (it shows in their list too),
+// and ticks are shared. Unsaved guides keep their ticks only until you leave them.
+let openGuide = null; // the guide on screen: { id, show, topic, episodes, threads, done, saved, problems }
+const guideId = (show, topic) => `${norm(show)}|${norm(topic)}`;
+const askP = (msg) => new Promise((r) => ask(msg, r));
+const isDone = (g, key) => !!g.done?.[key]?.v;
+
+async function listGuides() {
+  openGuide = null;
+  const run = ++bestRun;
+  const list = (await askP({ type: 'guides' })) || [];
+  if (run !== bestRun || episodesMode !== 'guide') return;
+  if (!list.length) {
+    $('bestResults').replaceChildren(note('Make a guide for a show (and a story, if you like). Saved guides show up here for both of you.'));
+    return;
+  }
+  const h = document.createElement('h2');
+  h.className = 'g-saved-h';
+  h.textContent = 'Saved guides';
+  $('bestResults').replaceChildren(h, ...list.map((x) => {
+    const row = document.createElement('div');
+    row.className = 'g-saved';
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'g-saved-open';
+    const title = document.createElement('span');
+    title.className = 't-title';
+    title.textContent = x.topic ? `${x.show} · ${x.topic}` : x.show;
+    const meta = document.createElement('span');
+    meta.className = 't-meta';
+    meta.textContent = `${x.watched} of ${x.count} watched · saved by ${x.by === myName() ? 'you' : x.by || 'them'}`;
+    open.append(title, meta);
+    open.onclick = () => showGuide(x.id);
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'i-remove';
+    del.title = 'Remove from your saved guides';
+    del.setAttribute('aria-label', 'Remove');
+    del.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>'; // fixed markup
+    del.onclick = () => ask({ type: 'guide-delete', id: x.id }, listGuides);
+    row.append(open, del);
+    return row;
+  }));
 }
-async function setGuideDone(show, key, done) {
-  const { guideDone: all = {} } = await chrome.storage.local.get('guideDone');
-  const mine = { ...(all[norm(show)] || {}) };
-  if (done) mine[key] = true;
-  else delete mine[key];
-  await chrome.storage.local.set({ guideDone: { ...all, [norm(show)]: mine } });
+
+async function showGuide(id) {
+  const g = await askP({ type: 'guide-get', id });
+  if (!g) return listGuides();
+  $('bestQuery').value = g.show;
+  $('guideTopic').value = g.topic || '';
+  openGuide = { ...g, saved: true, problems: [] };
+  renderGuide(openGuide, true);
+}
+
+// From a guide card in chat: open the Episodes view on that guide.
+function openGuideFromChat(id) {
+  setEpisodesMode('guide');
+  showBest(true);
+  showGuide(id);
 }
 
 async function makeGuide() {
@@ -797,14 +877,38 @@ async function makeGuide() {
     return;
   }
   if (run !== bestRun) return;
-  lastGuide = g;
-  renderGuide(g);
+  const id = guideId(show, g.topic);
+  const saved = await askP({ type: 'guide-get', id });
+  openGuide = { ...g, id, by: myName(), at: Date.now(), done: saved?.done || {}, saved: !!saved };
+  renderGuide(openGuide, true);
+}
+
+// Save (and send to them) or, once saved, post its card in chat again.
+async function saveGuide(g) {
+  const { problems, saved, ...guide } = g;
+  const stored = await askP({ type: 'guide-save', guide: { ...guide, at: Date.now() } });
+  if (!stored) return;
+  openGuide = { ...stored, saved: true, problems: [] };
+  postGuideCard(openGuide);
+  renderGuide(openGuide);
+}
+function postGuideCard(g) {
+  if (!status.connected) return;
+  const name = g.topic ? `${g.show} · ${g.topic}` : g.show;
+  sendChat(`shared a watch guide: ${name} (${g.episodes.length} episodes)`, { guide: { id: g.id, show: g.show, topic: g.topic, count: g.episodes.length } });
 }
 
 const CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>';
-async function renderGuide(g) {
-  const done = await guideDone(g.show);
-  const out = g.problems.map((p) => note(p));
+async function renderGuide(g, fresh = false) {
+  if (g !== openGuide) return;
+  if (fresh) g.shown = false;
+  const done = Object.fromEntries(g.episodes.map((e) => [e.key, isDone(g, e.key)]));
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'g-back';
+  back.textContent = 'All saved guides';
+  back.onclick = listGuides;
+  const out = [back, ...(g.problems || []).map((p) => note(p))];
   if (!g.episodes.length) {
     out.push(note(g.topic ? `No guide or summary mentions “${g.topic}”. Try another name for it, or paste a guide thread.` : 'No guides found for this show. Paste a guide thread you trust.',
       { label: 'Search Reddit for a guide', onClick: () => openTab(`https://www.reddit.com/search/?q=${encodeURIComponent(`${g.show} ${g.topic || 'essential'} episodes guide`)}`) }));
@@ -820,14 +924,23 @@ async function renderGuide(g) {
   count.textContent = `${g.topic ? `${g.topic} · ` : ''}${total} episode${total === 1 ? '' : 's'} · ${watched} watched`;
   const share = document.createElement('button');
   share.type = 'button';
-  share.textContent = 'Share in chat';
-  share.disabled = !status.connected;
-  share.onclick = () => {
-    const list = g.episodes.map((e) => e.label.replace(' ', '')).join(', ');
-    sendChat(`${g.show}${g.topic ? ` · ${g.topic}` : ''} watch guide (${total}): ${list.length > 380 ? `${list.slice(0, 380).replace(/,[^,]*$/, '')}, …` : list}`);
-    share.textContent = 'Shared';
-    share.disabled = true;
-  };
+  if (!g.saved) {
+    share.className = 'primary';
+    share.textContent = status.connected ? 'Save & share' : 'Save';
+    share.title = 'Keep this guide; it also shows up in their saved guides';
+    share.onclick = () => {
+      share.disabled = true;
+      saveGuide(g);
+    };
+  } else {
+    share.textContent = 'Share in chat';
+    share.disabled = !status.connected;
+    share.onclick = () => {
+      postGuideCard(g);
+      share.textContent = 'Shared';
+      share.disabled = true;
+    };
+  }
   head.append(count, share);
   const bar = document.createElement('div');
   bar.className = 'g-bar';
@@ -885,12 +998,23 @@ async function renderGuide(g) {
     if (others > 0) chip(`In ${others} guide${others === 1 ? '' : 's'}`);
     if (!e.guides && e.comments) chip(`Suggested in ${e.comments} comments`);
     if (e.summary) chip(`Summary mentions ${g.topic}`);
+    if (e.fandom) chip('Fandom wiki');
     body.append(src);
     row.append(box, body);
     // Tick it off as you watch; the list remembers.
     row.onclick = async () => {
-      await setGuideDone(g.show, e.key, !done[e.key]);
-      renderGuide(g);
+      const v = !done[e.key];
+      if (g.saved) {
+        // Saved: ticks are kept and shared with the other person.
+        const stored = await askP({ type: 'guide-tick', id: g.id, key: e.key, v });
+        if (stored && openGuide === g) {
+          openGuide = { ...stored, saved: true, problems: g.problems, shown: true };
+          renderGuide(openGuide);
+        }
+      } else {
+        g.done = { ...g.done, [e.key]: { v, at: Date.now() } };
+        renderGuide(g);
+      }
     };
     out.push(row);
     if (e === next) nextRow = row;
@@ -911,7 +1035,7 @@ async function renderGuide(g) {
       title.textContent = t.title;
       const meta = document.createElement('span');
       meta.className = 't-meta';
-      meta.textContent = `${t.pasted ? 'Your thread · ' : ''}${t.sub} · ${shortNum(t.upvotes)} upvotes`;
+      meta.textContent = `${t.pasted ? 'Your thread · ' : ''}${t.sub}${t.upvotes ? ` · ${shortNum(t.upvotes)} upvotes` : ''}`;
       b.append(title, meta);
       b.onclick = () => openTab(t.url);
       box.append(b);
@@ -1381,6 +1505,8 @@ async function onSignal({ description, candidate, bye, declined, want, from, nam
       if (pc.localDescription?.type === 'offer') signal({ description: pc.localDescription.toJSON() });
       return;
     }
+    // An answer that arrives after we've already settled (a duplicate from a resent offer) has nothing to answer.
+    if (description.type === 'answer' && pc.signalingState !== 'have-local-offer') return;
     await pc.setRemoteDescription(description);
     if (description.type === 'offer') awaitingOffer = false;
     if (description.type === 'offer') {
@@ -1397,9 +1523,16 @@ async function onSignal({ description, candidate, bye, declined, want, from, nam
   }
 }
 
-async function turnOnCamera() {
+// voice = start (or answer) with just the mic; the camera can still be turned on later.
+async function turnOnCamera(voice = false) {
+  let voiceTrack = null;
   try {
-    localStream = await getMedia('video');
+    if (voice) {
+      [voiceTrack] = (await getMedia('audio')).getAudioTracks();
+      localStream = new MediaStream();
+    } else {
+      localStream = await getMedia('video');
+    }
   } catch (e) {
     if (e.name === 'NotAllowedError') {
       // The side panel can't show Chrome's permission prompt, so ask once from a normal tab.
@@ -1426,7 +1559,15 @@ async function turnOnCamera() {
       pc.onnegotiationneeded?.();
     }, 5000);
   }
-  if (micOn) await setMic(true);
+  if (voiceTrack) {
+    // A voice call is for talking: the mic starts on.
+    localStream.addTrack(voiceTrack);
+    await micTransceiver().sender.replaceTrack(voiceTrack);
+    micOn = true;
+    chrome.storage.local.set({ micOn });
+  } else if (micOn) {
+    await setMic(true);
+  }
   listDevices(); // names are visible now that we have permission
   send({ type: 'mic', on: !!localStream.getAudioTracks().length });
   if (!localStream.getAudioTracks().length) addChat('', 'Your mic is off. Click the mic button to talk.', 'system');
@@ -1491,9 +1632,16 @@ function endCall(reason, notify = false) {
 $('start').onclick = async () => {
   if (await turnOnCamera()) addChat('', 'Calling. They need the sidebar open to pick up.', 'system');
 };
+$('startVoice').onclick = async () => {
+  if (await turnOnCamera(true)) addChat('', 'Voice calling. They need the sidebar open to pick up.', 'system');
+};
 $('join').onclick = () => {
   stopRinging();
   turnOnCamera();
+};
+$('joinVoice').onclick = () => {
+  stopRinging();
+  turnOnCamera(true);
 };
 $('decline').onclick = () => {
   const who = incoming?.name;
@@ -1508,10 +1656,26 @@ $('mic').onclick = () => setMic(!localStream?.getAudioTracks().length);
 $('cam').onclick = () => toggleTrack('video', $('cam'));
 function toggleTrack(kind, button) {
   const track = localStream?.getTracks().find((t) => t.kind === kind);
+  if (!track && kind === 'video') return addCamera();
   if (!track) return;
   track.enabled = !track.enabled;
   button.classList.toggle('off', !track.enabled);
   sendCallState();
+}
+
+// On a voice call: turn the camera on (it's added to the call, and they see you).
+async function addCamera() {
+  if (!pc || !localStream) return;
+  try {
+    const [track] = (await getMedia('video')).getVideoTracks();
+    if (!pc || !localStream) return track.stop(); // the call ended while the camera was starting
+    localStream.addTrack(track);
+    pc.addTrack(track, localStream);
+    $('local').srcObject = localStream;
+  } catch (e) {
+    addChat('', `Couldn’t start your camera: ${e.message || e.name}`, 'system');
+  }
+  render();
 }
 
 // Keeps the fullscreen camera's mic/camera buttons matching the real state.
@@ -1594,18 +1758,24 @@ function render() {
   const hasCamera = !!localStream;
   const seeingThem = !!remoteStream?.getVideoTracks().length;
 
-  $('start').hidden = inCall;
-  $('start').disabled = !bothHere;
-  $('join').hidden = !(inCall || incoming) || hasCamera;
+  $('start').disabled = $('startVoice').disabled = !bothHere;
+  $('join').hidden = $('joinVoice').hidden = !(inCall || incoming) || hasCamera;
   $('decline').hidden = !incoming;
-  $('start').hidden = inCall || !!incoming;
+  $('start').hidden = $('startVoice').hidden = inCall || !!incoming;
+  const camOn = !!localStream?.getVideoTracks()[0]?.enabled;
+  $('cam').classList.toggle('off', hasCamera && !camOn);
+  $('cam').title = camOn ? 'Camera on: click to turn it off' : 'Turn your camera on';
+  // Not in a call: just the buttons. In a call with no video either way: a short stage.
+  const callEl = document.querySelector('.call');
+  callEl.classList.toggle('compact', !inCall && !incoming);
+  callEl.classList.toggle('voice', inCall && !seeingThem && !camOn);
   $('mic').hidden = $('cam').hidden = !hasCamera;
   $('mic').classList.toggle('off', !localStream?.getAudioTracks().length);
   sendCallState();
   $('mic').title = localStream?.getAudioTracks().length ? 'Mic on: click to turn it off' : 'Mic off: click to talk';
   $('pip').hidden = !seeingThem;
   $('hangup').hidden = !inCall;
-  $('local').hidden = !hasCamera;
+  $('local').hidden = !localStream?.getVideoTracks().length;
   $('remoteMic').hidden = !(inCall && seeingThem && theirMicOn === false);
 
   $('placeholder').hidden = seeingThem;
@@ -1614,6 +1784,7 @@ function render() {
     : !status.connected ? 'Not in a room yet. Use Invite to start one.'
     : !bothHere ? 'Waiting for them to join.'
     : !inCall ? 'Camera’s off.'
+    : pc.connectionState === 'connected' ? 'On a voice call'
     : 'Connecting…';
 }
 render();
