@@ -239,31 +239,50 @@
     .mp-msg { align-self: flex-start; margin-top: 3px; padding: 6px 9px; border-radius: 10px 10px 10px 3px; background: #1f1927; opacity: 0; transform: translateY(6px); transition: opacity .4s, transform .4s; }
     .mp-msg.on { opacity: 1; transform: none; }
 
-    /* Best episodes (Reddit) */
+    /* Best episodes and watch guides (Reddit) */
     .best { position: relative; padding: 0; }
-    .visual .best-frame { min-height: 580px; }
+    .visual .best-frame { min-height: 600px; }
     .best-frame::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(16, 14, 14, .1), rgba(16, 14, 14, .55)); }
-    .best-panel { position: absolute; right: 6%; top: 50%; transform: translateY(-50%); width: 300px; padding: 14px; border-radius: 12px;
-      background: rgba(18, 14, 24, .78); backdrop-filter: blur(18px) saturate(140%); box-shadow: 0 30px 80px rgba(0, 0, 0, .5);
+    .best-panel { position: absolute; right: 6%; top: 50%; transform: translateY(-50%); width: 310px; padding: 14px; border-radius: 12px;
+      background: rgba(18, 14, 24, .8); backdrop-filter: blur(18px) saturate(140%); box-shadow: 0 30px 80px rgba(0, 0, 0, .5);
       display: flex; flex-direction: column; gap: 8px; color: #efeaf6; font-size: 12px; }
     .bp-head { display: flex; align-items: center; gap: 7px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #9a90aa; }
     .bp-head b { font-weight: 600; }
-    .bp-head svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+    .bp-head svg, .bp-box svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .bp-seg { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 3px; border-radius: 8px; background: rgba(255, 255, 255, .05); }
+    .bp-tab { padding: 5px; border-radius: 6px; text-align: center; color: #9a90aa; font-weight: 500; transition: background .25s, color .25s; }
+    .bp-tab.on { background: rgba(255, 255, 255, .1); color: #efeaf6; }
     .bp-search { display: flex; gap: 6px; }
-    .bp-search .bp-q { flex: 1; min-height: 32px; padding: 7px 10px; border-radius: 7px; background: rgba(255, 255, 255, .06); }
-    .bp-search b { flex: none; padding: 7px 10px; border-radius: 7px; background: #c9b6f2; color: #1b1325; font-weight: 600; transition: transform .1s, filter .1s; }
-    .bp-search b.tap { transform: scale(.94); filter: brightness(1.15); }
-    .bp-reading { color: #9a90aa; height: 0; opacity: 0; overflow: hidden; transition: opacity .3s; }
-    .bp-reading.on { height: auto; opacity: 1; }
-    .bp-ep { display: flex; gap: 10px; padding: 9px 10px; border-radius: 8px; background: rgba(255, 255, 255, .04); opacity: 0; transform: translateY(8px); transition: opacity .45s, transform .45s; }
-    .bp-ep.on { opacity: 1; transform: none; }
+    .bp-search .bp-q { flex: 1; min-height: 32px; padding: 7px 10px; border-radius: 7px; background: rgba(255, 255, 255, .06); white-space: nowrap; overflow: hidden; }
+    .bp-go { flex: none; padding: 7px 10px; border-radius: 7px; background: #c9b6f2; color: #1b1325; font-weight: 600; transition: transform .1s, filter .1s; }
+    .bp-go.tap { transform: scale(.94); filter: brightness(1.15); }
+    .bp-pane { display: flex; flex-direction: column; gap: 6px; min-height: 352px; } /* same height for both tabs, so the panel doesn't jump */
+    .bp-pane[hidden] { display: none; }
+    /* Rows start as soft loading placeholders, then fill in */
+    .bp-ep, .bp-g { position: relative; display: flex; gap: 10px; padding: 9px 10px; border-radius: 8px; background: rgba(255, 255, 255, .045); transition: background .3s; }
+    .bp-ep > *, .bp-g > * { transition: opacity .35s; }
+    .skel > * { opacity: 0; }
+    .skel::after { content: ''; position: absolute; left: 12px; right: 40%; top: 50%; height: 8px; margin-top: -4px; border-radius: 4px; background: rgba(255, 255, 255, .08);
+      animation: skel 1.1s ease-in-out infinite; }
+    @keyframes skel { 50% { opacity: .4; } }
     .bp-ep i { font-style: normal; color: #6d6479; font-weight: 600; }
-    .bp-ep div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .bp-ep div, .bp-g div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
     .bp-ep small { color: #9a90aa; font-size: 11px; }
-    .bp-ep p { margin: 0; color: #b9b0c7; font-size: 11.5px; }
+    .bp-ep p, .bp-g p { margin: 0; color: #b9b0c7; font-size: 11.5px; }
     .bp-ep.picked { background: rgba(201, 182, 242, .16); }
     .bp-shared { align-self: center; padding: 5px 10px; border-radius: 999px; background: rgba(159, 214, 176, .14); color: #9fd6b0; font-size: 11px; opacity: 0; transition: opacity .4s; }
     .bp-shared.on { opacity: 1; }
+    .bp-progress { display: flex; flex-direction: column; gap: 6px; margin-bottom: 2px; color: #9a90aa; font-size: 11px; }
+    .bp-progress b { color: #efeaf6; font-weight: 600; }
+    .bp-bar { height: 4px; border-radius: 999px; background: rgba(255, 255, 255, .07); overflow: hidden; }
+    .bp-bar i { display: block; width: 0; height: 100%; border-radius: inherit; background: #c9b6f2; transition: width .5s ease; }
+    .bp-box { flex: none; width: 17px; height: 17px; margin-top: 1px; border-radius: 5px; background: rgba(255, 255, 255, .09); display: grid; place-items: center; color: #1b1325; transition: background .25s; }
+    .bp-box svg { opacity: 0; transition: opacity .2s; }
+    .bp-g.done .bp-box { background: #c9b6f2; }
+    .bp-g.done .bp-box svg { opacity: 1; }
+    .bp-g.done b { color: #9a90aa; text-decoration: line-through; text-decoration-color: #6d6479; }
+    .bp-g.next { background: rgba(201, 182, 242, .1); }
+    .bp-g em { align-self: flex-start; margin-top: 2px; padding: 1px 6px; border-radius: 4px; background: rgba(201, 182, 242, .14); color: #c9b6f2; font-style: normal; font-size: 10.5px; }
 
     /* ---------- Motion ---------- */
     .reveal { opacity: 0; transform: translateY(26px); transition: opacity .9s ease, transform .9s cubic-bezier(.2, .7, .2, 1); }
@@ -318,6 +337,7 @@
       .couch-frame { min-height: 300px; }
       .visual .best-frame { min-height: 260px; }
       .best-panel { position: relative; right: auto; top: auto; transform: none; width: auto; margin: -120px 14px 14px; }
+      .bp-pane { min-height: 0; }
       .mini-phone { position: relative; right: auto; bottom: auto; margin: -60px auto 20px; }
       .phone { width: 46%; }
       .chat { width: 230px; right: 12px; bottom: 12px; }
@@ -340,7 +360,7 @@
       </nav>
 
       <div class="hero2-inner">
-        <a class="announce" href="#best-row"><span class="new">New</span> Best episodes, picked by Reddit <span class="arr">→</span></a>
+        <a class="announce" href="#best-row"><span class="new">New</span> Best episodes and watch guides <span class="arr">→</span></a>
         <h1 class="display"><span class="w">a</span> <span class="w" style="animation-delay:.07s">movie</span> <span class="w" style="animation-delay:.14s">theater</span> <span class="w" style="animation-delay:.21s">for</span> <span class="w" style="animation-delay:.28s">two.</span></h1>
         <p class="lead2"><b>Sinehan</b> is Tagalog for cinema. Watch the same show at the same second from two places, with a chat and a video call beside it.</p>
         <div class="actions2">
@@ -461,20 +481,29 @@
 
     <section id="best-row">
       <div class="row">
-        <h2 class="display">Ask Reddit for the best episodes<br /><span>before you pick tonight's.</span></h2>
-        <p><b>Tap the star</b> and Sinehan reads what Reddit says about your show, then ranks the episodes people name most, weighted by upvotes. Share a pick straight into your chat.</p>
+        <h2 class="display">Ask Reddit for the best episodes<br /><span>or just the ones you need.</span></h2>
+        <p><b>Tap the star</b> for Reddit's favorite episodes, ranked by upvotes. Or make a <b>watch guide</b>: only the episodes for one story, from a guide thread you trust, with a checklist that remembers where you are.</p>
         <span class="tag">Episodes</span>
       </div>
       <div class="visual best" id="best">
         <div class="frame best-frame" style="--img:url(/static/film-canal.webp)"></div>
         <div class="best-panel" aria-hidden="true">
-          <div class="bp-head"><svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-.9z" /></svg><b>Best episodes</b></div>
-          <div class="bp-search"><span class="bp-q"></span><b>Ask Reddit</b></div>
-          <div class="bp-reading">Reading Reddit…</div>
-          <div class="bp-ep"><i>1</i><div><b>S2 E6</b><small>34 mentions · 5.1k upvotes</small><p>The lighthouse episode is perfect television. No notes.</p></div></div>
-          <div class="bp-ep"><i>2</i><div><b>S1 E9</b><small>21 mentions · 2.8k upvotes</small><p>That finale had our whole group chat screaming.</p></div></div>
-          <div class="bp-ep"><i>3</i><div><b>S3 E4</b><small>12 mentions · 1.4k upvotes</small><p>Underrated. The one-take scene in the market…</p></div></div>
-          <div class="bp-shared">Shared in chat: S2 E6</div>
+          <div class="bp-head"><svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-.9z" /></svg><b>Episodes</b></div>
+          <div class="bp-seg"><span class="bp-tab on" data-tab="best">Best</span><span class="bp-tab" data-tab="guide">Watch guide</span></div>
+          <div class="bp-search"><span class="bp-q"></span><b class="bp-go">Ask Reddit</b></div>
+          <div class="bp-pane" data-pane="best">
+            <div class="bp-ep skel"><i>1</i><div><b>S2 E6 · The Lighthouse</b><small>34 mentions · 5.1k upvotes</small><p>Perfect television. No notes.</p></div></div>
+            <div class="bp-ep skel"><i>2</i><div><b>S1 E9 · Low Tide</b><small>21 mentions · 2.8k upvotes</small><p>That finale had our group chat screaming.</p></div></div>
+            <div class="bp-ep skel"><i>3</i><div><b>S3 E4 · The Market</b><small>12 mentions · 1.4k upvotes</small><p>Underrated. The one-take scene…</p></div></div>
+            <div class="bp-shared">Shared in chat: S2 E6</div>
+          </div>
+          <div class="bp-pane" data-pane="guide" hidden>
+            <div class="bp-progress"><span class="bp-count">The Keeper · 5 episodes · <b>0</b> watched</span><span class="bp-bar"><i></i></span></div>
+            <div class="bp-g skel"><span class="bp-box"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg></span><div><b>S1 E1 · Arrival</b><p>where the Keeper story starts</p><em>Your thread</em></div></div>
+            <div class="bp-g skel"><span class="bp-box"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg></span><div><b>S1 E7 · Fog Signal</b><p>first real clue</p><em>In 3 guides</em></div></div>
+            <div class="bp-g skel"><span class="bp-box"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg></span><div><b>S2 E6 · The Lighthouse</b><p>the reveal</p><em>Your thread</em></div></div>
+            <div class="bp-g skel"><span class="bp-box"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg></span><div><b>S3 E2 · Undertow</b><p>the Keeper returns</p><em>Summary mentions the Keeper</em></div></div>
+          </div>
         </div>
       </div>
     </section>
@@ -585,7 +614,7 @@
         }
       }, { threshold: 0.2 });
       $$('.reveal').forEach((el) => io.observe(el));
-      if (calm) { $$('.reveal').forEach((el) => el.classList.add('in')); $$('.chat .m').forEach((m) => m.classList.add('on')); $$('#best .bp-ep').forEach((e) => e.classList.add('on')); $('#best .bp-q').textContent = 'Midnight Harbor'; return; }
+      if (calm) { $$('.reveal').forEach((el) => el.classList.add('in')); $$('.chat .m').forEach((m) => m.classList.add('on')); $$('#best .skel').forEach((e) => e.classList.remove('skel')); $('#best .bp-q').textContent = 'Midnight Harbor'; return; }
 
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
       function burst(frame, emoji, n = 3) {
@@ -666,22 +695,42 @@
         }
       })();
 
-      // Best episodes: type the show, ask Reddit, the ranked picks arrive, the top one is shared.
+      // Episodes: ask Reddit for the best ones, then switch to a watch guide and tick a couple off.
       (async function best() {
-        const q = $('#best .bp-q'), ask = $('#best .bp-search b'), reading = $('#best .bp-reading');
-        const eps = [...document.querySelectorAll('#best .bp-ep')], shared = $('#best .bp-shared');
-        const name = 'Midnight Harbor';
+        const root = $('#best');
+        const q = root.querySelector('.bp-q'), go = root.querySelector('.bp-go'), shared = root.querySelector('.bp-shared');
+        const tabs = [...root.querySelectorAll('.bp-tab')], panes = [...root.querySelectorAll('.bp-pane')];
+        const eps = [...root.querySelectorAll('.bp-ep')], rows = [...root.querySelectorAll('.bp-g')];
+        const count = root.querySelector('.bp-count b'), bar = root.querySelector('.bp-bar i');
+        const tab = (name) => {
+          tabs.forEach((t) => t.classList.toggle('on', t.dataset.tab === name));
+          panes.forEach((p) => (p.hidden = p.dataset.pane !== name));
+          go.textContent = name === 'guide' ? 'Make guide' : 'Ask Reddit';
+        };
+        const type = async (text) => { q.textContent = ''; for (const ch of text) { q.textContent += ch; await wait(60); } };
+        const tap = async () => { go.classList.add('tap'); await wait(160); go.classList.remove('tap'); };
+        const reveal = async (list) => { for (const r of list) { r.classList.remove('skel'); await wait(330); } };
+        const tick = (n) => {
+          rows.forEach((r, i) => { r.classList.toggle('done', i < n); r.classList.toggle('next', i === n); });
+          count.textContent = n;
+          bar.style.width = `${(n / 5) * 100}%`;
+        };
         for (;;) {
-          q.textContent = ''; reading.classList.remove('on'); shared.classList.remove('on');
-          eps.forEach((e) => e.classList.remove('on', 'picked'));
-          await wait(900);
-          for (const ch of name) { q.textContent += ch; await wait(70); }
-          await wait(400);
-          ask.classList.add('tap'); await wait(160); ask.classList.remove('tap');
-          reading.classList.add('on'); await wait(1300); reading.classList.remove('on');
-          for (const e of eps) { e.classList.add('on'); await wait(380); }
-          await wait(1400);
-          eps[0].classList.add('picked'); shared.classList.add('on');
+          // Best
+          tab('best');
+          eps.forEach((e) => e.classList.remove('picked')); shared.classList.remove('on');
+          eps.forEach((e) => e.classList.add('skel'));
+          await type('Midnight Harbor'); await wait(350); await tap();
+          await wait(1100); await reveal(eps);
+          await wait(1000); eps[0].classList.add('picked'); shared.classList.add('on');
+          await wait(2600);
+          // Watch guide
+          tab('guide');
+          rows.forEach((r) => r.classList.add('skel')); tick(0); rows.forEach((r) => r.classList.remove('next'));
+          await type('Midnight Harbor · the Keeper'); await wait(350); await tap();
+          await wait(1100); await reveal(rows); tick(0);
+          await wait(900); tick(1);
+          await wait(900); tick(2);
           await wait(3200);
         }
       })();
