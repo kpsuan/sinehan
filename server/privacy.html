@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#100e0e" />
+  <title>sinehan · privacy</title>
+  <link rel="icon" href="/static/logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root { color-scheme: dark; --bg: #100e0e; --text: #fdfff0; --muted: #a3a39e; --faint: #6f6d69; --accent: #b49cff; --panel: #181515; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.65 'Inter', system-ui, sans-serif; }
+    main { max-width: 720px; margin: 0 auto; padding: 40px 20px 80px; }
+    a { color: var(--accent); }
+    .brand { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-weight: 600; text-decoration: none; }
+    .brand img { width: 22px; height: 22px; }
+    h1 { margin: 36px 0 6px; font-size: clamp(30px, 6vw, 42px); letter-spacing: -0.03em; line-height: 1.1; }
+    .updated { margin: 0 0 30px; color: var(--faint); font-size: 14px; }
+    .short { padding: 18px 20px; border-radius: 12px; background: var(--panel); color: var(--muted); }
+    .short b { color: var(--text); }
+    h2 { margin: 38px 0 8px; font-size: 20px; letter-spacing: -0.01em; }
+    p, li { color: var(--muted); }
+    li { margin: 4px 0; }
+    strong { color: var(--text); font-weight: 600; }
+  </style>
+</head>
+<body>
+  <main>
+    <a class="brand" href="/"><img src="/static/logo.png" alt="" />sinehan</a>
+    <h1>Privacy</h1>
+    <p class="updated">Last updated October 15, 2026</p>
+
+    <p class="short"><b>In short:</b> Sinehan has no accounts and no analytics. It doesn't sell or share your data, and it doesn't keep your chats on our server. What you send goes to the people in your party, and what Sinehan remembers stays in your own browser.</p>
+
+    <h2>What Sinehan is</h2>
+    <p>Sinehan is a browser extension and website for watching a show together from two places: it keeps playback in sync, and adds chat, voice and video calls, and watch guides.</p>
+
+    <h2>What stays in your browser</h2>
+    <p>Sinehan stores these with your browser's extension storage, on your device only:</p>
+    <ul>
+      <li>the name and picture you choose (there's no account or email)</li>
+      <li>your settings: theme, camera and microphone choice, Bantay's colour</li>
+      <li>chat history of current and past parties, and saved watch guides with your ticks</li>
+      <li>where you stopped a show ("Stop for tonight")</li>
+    </ul>
+    <p>You can remove it by deleting past parties and guides in the sidebar, or by removing the extension.</p>
+
+    <h2>What goes to the people in your party</h2>
+    <p>When you're in a party, Sinehan sends these to the others in it, through our relay server at sinehan.live:</p>
+    <ul>
+      <li>your chosen name and picture</li>
+      <li>chat messages and reactions</li>
+      <li>playback actions on the show you're watching together (play, pause, position), and its address and title so the other person can open it</li>
+      <li>watch guides you save or share, and the artwork you pick for them</li>
+      <li>the setup messages that start a voice or video call</li>
+    </ul>
+    <p><strong>The relay only passes messages along.</strong> It doesn't store them, log their contents, or read them for any other purpose. A party exists only while someone is connected to it. Calls go directly between your browsers (peer to peer); their audio and video don't pass through our server.</p>
+    <p>Invite links and guide page links contain what they need to work (the party's room code or a guide channel code, and the show or guide). Anyone you send a link to can use it, so share them like you'd share a house key.</p>
+
+    <h2>What Sinehan reads on web pages</h2>
+    <p>To keep playback in sync, Sinehan looks at the video on the tab you choose as "the show": whether it's playing, where it is, and whether an ad is showing. On Netflix it reads the title and artwork of what's playing, for invite links. It doesn't read or collect anything else from the pages you visit.</p>
+    <p>With the Glass theme, the sidebar takes a small, blurred snapshot of the visible tab to use as its own background. The snapshot stays in the sidebar and is never sent anywhere.</p>
+
+    <h2>Services your browser contacts</h2>
+    <p>For watch guides, "best episodes", invite pictures and show artwork, your browser asks these public services directly (not through us): Reddit, TVmaze, Wikipedia and Wikidata, and Fandom wikis. They receive the show or topic you look up, like any visit to their sites, under their own privacy policies. Calls use Google's public STUN service to find a direct connection between you.</p>
+
+    <h2>What Sinehan doesn't do</h2>
+    <ul>
+      <li>no accounts, emails or passwords</li>
+      <li>no location, contacts or browsing history collection</li>
+      <li>no analytics, tracking, ads or ad profiles</li>
+      <li>no selling or sharing of data with anyone</li>
+    </ul>
+
+    <h2>Camera and microphone</h2>
+    <p>Sinehan uses your camera and microphone only during a call you start or join, and only after your browser asks you to allow it. You can turn either off at any time.</p>
+
+    <h2>Children</h2>
+    <p>Sinehan isn't directed at children under 13 and doesn't knowingly collect information from them.</p>
+
+    <h2>Changes and contact</h2>
+    <p>If this policy changes, the date above changes with it. For questions, use the contact details on Sinehan's Chrome Web Store page.</p>
+  </main>
+</body>
+</html>
