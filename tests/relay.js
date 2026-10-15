@@ -31,7 +31,7 @@ const closed = (ws) =>
 
 (async () => {
   const relay = spawn('node', [path.join(__dirname, '../server/server.js')], {
-    env: { ...process.env, PORT: String(PORT) },
+    env: { ...process.env, PORT: String(PORT), TMDB_KEY: '' },
   });
   await sleep(800);
   try {
@@ -123,6 +123,10 @@ const closed = (ws) =>
       'pings are answered',
       a.got.some((m) => m.type === 'pong'),
     );
+
+    // Tonight's deck: with no TMDB key the relay says so (the extension then uses TVmaze).
+    const deckRes = await fetch(`http://localhost:${PORT}/deck?country=PH&platform=Netflix`);
+    check('the deck needs a TMDB key (and says so)', deckRes.status === 503 && (await deckRes.json()).error === 'no-key');
   } finally {
     relay.kill();
   }

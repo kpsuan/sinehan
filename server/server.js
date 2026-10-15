@@ -29,6 +29,8 @@ const STATIC_FILES = new Map([
   ['bantay.js', 'text/javascript; charset=utf-8'],
 ]);
 const KLIPY_API_KEY = process.env.KLIPY_API_KEY;
+// TMDB (themoviedb.org): either the v3 "API Key" or the v4 "API Read Access Token" works.
+const TMDB_KEY = (process.env.TMDB_KEY || '').trim();
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
@@ -39,6 +41,7 @@ const server = http.createServer((req, res) => {
     return res.end(JOIN_PAGE);
   }
   if (url.pathname === '/gifs') return gifs(url, res);
+  if (url.pathname === '/deck') return deck(url, req, res);
 
   // Assets for the web pages.
   if (url.pathname.startsWith('/static/')) {
@@ -134,6 +137,92 @@ async function gifs(url, res) {
   } catch (e) {
     console.error('klipy request failed', e);
     json(res, 502, { error: 'klipy' });
+  }
+}
+
+// ---- Tonight's deck: what streams in your country (TMDB, with JustWatch's where-to-watch data) ----
+// The key stays here; the extension asks /deck?country=PH&platform=Netflix&genre=Crime&kind=tv.
+const PROVIDERS = {
+  Netflix: '8', 'Prime Video': '9|119', 'Disney+': '337', Max: '1899|384', Hulu: '15',
+  'Apple TV+': '350', 'Paramount+': '531', Peacock: '386|387', Crunchyroll: '283',
+};
+// Genre ids differ between shows and films (null: TMDB has no such genre for that kind).
+const TMDB_GENRES = {
+  Crime: [80, 80], Drama: [18, 18], Comedy: [35, 35], Thriller: [9648, 53], Mystery: [9648, 9648],
+  Romance: [10749, 10749], 'Science-Fiction': [10765, 878], Fantasy: [10765, 14], Action: [10759, 28],
+  Horror: [null, 27], Anime: [16, 16], Family: [10751, 10751],
+};
+const tmdbCache = new Map(); // url → { at, body }
+const deckHits = new Map(); // ip → { at, n }
+async function tmdb(path, params = {}) {
+  const bearer = TMDB_KEY.startsWith('eyJ');
+  const q = new URLSearchParams(bearer ? params : { ...params, api_key: TMDB_KEY });
+  const key = `${path}?${new URLSearchParams(params)}`;
+  const hit = tmdbCache.get(key);
+  if (hit && Date.now() - hit.at < 6 * 3600 * 1000) return hit.body;
+  const r = await fetch(`https://api.themoviedb.org/3${path}?${q}`, bearer ? { headers: { authorization: `Bearer ${TMDB_KEY}` } } : {});
+  if (!r.ok) throw new Error(`tmdb ${r.status}`);
+  const body = await r.json();
+  if (tmdbCache.size > 2000) tmdbCache.delete(tmdbCache.keys().next().value);
+  tmdbCache.set(key, { at: Date.now(), body });
+  return body;
+}
+async function deck(url, req, res) {
+  if (!TMDB_KEY) return json(res, 503, { error: 'no-key' });
+  // A deck is a handful of TMDB calls; 30 decks a minute from one address is plenty.
+  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  const now = Date.now();
+  const h = deckHits.get(ip);
+  if (h && now - h.at < 60000 && h.n >= 30) return json(res, 429, { error: 'slow-down' });
+  deckHits.set(ip, h && now - h.at < 60000 ? { at: h.at, n: h.n + 1 } : { at: now, n: 1 });
+  if (deckHits.size > 5000) deckHits.clear();
+
+  const country = /^[A-Z]{2}$/.test(url.searchParams.get('country') || '') ? url.searchParams.get('country') : 'US';
+  const platform = PROVIDERS[url.searchParams.get('platform')] ? url.searchParams.get('platform') : '';
+  const genre = TMDB_GENRES[url.searchParams.get('genre')] ? url.searchParams.get('genre') : '';
+  const want = url.searchParams.get('kind');
+  const kinds = (want === 'tv' || want === 'movie' ? [want] : ['tv', 'movie']).filter((k) => !genre || TMDB_GENRES[genre][k === 'tv' ? 0 : 1]);
+  try {
+    const lists = await Promise.all(kinds.map(async (kind) => {
+      const params = {
+        watch_region: country, with_watch_monetization_types: 'flatrate', sort_by: 'popularity.desc',
+        'vote_average.gte': '7', 'vote_count.gte': kind === 'tv' ? '150' : '400', include_adult: 'false',
+      };
+      if (platform) params.with_watch_providers = PROVIDERS[platform];
+      if (genre) params.with_genres = String(TMDB_GENRES[genre][kind === 'tv' ? 0 : 1]);
+      if (genre === 'Anime') params.with_original_language = 'ja';
+      const first = await tmdb(`/discover/${kind}`, { ...params, page: '1' });
+      const page = 1 + Math.floor(Math.random() * Math.min(5, first.total_pages || 1));
+      const body = page === 1 ? first : await tmdb(`/discover/${kind}`, { ...params, page: String(page) });
+      return (body.results || []).filter((x) => x.poster_path).map((x) => ({ kind, x }));
+    }));
+    const picks = lists.flat();
+    for (let i = picks.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [picks[i], picks[j]] = [picks[j], picks[i]];
+    }
+    const cards = await Promise.all(picks.slice(0, 16).map(async ({ kind, x }) => {
+      // Where it streams in that country (the asked-for platform when there is one).
+      let where = platform;
+      if (!where) {
+        try {
+          const p = (await tmdb(`/${kind}/${x.id}/watch/providers`)).results?.[country];
+          where = p?.flatrate?.[0]?.provider_name || '';
+        } catch {}
+      }
+      const title = x.name || x.title || '';
+      const year = String(x.first_air_date || x.release_date || '').slice(0, 4);
+      return {
+        id: `tmdb:${kind}:${x.id}`, kind: kind === 'tv' ? 'show' : 'movie', title,
+        sub: [year, kind === 'movie' ? 'Movie' : '', where].filter(Boolean).join(' · '),
+        summary: String(x.overview || '').slice(0, 260),
+        image: `https://image.tmdb.org/t/p/w342${x.poster_path}`, where,
+      };
+    }));
+    json(res, 200, { country, cards });
+  } catch (e) {
+    console.error('tmdb request failed', e.message);
+    json(res, 502, { error: 'tmdb' });
   }
 }
 

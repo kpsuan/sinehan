@@ -633,11 +633,11 @@ function changeMatch(fn) {
 }
 const cleanCard = (c) => c && {
   id: str(c.id, 80),
-  kind: c.kind === 'continue' ? 'continue' : 'show',
+  kind: c.kind === 'continue' || c.kind === 'movie' ? c.kind : 'show',
   title: str(c.title, 120),
   sub: str(c.sub, 160),
   summary: str(c.summary, 300),
-  image: /^https:\/\/(static\.tvmaze\.com|upload\.wikimedia\.org)\//.test(c.image || '') ? str(c.image, 600) : '',
+  image: /^https:\/\/(static\.tvmaze\.com|upload\.wikimedia\.org|image\.tmdb\.org)\//.test(c.image || '') ? str(c.image, 600) : '',
   url: /^https:\/\//.test(c.url || '') ? str(c.url, 600) : '',
   where: str(c.where, 40),
 };

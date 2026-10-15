@@ -1106,8 +1106,38 @@ const PLATFORMS = [
   ['Peacock', 'Peacock', /peacock/i],
   ['Crunchyroll', 'Crunchyroll', /crunchyroll/i],
 ];
+// Where you are, for what streams there: your saved pick, else a guess from your time zone or language.
+const COUNTRIES = ['US', 'PH', 'GB', 'CA', 'AU', 'NZ', 'IE', 'IN', 'SG', 'MY', 'ID', 'TH', 'VN', 'JP', 'KR', 'HK', 'TW', 'AE', 'SA', 'DE', 'FR', 'ES', 'IT', 'NL', 'SE', 'NO', 'DK', 'FI', 'PL', 'PT', 'BR', 'MX', 'AR', 'CO', 'CL', 'ZA'];
+const ZONES = {
+  'Asia/Manila': 'PH', 'Asia/Singapore': 'SG', 'Asia/Kuala_Lumpur': 'MY', 'Asia/Jakarta': 'ID', 'Asia/Bangkok': 'TH',
+  'Asia/Ho_Chi_Minh': 'VN', 'Asia/Saigon': 'VN', 'Asia/Tokyo': 'JP', 'Asia/Seoul': 'KR', 'Asia/Hong_Kong': 'HK',
+  'Asia/Taipei': 'TW', 'Asia/Kolkata': 'IN', 'Asia/Calcutta': 'IN', 'Asia/Dubai': 'AE', 'Asia/Riyadh': 'SA',
+  'Pacific/Auckland': 'NZ', 'Europe/London': 'GB', 'Europe/Dublin': 'IE', 'Europe/Berlin': 'DE', 'Europe/Paris': 'FR',
+  'Europe/Madrid': 'ES', 'Europe/Rome': 'IT', 'Europe/Amsterdam': 'NL', 'Europe/Stockholm': 'SE', 'Europe/Oslo': 'NO',
+  'Europe/Copenhagen': 'DK', 'Europe/Helsinki': 'FI', 'Europe/Warsaw': 'PL', 'Europe/Lisbon': 'PT',
+  'America/Sao_Paulo': 'BR', 'America/Mexico_City': 'MX', 'America/Bogota': 'CO', 'America/Santiago': 'CL',
+  'America/Argentina/Buenos_Aires': 'AR', 'Africa/Johannesburg': 'ZA', 'America/Toronto': 'CA', 'America/Vancouver': 'CA',
+};
+function guessCountry() {
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+  if (ZONES[zone]) return ZONES[zone];
+  if (zone.startsWith('Australia/')) return 'AU';
+  const fromLang = navigator.languages.map((l) => l.split('-')[1]?.toUpperCase()).find((c) => COUNTRIES.includes(c));
+  return fromLang || 'US';
+}
+const countryName = (c) => {
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'region' }).of(c);
+  } catch {
+    return c;
+  }
+};
+// The deck's menus, remembered between nights.
+let tnPrefs = { genre: 'Any', platform: 'Any', country: guessCountry(), kind: 'both' };
+chrome.storage.local.get('tonightPrefs').then(({ tonightPrefs }) => (tnPrefs = { ...tnPrefs, ...tonightPrefs }));
 let tonight = null; // the deck from the background
 let tonightSeenMatches = new Set();
+let tonightSource = '';
 let dealing = false;
 const el = (tag, props = {}, ...kids) => {
   const n = Object.assign(document.createElement(tag), props);
@@ -1145,7 +1175,22 @@ const tvCard = (s) => {
     image: String(s.image?.medium || '').replace(/^http:/, 'https:'), url, where,
   };
 };
-async function dealDeck(genre, platform = 'Any') {
+// What streams in your country, from the relay (it asks TMDB, which has JustWatch's where-to-watch data).
+// Null when the relay can't (no key yet, or down): then the deck comes from TVmaze instead.
+async function serverDeck({ genre, platform, country, kind }) {
+  const server = $('server').value.trim().replace(/^ws/, 'http').replace(/\/+$/, '');
+  if (!server) return null;
+  try {
+    const q = new URLSearchParams({ country, kind, ...(genre !== 'Any' ? { genre } : {}), ...(platform !== 'Any' ? { platform } : {}) });
+    const r = await fetch(`${server}/deck?${q}`);
+    if (!r.ok) return null;
+    const { cards } = await r.json();
+    return (cards || []).map((c) => ({ ...c, url: watchUrl({ name: c.title, webChannel: { name: c.where } }).url }));
+  } catch {
+    return null;
+  }
+}
+async function dealDeck(genre, platform = 'Any', country = 'US', kind = 'both') {
   const onPlatform = PLATFORMS.find(([v]) => v === platform)?.[2];
   const cards = [];
   // 1. Carry on with what you're watching: each saved guide's next episode.
@@ -1167,7 +1212,15 @@ async function dealDeck(genre, platform = 'Any') {
     cards.push({ id: `guide:${g.id}`, kind: 'continue', title: g.topic ? `${g.show} · ${g.topic}` : g.show,
       sub: `Up next: ${next.kind ? next.title : `${next.label}${next.title ? ` · ${next.title}` : ''}`}`, summary: '', image, url: url || (await guidePageLink({ ...g, saved: true })), where: '' });
   }
-  // 2. Well-liked shows from TVmaze in that genre (a few pages of its catalogue, the most-watched first).
+  // 2. Well-liked shows and films that stream where you are.
+  const local = await serverDeck({ genre, platform, country, kind });
+  if (local) {
+    tonightSource = 'tmdb';
+    cards.push(...local.slice(0, Math.max(0, 16 - cards.length)));
+    return cards;
+  }
+  tonightSource = 'tvmaze';
+  // Without the relay: well-liked shows from TVmaze in that genre (a few pages of its catalogue, the most-watched first).
   // One platform is a smaller slice of the catalogue, so it looks through more pages.
   const pages = new Set();
   while (pages.size < (onPlatform ? 12 : 4)) pages.add(Math.floor(Math.random() * 300));
@@ -1200,15 +1253,25 @@ function renderTonight() {
     out.push(intro(together
       ? 'Can’t decide? Deal a deck: you each swipe on your own, and a show you both say yes to is a match.'
       : 'Start a party first. Then deal a deck and you each swipe; a show you both like is a match.'));
-    const genre = el('select', { id: 'tnGenre' });
-    genre.append(...GENRES.map((g) => new Option(g === 'Any' ? 'Any genre' : g.replace('Science-Fiction', 'Sci-fi'), g)));
-    const platform = el('select', { id: 'tnPlatform' });
-    platform.append(...PLATFORMS.map(([v, label]) => new Option(label, v)));
+    const menu = (id, options, value, title) => {
+      const m = el('select', { id, title });
+      m.append(...options.map(([v, label]) => new Option(label, v)));
+      m.value = value;
+      m.onchange = () => {
+        tnPrefs = { ...tnPrefs, [id.slice(2).toLowerCase()]: m.value };
+        chrome.storage.local.set({ tonightPrefs: tnPrefs });
+      };
+      return m;
+    };
+    const genre = menu('tnGenre', GENRES.map((g) => [g, g === 'Any' ? 'Any genre' : g.replace('Science-Fiction', 'Sci-fi')]), tnPrefs.genre, 'Genre');
+    const platform = menu('tnPlatform', PLATFORMS.map(([v, label]) => [v, label]), tnPrefs.platform, 'Streaming on');
+    const country = menu('tnCountry', [...new Set([tnPrefs.country, ...COUNTRIES])].map((c) => [c, countryName(c)]), tnPrefs.country, 'Where you watch from');
+    const kind = menu('tnKind', [['both', 'Shows and movies'], ['tv', 'Shows'], ['movie', 'Movies']], tnPrefs.kind, 'Shows or movies');
     const deal = el('button', { type: 'button', className: 'primary wide', textContent: dealing ? 'Dealing…' : 'Deal a deck', disabled: !together || dealing });
     deal.onclick = async () => {
       dealing = true;
       renderTonight();
-      const cards = await dealDeck(genre.value, platform.value).catch(() => []);
+      const cards = await dealDeck(genre.value, platform.value, country.value, kind.value).catch(() => []);
       dealing = false;
       if (!cards.length) {
         renderTonight();
@@ -1220,7 +1283,8 @@ function renderTonight() {
         renderTonight();
       });
     };
-    out.push(el('div', { className: 'tn-row' }, genre, platform), deal);
+    out.push(el('div', { className: 'tn-row' }, genre, platform), el('div', { className: 'tn-row' }, country, kind), deal,
+      el('p', { className: 'tn-credit', textContent: 'Picks and where they stream come from TMDB and JustWatch. Not endorsed by TMDB.' }));
     $('bestResults').replaceChildren(el('div', { className: 'tn' }, ...out));
     return;
   }
