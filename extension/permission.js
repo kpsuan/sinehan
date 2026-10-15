@@ -3,7 +3,8 @@ async function ask() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
     stream.getTracks().forEach((t) => t.stop());
-    document.getElementById('msg').textContent = 'All set! Closing this tab — go back to the sidebar and start the call.';
+    document.getElementById('msg').textContent =
+      'All set! Closing this tab — go back to the sidebar and start the call.';
     document.getElementById('retry').hidden = true;
     setTimeout(() => window.close(), 1500);
   } catch (e) {

@@ -63,7 +63,10 @@ const server = http.createServer((req, res) => {
       'content-disposition': 'attachment; filename="sinehan-extension.zip"',
       'cache-control': 'no-cache',
     });
-    return fs.createReadStream(path.join(__dirname, 'public', 'sinehan-extension.zip')).on('error', () => res.end()).pipe(res);
+    return fs
+      .createReadStream(path.join(__dirname, 'public', 'sinehan-extension.zip'))
+      .on('error', () => res.end())
+      .pipe(res);
   }
   if (url.pathname === '/health') return res.end('watch-party relay ok');
   // The phone companion: chat, reactions and a remote for the show playing on a laptop.
@@ -102,7 +105,9 @@ async function gifs(url, res) {
   const endpoint = q ? 'search' : 'trending';
 
   try {
-    const r = await fetch(`https://api.klipy.com/api/v1/${encodeURIComponent(KLIPY_API_KEY)}/gifs/${endpoint}?${params}`);
+    const r = await fetch(
+      `https://api.klipy.com/api/v1/${encodeURIComponent(KLIPY_API_KEY)}/gifs/${endpoint}?${params}`,
+    );
     const body = await r.json();
     if (!r.ok || !body.result) return json(res, 502, { error: 'klipy' });
     const pick = (file, size) => {
@@ -186,7 +191,11 @@ wss.on('connection', (ws) => {
     }
     tokens -= 1;
     let msg;
-    try { msg = JSON.parse(raw); } catch { return; }
+    try {
+      msg = JSON.parse(raw);
+    } catch {
+      return;
+    }
 
     // The answer lets the extension notice a connection that died without closing (it reconnects).
     if (msg.type === 'ping') return send(ws, { type: 'pong' });
@@ -229,12 +238,34 @@ wss.on('connection', (ws) => {
     }
     if (ws.channel) {
       if (msg.type !== 'guide-tick' && msg.type !== 'guide-add' && msg.type !== 'guide-art') return;
-      const art = (x) => (typeof x === 'string' && (x === '' || /^(https:\/\/static\.tvmaze\.com\/|data:image\/jpeg;base64,)/.test(x)) ? x.slice(0, 60000) : '');
-      const tick = msg.type === 'guide-art'
-        ? { type: 'guide-art', id: String(msg.id || '').slice(0, 200), poster: art(msg.poster), background: art(msg.background), at: Number(msg.at) || Date.now() }
-        : msg.type === 'guide-add'
-        ? { type: 'guide-add', id: String(msg.id || '').slice(0, 200), key: String(msg.key || '').slice(0, 104), title: String(msg.title || '').slice(0, 120), kind: String(msg.kind || '').slice(0, 20) }
-        : { type: 'guide-tick', id: String(msg.id || '').slice(0, 200), key: String(msg.key || '').slice(0, 104), v: !!msg.v, at: Number(msg.at) || Date.now() };
+      const art = (x) =>
+        typeof x === 'string' && (x === '' || /^(https:\/\/static\.tvmaze\.com\/|data:image\/jpeg;base64,)/.test(x))
+          ? x.slice(0, 60000)
+          : '';
+      const tick =
+        msg.type === 'guide-art'
+          ? {
+              type: 'guide-art',
+              id: String(msg.id || '').slice(0, 200),
+              poster: art(msg.poster),
+              background: art(msg.background),
+              at: Number(msg.at) || Date.now(),
+            }
+          : msg.type === 'guide-add'
+            ? {
+                type: 'guide-add',
+                id: String(msg.id || '').slice(0, 200),
+                key: String(msg.key || '').slice(0, 104),
+                title: String(msg.title || '').slice(0, 120),
+                kind: String(msg.kind || '').slice(0, 20),
+              }
+            : {
+                type: 'guide-tick',
+                id: String(msg.id || '').slice(0, 200),
+                key: String(msg.key || '').slice(0, 104),
+                v: !!msg.v,
+                at: Number(msg.at) || Date.now(),
+              };
       const partyRoom = channelRoom.get(ws.channel);
       if (partyRoom && guideChannel(partyRoom, tick.id) === ws.channel) broadcast(partyRoom, null, tick);
       for (const page of channelSockets.get(ws.channel) || []) if (page !== ws) send(page, tick);
@@ -271,7 +302,8 @@ wss.on('connection', (ws) => {
     const members = rooms.get(room);
     members.delete(ws);
     if (!members.size) rooms.delete(room);
-    else if (!ws.companion) broadcast(room, null, { type: 'peer', count: watchers(room), joined: false, dropped: !ws.leftOnPurpose });
+    else if (!ws.companion)
+      broadcast(room, null, { type: 'peer', count: watchers(room), joined: false, dropped: !ws.leftOnPurpose });
     room = null;
   }
 });

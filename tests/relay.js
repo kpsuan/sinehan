@@ -26,10 +26,13 @@ function client(room) {
     ws.on('error', () => resolve(ws));
   });
 }
-const closed = (ws) => new Promise((r) => (ws.readyState === WebSocket.CLOSED ? r(true) : ws.once('close', () => r(true))));
+const closed = (ws) =>
+  new Promise((r) => (ws.readyState === WebSocket.CLOSED ? r(true) : ws.once('close', () => r(true))));
 
 (async () => {
-  const relay = spawn('node', [path.join(__dirname, '../server/server.js')], { env: { ...process.env, PORT: String(PORT) } });
+  const relay = spawn('node', [path.join(__dirname, '../server/server.js')], {
+    env: { ...process.env, PORT: String(PORT) },
+  });
   await sleep(800);
   try {
     // A normal pair still works.
@@ -38,13 +41,20 @@ const closed = (ws) => new Promise((r) => (ws.readyState === WebSocket.CLOSED ? 
     await sleep(200);
     a.send(JSON.stringify({ type: 'chat', text: 'hi' }));
     await sleep(200);
-    check('normal messages get through', b.got.some((m) => m.type === 'chat'));
+    check(
+      'normal messages get through',
+      b.got.some((m) => m.type === 'chat'),
+    );
 
     // A call setup's burst of messages gets through in full.
     const before = b.got.length;
     for (let i = 0; i < 60; i++) a.send(JSON.stringify({ type: 'rtc', candidate: { i } }));
     await sleep(300);
-    check('a burst like a call setup (60 at once) all arrives', b.got.length - before === 60, `${b.got.length - before}`);
+    check(
+      'a burst like a call setup (60 at once) all arrives',
+      b.got.length - before === 60,
+      `${b.got.length - before}`,
+    );
 
     // Flooding is dropped, then cut off.
     const f = await client('limits-2');
@@ -67,7 +77,10 @@ const closed = (ws) => new Promise((r) => (ws.readyState === WebSocket.CLOSED ? 
     const late = await client('limits-4');
     check('the relay is still up after all that', late.readyState === WebSocket.OPEN);
     await sleep(300);
-    check('the 11th person in a room is told it is full', late.got.some((m) => m.type === 'room-full'));
+    check(
+      'the 11th person in a room is told it is full',
+      late.got.some((m) => m.type === 'room-full'),
+    );
     crowd[0].send(JSON.stringify({ type: 'chat', text: 'still here' }));
     await sleep(200);
     check('…and does not receive the room’s messages', !late.got.some((m) => m.type === 'chat'));
@@ -79,23 +92,37 @@ const closed = (ws) => new Promise((r) => (ws.readyState === WebSocket.CLOSED ? 
     await sleep(200);
     p1.send(JSON.stringify({ type: 'guide-channels', ids: ['show|arc'] }));
     const page = await client(null);
-    page.send(JSON.stringify({ type: 'guide-join', channel: crypto.createHash('sha256').update('guides-1|show|arc').digest('hex').slice(0, 24) }));
+    page.send(
+      JSON.stringify({
+        type: 'guide-join',
+        channel: crypto.createHash('sha256').update('guides-1|show|arc').digest('hex').slice(0, 24),
+      }),
+    );
     await sleep(200);
     p1.send(JSON.stringify({ type: 'chat', text: 'private' }));
     p1.send(JSON.stringify({ type: 'guide-tick', id: 'show|arc', key: 'S1E1', v: true, at: 1 }));
     await sleep(300);
-    check('a guide page gets ticks for its guide', page.got.some((m) => m.type === 'guide-tick' && m.key === 'S1E1'));
+    check(
+      'a guide page gets ticks for its guide',
+      page.got.some((m) => m.type === 'guide-tick' && m.key === 'S1E1'),
+    );
     check('…but never the party’s chat', !page.got.some((m) => m.type === 'chat'));
     page.send(JSON.stringify({ type: 'guide-tick', id: 'show|arc', key: 'S1E2', v: true, at: 2 }));
     page.send(JSON.stringify({ type: 'chat', text: 'sneaky' }));
     await sleep(300);
-    check('ticks from the page reach the party', p2.got.some((m) => m.type === 'guide-tick' && m.key === 'S1E2'));
+    check(
+      'ticks from the page reach the party',
+      p2.got.some((m) => m.type === 'guide-tick' && m.key === 'S1E2'),
+    );
     check('…and nothing else from it does', !p2.got.some((m) => m.text === 'sneaky'));
 
     // Pings are answered (the extension uses this to notice dead connections).
     a.send(JSON.stringify({ type: 'ping' }));
     await sleep(200);
-    check('pings are answered', a.got.some((m) => m.type === 'pong'));
+    check(
+      'pings are answered',
+      a.got.some((m) => m.type === 'pong'),
+    );
   } finally {
     relay.kill();
   }

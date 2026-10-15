@@ -30,9 +30,13 @@ let bantayCoat = 'white';
 function drawBantay() {
   $('wlBantay').innerHTML = Bantay.svg('sit', { coat: bantayCoat }); // fixed markup from bantay.js
   $('rbDog').innerHTML = Bantay.svg('asleep', { coat: bantayCoat });
-  document.querySelectorAll('.g-empty svg.bantay').forEach((el) => (el.outerHTML = Bantay.svg('lying', { coat: bantayCoat })));
+  document
+    .querySelectorAll('.g-empty svg.bantay')
+    .forEach((el) => (el.outerHTML = Bantay.svg('lying', { coat: bantayCoat })));
   document.documentElement.style.setProperty('--bantay-lying', `url("${Bantay.dataUri('lying', bantayCoat)}")`);
-  document.querySelectorAll('#bantayCoats button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.coat === bantayCoat)));
+  document
+    .querySelectorAll('#bantayCoats button')
+    .forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.coat === bantayCoat)));
 }
 for (const [id, name] of Object.entries(Bantay.coats)) {
   const b = document.createElement('button');
@@ -65,7 +69,9 @@ function connectPort() {
 connectPort();
 
 function send(msg) {
-  try { port.postMessage(msg); } catch {}
+  try {
+    port.postMessage(msg);
+  } catch {}
 }
 
 // One-off request to the background; ignores the harmless error when it's restarting.
@@ -86,7 +92,8 @@ function onMessage(msg) {
     addChat(msg.name, msg.text, msg.mine ? 'me' : 'them', msg.avatar, msg.vt, $('log'), msg.guide);
     if (!msg.mine) showTyping(null);
   } else if (msg.type === 'mic') {
-    if (pc && msg.on === false && theirMicOn !== false) addChat('', `${peer?.name ? `${peer.name}’s` : 'Their'} mic is off`, 'system');
+    if (pc && msg.on === false && theirMicOn !== false)
+      addChat('', `${peer?.name ? `${peer.name}’s` : 'Their'} mic is off`, 'system');
     theirMicOn = !!msg.on;
     render();
   } else if (msg.type === 'hold' && msg.reason === 'break') {
@@ -120,7 +127,11 @@ function onMessage(msg) {
   } else if (msg.type === 'playback') {
     playbackLine('You', msg.action, msg.time);
   } else if (msg.type === 'goodnight') {
-    addChat('', `${msg.name || peer?.name || 'They'} stopped for tonight${typeof msg.time === 'number' ? ` at ${clock(msg.time)}` : ''}`, 'system');
+    addChat(
+      '',
+      `${msg.name || peer?.name || 'They'} stopped for tonight${typeof msg.time === 'number' ? ` at ${clock(msg.time)}` : ''}`,
+      'system',
+    );
     setTimeout(loadResume, 400);
   } else if (msg.type === 'show-closed') {
     addChat('', `${peer?.name || 'They'} closed the show`, 'system');
@@ -240,18 +251,24 @@ function startFresh() {
   askedPeer = false;
   renderProfiles();
   // After the background has filed the old chat away, show whatever this party already has.
-  setTimeout(() => ask({ type: 'history' }, (history = []) => {
-    for (const m of history) {
-      if (m.id && seenChat.has(m.id)) continue;
-      if (m.id) seenChat.add(m.id);
-      addChat(m.name, m.text, m.mine ? 'me' : 'them', m.avatar, m.vt, $('log'), m.guide);
-    }
-  }), 400);
+  setTimeout(
+    () =>
+      ask({ type: 'history' }, (history = []) => {
+        for (const m of history) {
+          if (m.id && seenChat.has(m.id)) continue;
+          if (m.id) seenChat.add(m.id);
+          addChat(m.name, m.text, m.mine ? 'me' : 'them', m.avatar, m.vt, $('log'), m.guide);
+        }
+      }),
+    400,
+  );
 }
 
 // Gear icon in the header shows/hides the settings section.
 $('settingsBtn').onclick = () => ($('settings').open = !$('settings').open);
-$('settings').addEventListener('toggle', () => $('settingsBtn').setAttribute('aria-pressed', String($('settings').open)));
+$('settings').addEventListener('toggle', () =>
+  $('settingsBtn').setAttribute('aria-pressed', String($('settings').open)),
+);
 
 // ---- Welcome (not in a party yet) ----
 function renderWelcome() {
@@ -307,14 +324,23 @@ function showStatus(s) {
   // Straight from one party into another (an invite link while the sidebar is open): start this one fresh.
   if (s.room && prev.room && s.room !== prev.room) startFresh();
   if (s.server && s.server !== prev.server && document.activeElement !== $('server')) $('server').value = s.server;
-  $('status').textContent = !s.room ? 'Not connected'
-    : !s.connected ? (s.retrying ? 'Connection lost. Reconnecting…' : 'Connecting…')
-    : s.peers > 1 ? 'Together'
-    : 'Waiting for them to join';
+  $('status').textContent = !s.room
+    ? 'Not connected'
+    : !s.connected
+      ? s.retrying
+        ? 'Connection lost. Reconnecting…'
+        : 'Connecting…'
+      : s.peers > 1
+        ? 'Together'
+        : 'Waiting for them to join';
   $('status').dataset.state = !s.connected ? 'off' : s.peers > 1 ? 'live' : 'waiting';
-  $('partyNow').textContent = !s.room ? 'Not in a party. Start one from the home screen.'
-    : !s.connected ? 'In a party, reconnecting…'
-    : s.peers > 1 ? 'In a party, together.' : 'In a party, waiting for them.';
+  $('partyNow').textContent = !s.room
+    ? 'Not in a party. Start one from the home screen.'
+    : !s.connected
+      ? 'In a party, reconnecting…'
+      : s.peers > 1
+        ? 'In a party, together.'
+        : 'In a party, waiting for them.';
   if (!leaving) $('disconnect').disabled = !s.room;
   if (!wasConnected && s.connected) $('settings').open = false;
   if (s.connected && s.peers > 1 && !peer && !askedPeer) {
@@ -361,12 +387,14 @@ $('invite').onclick = async () => {
   link += `&n=${encodeURIComponent(myName())}&a=${me.avatar}`;
   const onShow = status.watch?.tabId === tab?.id;
   const title = inviteTitle((onShow && status.watch?.showTitle) || tab?.title || '');
-  if (tab?.url?.startsWith('http')) link += `&to=${encodeURIComponent(tab.url)}&t=${encodeURIComponent(title.slice(0, 120))}`;
+  if (tab?.url?.startsWith('http'))
+    link += `&to=${encodeURIComponent(tab.url)}&t=${encodeURIComponent(title.slice(0, 120))}`;
   // The show's picture: YouTube's thumbnail or the page's own, else the show's artwork from TVmaze,
   // else the biggest image on the page.
-  const picture = showPicture(tab?.url, onShow ? status.watch?.image : null)
-    || (title && await tvPicture(title))
-    || showPicture(null, onShow ? status.watch?.fallbackImage : null);
+  const picture =
+    showPicture(tab?.url, onShow ? status.watch?.image : null) ||
+    (title && (await tvPicture(title))) ||
+    showPicture(null, onShow ? status.watch?.fallbackImage : null);
   if (picture) link += `&img=${encodeURIComponent(picture)}`;
 
   try {
@@ -388,7 +416,10 @@ $('inviteLink').onclick = () => $('inviteLink').select();
 // Just the show's name: "Prime Video: The Mentalist - Season 3" -> "The Mentalist"
 // (the invite page shows the platform separately).
 function inviteTitle(raw) {
-  return tidyTitle(String(raw || '').replace(/^(Prime Video|Amazon\.com|Watch)\s*:\s*/i, '')).replace(/[\s\-–—:|·]+$/, '');
+  return tidyTitle(String(raw || '').replace(/^(Prime Video|Amazon\.com|Watch)\s*:\s*/i, '')).replace(
+    /[\s\-–—:|·]+$/,
+    '',
+  );
 }
 
 // A TV show's artwork from TVmaze (free, no key), for pages that publish no picture. Quick, or nothing.
@@ -399,7 +430,9 @@ async function tvPicture(title) {
   if (tvPictures.has(name)) return tvPictures.get(name);
   let pic = '';
   try {
-    const r = await fetch(`https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(name)}`, { signal: AbortSignal.timeout(1500) });
+    const r = await fetch(`https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(name)}`, {
+      signal: AbortSignal.timeout(1500),
+    });
     const show = r.ok ? await r.json() : null;
     // Only if it's really this show, not just the closest name.
     if (show && norm(show.name) === norm(name)) pic = String(show.image?.original || '').replace(/^http:/, 'https:');
@@ -414,7 +447,8 @@ function showPicture(url, published) {
   try {
     const u = new URL(url);
     const v = u.searchParams.get('v');
-    if (/(^|\.)youtube\.com$/.test(u.hostname) && /^[\w-]{6,20}$/.test(v || '')) return `https://i.ytimg.com/vi/${v}/hqdefault.jpg`;
+    if (/(^|\.)youtube\.com$/.test(u.hostname) && /^[\w-]{6,20}$/.test(v || ''))
+      return `https://i.ytimg.com/vi/${v}/hqdefault.jpg`;
   } catch {}
   return /^https:\/\//.test(published || '') && published.length < 600 ? published : null;
 }
@@ -440,7 +474,9 @@ let theme = 'glass';
 function applyTheme(t) {
   theme = ['glass', 'dark', 'light'].includes(t) ? t : 'glass';
   document.documentElement.dataset.theme = theme;
-  document.querySelectorAll('[data-theme-choice]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.themeChoice === theme)));
+  document
+    .querySelectorAll('[data-theme-choice]')
+    .forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.themeChoice === theme)));
   try {
     localStorage.setItem('theme', theme);
   } catch {}
@@ -534,7 +570,9 @@ async function renderWatch() {
     $('backdrop').classList.remove('on');
     return;
   }
-  $('watchTitle').textContent = w ? w.showTitle || w.title || w.url : 'Nothing yet. Open a show and click Watch this tab.';
+  $('watchTitle').textContent = w
+    ? w.showTitle || w.title || w.url
+    : 'Nothing yet. Open a show and click Watch this tab.';
   $('watchTitle').classList.toggle('none', !w);
   $('watchIcon').hidden = !w?.favIconUrl;
   if (w?.favIconUrl && $('watchIcon').src !== w.favIconUrl) $('watchIcon').src = w.favIconUrl;
@@ -549,7 +587,9 @@ async function renderWatch() {
   $('watchBar').hidden = !status.connected;
   const showPrompt = status.connected && theirShow && showKey(theirShow.url) !== showKey(w?.url || '');
   $('followBar').hidden = !showPrompt;
-  if (showPrompt) $('followText').textContent = `${peer?.name ? `${peer.name} is` : 'They’re'} watching ${theirShow.title ? `“${theirShow.title}”` : 'something new'}`;
+  if (showPrompt)
+    $('followText').textContent =
+      `${peer?.name ? `${peer.name} is` : 'They’re'} watching ${theirShow.title ? `“${theirShow.title}”` : 'something new'}`;
 }
 
 $('watchHere').onclick = () => {
@@ -592,7 +632,11 @@ $('goodnightBtn').onclick = () => {
   if (!status.watch) return addChat('', 'Open your show first, then stop for tonight.', 'system');
   send({ local: true, type: 'goodnight-start' }); // the show's tab pauses both of you and reports the spot
   const at = showTime();
-  addChat('', `You stopped for tonight${typeof at === 'number' ? ` at ${clock(at)}` : ''}. Next time, pick up right there.`, 'system');
+  addChat(
+    '',
+    `You stopped for tonight${typeof at === 'number' ? ` at ${clock(at)}` : ''}. Next time, pick up right there.`,
+    'system',
+  );
   setTimeout(loadResume, 600);
 };
 
@@ -624,18 +668,20 @@ function siteOf(url) {
     return '';
   }
 }
-const resumeGo = () => ask({ type: 'resume-go' }, (s) => {
-  showStatus(s);
-  resume = null;
-  renderResume();
-  ask({ type: 'resume-dismiss' });
-});
+const resumeGo = () =>
+  ask({ type: 'resume-go' }, (s) => {
+    showStatus(s);
+    resume = null;
+    renderResume();
+    ask({ type: 'resume-dismiss' });
+  });
 $('resumeGo').onclick = resumeGo;
 $('wlResumeGo').onclick = resumeGo;
-$('resumeClose').onclick = () => ask({ type: 'resume-dismiss' }, () => {
-  resume = null;
-  renderResume();
-});
+$('resumeClose').onclick = () =>
+  ask({ type: 'resume-dismiss' }, () => {
+    resume = null;
+    renderResume();
+  });
 loadResume();
 function renderBreak() {
   $('breakBtn').classList.toggle('on', onBreak);
@@ -649,10 +695,21 @@ let lastPlayback = null; // { who, el, at }
 function playbackLine(who, action, time) {
   if (typeof time !== 'number' || !Number.isFinite(time)) return;
   const at = clock(time);
-  const text = action === 'pause' ? `${who} paused at ${at}` : action === 'play' ? `${who} pressed play at ${at}` : `${who} jumped to ${at}`;
+  const text =
+    action === 'pause'
+      ? `${who} paused at ${at}`
+      : action === 'play'
+        ? `${who} pressed play at ${at}`
+        : `${who} jumped to ${at}`;
   const log = $('log');
   // Only jumps merge (scrubbing through a scene); a pause or play always gets its own line.
-  if (action === 'seeked' && lastPlayback?.action === 'seeked' && lastPlayback.who === who && Date.now() - lastPlayback.at < 4000 && lastPlayback.el === log.lastElementChild) {
+  if (
+    action === 'seeked' &&
+    lastPlayback?.action === 'seeked' &&
+    lastPlayback.who === who &&
+    Date.now() - lastPlayback.at < 4000 &&
+    lastPlayback.el === log.lastElementChild
+  ) {
     lastPlayback.el.textContent = text;
     lastPlayback.at = Date.now();
     return;
@@ -730,9 +787,12 @@ function showTyping(name) {
 
 // Messages that are only a few emoji (no other text) show big, and float on the other person's video.
 function isEmojiOnly(text) {
-  return /\p{Extended_Pictographic}/u.test(text) && !/[0-9#*]/.test(text)
-    && /^(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\p{Emoji_Component}|‍|️|\s)+$/u.test(text)
-    && [...new Intl.Segmenter().segment(text.replace(/\s/g, ''))].length <= 8;
+  return (
+    /\p{Extended_Pictographic}/u.test(text) &&
+    !/[0-9#*]/.test(text) &&
+    /^(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\p{Emoji_Component}|‍|️|\s)+$/u.test(text) &&
+    [...new Intl.Segmenter().segment(text.replace(/\s/g, ''))].length <= 8
+  );
 }
 
 // `into` = which list (the live chat, or a past party being read); past parties' timestamps aren't clickable.
@@ -812,20 +872,22 @@ function listSessions() {
   $('sessionDelete').hidden = true;
   ask({ type: 'sessions' }, (sessions = []) => {
     $('historyClear').hidden = !sessions.length;
-    $('sessions').replaceChildren(...sessions.map((x) => {
-      const b = document.createElement('button');
-      b.className = 'session';
-      b.type = 'button';
-      const title = document.createElement('span');
-      title.className = 's-title';
-      title.textContent = x.shows?.length ? x.shows.join(' · ') : 'Watch party';
-      const meta = document.createElement('span');
-      meta.className = 's-meta';
-      meta.textContent = `${partyDate(x.endedAt)} · ${x.count} message${x.count === 1 ? '' : 's'}`;
-      b.append(title, meta);
-      b.onclick = () => readSession(x.id);
-      return b;
-    }));
+    $('sessions').replaceChildren(
+      ...sessions.map((x) => {
+        const b = document.createElement('button');
+        b.className = 'session';
+        b.type = 'button';
+        const title = document.createElement('span');
+        title.className = 's-title';
+        title.textContent = x.shows?.length ? x.shows.join(' · ') : 'Watch party';
+        const meta = document.createElement('span');
+        meta.className = 's-meta';
+        meta.textContent = `${partyDate(x.endedAt)} · ${x.count} message${x.count === 1 ? '' : 's'}`;
+        b.append(title, meta);
+        b.onclick = () => readSession(x.id);
+        return b;
+      }),
+    );
   });
 }
 
@@ -897,7 +959,11 @@ function setEpisodesMode(mode) {
 }
 $('modeBest').onclick = () => setEpisodesMode('best');
 $('modeGuide').onclick = () => setEpisodesMode('guide');
-const norm = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+const norm = (s) =>
+  String(s || '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
 
 // ---- Watch guide ----
 // A guide you make can be saved: it's kept, sent to the other person (it shows in their list too),
@@ -907,14 +973,17 @@ const guideId = (show, topic) => `${norm(show)}|${norm(topic)}`;
 const askP = (msg) => new Promise((r) => ask(msg, r));
 const isDone = (g, key) => !!g.done?.[key]?.v;
 
-const OPEN_ICON = '<svg viewBox="0 0 24 24"><path d="M14 4h6v6" /><path d="M20 4l-9 9" /><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" /></svg>';
+const OPEN_ICON =
+  '<svg viewBox="0 0 24 24"><path d="M14 4h6v6" /><path d="M20 4l-9 9" /><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" /></svg>';
 async function listGuides() {
   openGuide = null;
   const run = ++bestRun;
   const list = (await askP({ type: 'guides' })) || [];
   if (run !== bestRun || episodesMode !== 'guide') return;
   if (!list.length) {
-    const empty = note('Make a guide for a show or a franchise (and a story or saga, if you like). Saved guides show up here for both of you.');
+    const empty = note(
+      'Make a guide for a show or a franchise (and a story or saga, if you like). Saved guides show up here for both of you.',
+    );
     empty.classList.add('g-empty');
     empty.insertAdjacentHTML('afterbegin', Bantay.svg('lying', { coat: bantayCoat })); // fixed markup from bantay.js
     $('bestResults').replaceChildren(empty);
@@ -923,41 +992,44 @@ async function listGuides() {
   const h = document.createElement('h2');
   h.className = 'g-saved-h';
   h.textContent = 'Saved guides';
-  $('bestResults').replaceChildren(h, ...list.map((x) => {
-    const row = document.createElement('div');
-    row.className = 'g-saved';
-    const open = document.createElement('button');
-    open.type = 'button';
-    open.className = 'g-saved-open';
-    const title = document.createElement('span');
-    title.className = 't-title';
-    title.textContent = x.topic ? `${x.show} · ${x.topic}` : x.show;
-    const meta = document.createElement('span');
-    meta.className = 't-meta';
-    meta.textContent = `${x.watched} of ${x.count} watched · saved by ${x.by === myName() ? 'you' : x.by || 'them'}`;
-    open.append(title, meta);
-    open.onclick = () => showGuide(x.id);
-    const del = document.createElement('button');
-    del.type = 'button';
-    del.className = 'i-remove';
-    del.title = 'Remove from your saved guides';
-    del.setAttribute('aria-label', 'Remove');
-    del.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>'; // fixed markup
-    del.onclick = () => ask({ type: 'guide-delete', id: x.id }, listGuides);
-    // Open it as a page in a new tab (the same link works on any device).
-    const link = document.createElement('button');
-    link.type = 'button';
-    link.className = 'i-remove g-link';
-    link.title = 'Open this guide as a page';
-    link.setAttribute('aria-label', 'Open as a page');
-    link.innerHTML = OPEN_ICON; // fixed markup
-    link.onclick = async () => {
-      const g = await askP({ type: 'guide-get', id: x.id });
-      if (g) chrome.tabs.create({ url: await guidePageLink({ ...g, saved: true }) });
-    };
-    row.append(open, link, del);
-    return row;
-  }));
+  $('bestResults').replaceChildren(
+    h,
+    ...list.map((x) => {
+      const row = document.createElement('div');
+      row.className = 'g-saved';
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'g-saved-open';
+      const title = document.createElement('span');
+      title.className = 't-title';
+      title.textContent = x.topic ? `${x.show} · ${x.topic}` : x.show;
+      const meta = document.createElement('span');
+      meta.className = 't-meta';
+      meta.textContent = `${x.watched} of ${x.count} watched · saved by ${x.by === myName() ? 'you' : x.by || 'them'}`;
+      open.append(title, meta);
+      open.onclick = () => showGuide(x.id);
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'i-remove';
+      del.title = 'Remove from your saved guides';
+      del.setAttribute('aria-label', 'Remove');
+      del.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>'; // fixed markup
+      del.onclick = () => ask({ type: 'guide-delete', id: x.id }, listGuides);
+      // Open it as a page in a new tab (the same link works on any device).
+      const link = document.createElement('button');
+      link.type = 'button';
+      link.className = 'i-remove g-link';
+      link.title = 'Open this guide as a page';
+      link.setAttribute('aria-label', 'Open as a page');
+      link.innerHTML = OPEN_ICON; // fixed markup
+      link.onclick = async () => {
+        const g = await askP({ type: 'guide-get', id: x.id });
+        if (g) chrome.tabs.create({ url: await guidePageLink({ ...g, saved: true }) });
+      };
+      row.append(open, link, del);
+      return row;
+    }),
+  );
 }
 
 async function showGuide(id) {
@@ -988,7 +1060,8 @@ async function makeGuide() {
     sortGuideFields();
     g = await Reddit.watchGuide(show, $('guideTopic').value, $('guideLink').value);
   } catch {
-    if (run === bestRun) $('bestResults').replaceChildren(note('Couldn’t make a guide just now. Try again in a moment.'));
+    if (run === bestRun)
+      $('bestResults').replaceChildren(note('Couldn’t make a guide just now. Try again in a moment.'));
     return;
   }
   if (run !== bestRun) return;
@@ -1045,18 +1118,28 @@ async function guidePageLink(g) {
     k: series
       ? g.episodes.map((e) => e.key.slice(1).replace('E', '.')).join(' ')
       : g.episodes.map((e) => `${{ Films: 'F', Series: 'S' }[e.kind] || 'X'}${e.title}`).join('\n'),
-    d: g.episodes.map((e, i) => (isDone(g, e.key) ? i : -1)).filter((i) => i >= 0).join(' '),
+    d: g.episodes
+      .map((e, i) => (isDone(g, e.key) ? i : -1))
+      .filter((i) => i >= 0)
+      .join(' '),
     f: g.wiki || '', // the fan wiki, so the page can link each episode to its page
   };
   // The artwork picked for it (TVmaze pictures only: an uploaded one is too big for a link).
-  const tvmaze = (x) => (/^https:\/\/static\.tvmaze\.com\/uploads\/images\//.test(x || '') ? x.replace('https://static.tvmaze.com/uploads/images/', '') : '');
-  if (g.art && (tvmaze(g.art.poster) || tvmaze(g.art.background))) data.a = { p: tvmaze(g.art.poster), b: tvmaze(g.art.background), at: g.art.at };
+  const tvmaze = (x) =>
+    /^https:\/\/static\.tvmaze\.com\/uploads\/images\//.test(x || '')
+      ? x.replace('https://static.tvmaze.com/uploads/images/', '')
+      : '';
+  if (g.art && (tvmaze(g.art.poster) || tvmaze(g.art.background)))
+    data.a = { p: tvmaze(g.art.poster), b: tvmaze(g.art.background), at: g.art.at };
   const server = ($('server').value.trim() || DEFAULT_SERVER).replace(/\/+$/, '');
   // Live ticks with this party: a code made from the room and the guide (the relay matches it up). The
   // room itself never goes in the link, so the link can't be used to read your party.
   if (g.saved && g.room && g.room === status.room && status.connected) {
     const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${g.room}|${g.id}`));
-    const channel = [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 24);
+    const channel = [...new Uint8Array(hash)]
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('')
+      .slice(0, 24);
     Object.assign(data, { c: channel, w: server });
   }
   const squeezed = new Blob([JSON.stringify(data)]).stream().pipeThrough(new CompressionStream('deflate-raw'));
@@ -1069,7 +1152,12 @@ async function guidePageLink(g) {
 
 // Clear: empty the boxes and the results, back to your saved guides.
 function updateClear() {
-  $('bestClear').hidden = !($('bestQuery').value || $('guideTopic').value || $('guideLink').value || $('bestResults').childElementCount);
+  $('bestClear').hidden = !(
+    $('bestQuery').value ||
+    $('guideTopic').value ||
+    $('guideLink').value ||
+    $('bestResults').childElementCount
+  );
 }
 $('bestClear').onclick = () => {
   $('bestQuery').value = $('guideTopic').value = $('guideLink').value = '';
@@ -1090,21 +1178,49 @@ async function addToGuide(g, text) {
   let entry = null;
   if (franchise) {
     const title = text.slice(0, 120);
-    entry = { key: `T:${norm(title).slice(0, 100)}`, kind: /\bseries|season\b/i.test(title) ? 'Series' : 'Films', season: 0, number: 0, label: 'Film', title };
+    entry = {
+      key: `T:${norm(title).slice(0, 100)}`,
+      kind: /\bseries|season\b/i.test(title) ? 'Series' : 'Films',
+      season: 0,
+      number: 0,
+      label: 'Film',
+      title,
+    };
   } else {
     const guide = await Reddit.episodeGuide(g.show).catch(() => null);
     let key = [...Reddit.episodesIn(text).keys()].find((k) => /^S\d+E\d+$/.test(k));
     if (!key && guide) key = Reddit.titleIn(text, guide) || guide.eps.find((e) => norm(e.name) === norm(text))?.key;
     // "episode 5" in a one-season show
-    if (!key && guide?.seasons === 1) key = [...Reddit.episodesIn(text).keys()].map((k) => k.replace(/^E/, 'S1E')).find((k) => /^S1E\d+$/.test(k));
+    if (!key && guide?.seasons === 1)
+      key = [...Reddit.episodesIn(text).keys()].map((k) => k.replace(/^E/, 'S1E')).find((k) => /^S1E\d+$/.test(k));
     if (!key) return { ok: false, message: 'Couldn’t tell which episode. Try S2E5, or its exact title.' };
-    if (guide && !guide.byKey.has(key)) return { ok: false, message: `${key.replace(/^S(\d+)E(\d+)$/, 'S$1 E$2')} isn’t in ${g.show}’s episode list.` };
+    if (guide && !guide.byKey.has(key))
+      return { ok: false, message: `${key.replace(/^S(\d+)E(\d+)$/, 'S$1 E$2')} isn’t in ${g.show}’s episode list.` };
     const [, s, n] = key.match(/^S(\d+)E(\d+)$/);
-    entry = { key, season: Number(s), number: Number(n), label: `S${s} E${n}`, title: guide?.byKey.get(key)?.name || '' };
+    entry = {
+      key,
+      season: Number(s),
+      number: Number(n),
+      label: `S${s} E${n}`,
+      title: guide?.byKey.get(key)?.name || '',
+    };
   }
-  if (g.episodes.some((e) => e.key === entry.key)) return { ok: false, message: `${entry.title || entry.label} is already in this guide.` };
-  const episodes = [...g.episodes, { ...entry, reason: '', pasted: false, guides: 0, comments: 0, summary: false, fandom: false, url: '', added: true }]
-    .sort((a, b) => (a.kind || b.kind ? 0 : a.season - b.season || a.number - b.number));
+  if (g.episodes.some((e) => e.key === entry.key))
+    return { ok: false, message: `${entry.title || entry.label} is already in this guide.` };
+  const episodes = [
+    ...g.episodes,
+    {
+      ...entry,
+      reason: '',
+      pasted: false,
+      guides: 0,
+      comments: 0,
+      summary: false,
+      fandom: false,
+      url: '',
+      added: true,
+    },
+  ].sort((a, b) => (a.kind || b.kind ? 0 : a.season - b.season || a.number - b.number));
   const name = entry.title ? `${entry.label === 'Film' ? '' : `${entry.label} · `}${entry.title}` : entry.label;
   if (g.saved) {
     // Saved: keep it, and it shows up on their side too.
@@ -1133,7 +1249,9 @@ async function saveGuide(g) {
 function postGuideCard(g) {
   if (!status.connected) return;
   const name = g.topic ? `${g.show} · ${g.topic}` : g.show;
-  sendChat(`shared a watch guide: ${name} (${g.episodes.length} episodes)`, { guide: { id: g.id, show: g.show, topic: g.topic, count: g.episodes.length } });
+  sendChat(`shared a watch guide: ${name} (${g.episodes.length} episodes)`, {
+    guide: { id: g.id, show: g.show, topic: g.topic, count: g.episodes.length },
+  });
 }
 
 const CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>';
@@ -1148,8 +1266,20 @@ async function renderGuide(g, fresh = false) {
   back.onclick = listGuides;
   const out = [back, ...(g.problems || []).map((p) => note(p))];
   if (!g.episodes.length) {
-    out.push(note(g.topic ? `No guide or summary mentions “${g.topic}”. Try another name for it, or paste a guide thread.` : 'No guides found for this show. Paste a guide thread you trust.',
-      { label: 'Search Reddit for a guide', onClick: () => openTab(`https://www.reddit.com/search/?q=${encodeURIComponent(`${g.show} ${g.topic || 'essential'} episodes guide`)}`) }));
+    out.push(
+      note(
+        g.topic
+          ? `No guide or summary mentions “${g.topic}”. Try another name for it, or paste a guide thread.`
+          : 'No guides found for this show. Paste a guide thread you trust.',
+        {
+          label: 'Search Reddit for a guide',
+          onClick: () =>
+            openTab(
+              `https://www.reddit.com/search/?q=${encodeURIComponent(`${g.show} ${g.topic || 'essential'} episodes guide`)}`,
+            ),
+        },
+      ),
+    );
     $('bestResults').replaceChildren(...out);
     return;
   }
@@ -1278,8 +1408,15 @@ async function renderGuide(g, fresh = false) {
   // Add your own: "S2E5", "2x05", "season 2 episode 5", or its title (a film or series in a franchise).
   const add = document.createElement('form');
   add.className = 'g-add';
-  const addInput = Object.assign(document.createElement('input'), { id: 'guideAdd', maxLength: 100, autocomplete: 'off',
-    placeholder: g.franchise || g.episodes.some((e) => e.kind) ? 'Add a film or series by its title' : 'Add an episode: S2E5, 2x05 or its title' });
+  const addInput = Object.assign(document.createElement('input'), {
+    id: 'guideAdd',
+    maxLength: 100,
+    autocomplete: 'off',
+    placeholder:
+      g.franchise || g.episodes.some((e) => e.kind)
+        ? 'Add a film or series by its title'
+        : 'Add an episode: S2E5, 2x05 or its title',
+  });
   const addBtn = Object.assign(document.createElement('button'), { type: 'submit', textContent: 'Add' });
   const addNote = Object.assign(document.createElement('p'), { className: 'g-add-note' });
   addNote.hidden = true;
@@ -1331,7 +1468,10 @@ async function renderGuide(g, fresh = false) {
 function tidyTitle(title) {
   return String(title || '')
     .replace(/^\(\d+\)\s*/, '')
-    .replace(/\s*[|\-–—]\s*(YouTube|Netflix|Prime Video|Amazon\.com|Max|HBO Max|Crunchyroll|Disney\+|Hulu|Facebook)\b.*$/i, '')
+    .replace(
+      /\s*[|\-–—]\s*(YouTube|Netflix|Prime Video|Amazon\.com|Max|HBO Max|Crunchyroll|Disney\+|Hulu|Facebook)\b.*$/i,
+      '',
+    )
     .replace(/:?\s*\b(Season|S)\s*\d+.*$/i, '') // "Show: Season 2 Episode 3" → "Show"
     .trim();
 }
@@ -1368,8 +1508,12 @@ async function askReddit() {
     r = await Reddit.bestEpisodes(show);
   } catch {
     if (run !== bestRun) return;
-    $('bestResults').replaceChildren(note('Reddit didn’t answer. It sometimes turns away requests unless you’re signed in to reddit.com in this browser.',
-      { label: 'Open the search on Reddit', onClick: () => openTab(Reddit.searchUrl(show)) }));
+    $('bestResults').replaceChildren(
+      note(
+        'Reddit didn’t answer. It sometimes turns away requests unless you’re signed in to reddit.com in this browser.',
+        { label: 'Open the search on Reddit', onClick: () => openTab(Reddit.searchUrl(show)) },
+      ),
+    );
     return;
   }
   if (run !== bestRun) return;
@@ -1390,8 +1534,11 @@ async function askReddit() {
       labelEl.textContent = ep.title ? `${ep.label} · ${ep.title}` : ep.label;
       const count = document.createElement('span');
       count.className = 'e-count';
-      count.textContent = `${ep.mentions} mention${ep.mentions === 1 ? '' : 's'} · ${shortNum(ep.upvotes)} upvotes`
-        + (ep.described ? ` · ${ep.described === ep.mentions ? 'matched from what people describe' : `${ep.described} matched from descriptions`}` : '');
+      count.textContent =
+        `${ep.mentions} mention${ep.mentions === 1 ? '' : 's'} · ${shortNum(ep.upvotes)} upvotes` +
+        (ep.described
+          ? ` · ${ep.described === ep.mentions ? 'matched from what people describe' : `${ep.described} matched from descriptions`}`
+          : '');
       head.append(labelEl, count);
       const quote = document.createElement('span');
       quote.className = 'e-quote';
@@ -1407,7 +1554,9 @@ async function askReddit() {
       share.textContent = 'Share in chat';
       share.disabled = !status.connected;
       share.onclick = () => {
-        sendChat(`Reddit’s pick for ${r.show}: ${ep.label}${ep.title ? ` “${ep.title}”` : ''} (${shortNum(ep.upvotes)} upvotes)`);
+        sendChat(
+          `Reddit’s pick for ${r.show}: ${ep.label}${ep.title ? ` “${ep.title}”` : ''} (${shortNum(ep.upvotes)} upvotes)`,
+        );
         share.textContent = 'Shared';
         share.disabled = true;
       };
@@ -1417,8 +1566,14 @@ async function askReddit() {
       out.push(row);
     });
   } else {
-    out.push(note(r.threads.length ? 'Nobody named specific episodes. These threads talk about it:' : 'Reddit didn’t have threads about this. Try the show’s exact name.',
-      r.threads.length ? null : { label: 'Open the search on Reddit', onClick: () => openTab(r.searchUrl) }));
+    out.push(
+      note(
+        r.threads.length
+          ? 'Nobody named specific episodes. These threads talk about it:'
+          : 'Reddit didn’t have threads about this. Try the show’s exact name.',
+        r.threads.length ? null : { label: 'Open the search on Reddit', onClick: () => openTab(r.searchUrl) },
+      ),
+    );
   }
   if (r.threads.length) {
     const box = document.createElement('div');
@@ -1448,7 +1603,8 @@ async function askReddit() {
 // ---- Emoji tray ----
 const QUICK_REACTIONS = '😂 😭 😍 😱 🔥 👏 ❤️ 💀';
 const EMOJI = {
-  Faces: '😀 😃 😄 😁 😆 😅 🤣 😂 🙂 😉 😊 😇 🥰 😍 🤩 😘 😚 😋 😛 😜 🤪 😝 🤗 🤭 🤫 🤔 🤨 😐 😑 😶 😏 😒 🙄 😬 😌 😔 😴 🥴 😵 🤯 🥳 😎 🤓 🧐 😕 😟 🙁 😮 😲 😳 🥺 😨 😰 😢 😭 😱 😖 😣 😞 😩 🥱 😤 😡 🤬 😈 💀 🤡 👻 🙈 🙉 🙊',
+  Faces:
+    '😀 😃 😄 😁 😆 😅 🤣 😂 🙂 😉 😊 😇 🥰 😍 🤩 😘 😚 😋 😛 😜 🤪 😝 🤗 🤭 🤫 🤔 🤨 😐 😑 😶 😏 😒 🙄 😬 😌 😔 😴 🥴 😵 🤯 🥳 😎 🤓 🧐 😕 😟 🙁 😮 😲 😳 🥺 😨 😰 😢 😭 😱 😖 😣 😞 😩 🥱 😤 😡 🤬 😈 💀 🤡 👻 🙈 🙉 🙊',
   Love: '❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💋 😻 🫶 🥹',
   Hands: '👍 👎 👏 🙌 🤝 🙏 ✌️ 🤞 🤟 🤘 👌 🤌 👈 👉 👆 👇 ✋ 👋 💪 🫡',
   'Movie night': '🍿 🎬 🎥 📺 🎞️ 🍕 🍔 🌮 🍟 🍫 🍩 🍪 🍦 🍷 🥂 🍺 ☕ 🛋️ 🌙 ⭐ 🔥 ✨ 💯 💤 🎉 🎊 👀',
@@ -1470,11 +1626,18 @@ for (const [label, list] of Object.entries(EMOJI)) {
   const grid = document.createElement('div');
   grid.className = 'emoji-grid';
   for (const e of list.split(' ')) {
-    grid.append(emojiButton(e, (pick) => {
-      const input = $('msg');
-      input.setRangeText(pick, input.selectionStart ?? input.value.length, input.selectionEnd ?? input.value.length, 'end');
-      input.focus();
-    }));
+    grid.append(
+      emojiButton(e, (pick) => {
+        const input = $('msg');
+        input.setRangeText(
+          pick,
+          input.selectionStart ?? input.value.length,
+          input.selectionEnd ?? input.value.length,
+          'end',
+        );
+        input.focus();
+      }),
+    );
   }
   $('emojiGrid').append(title, grid);
 }
@@ -1490,7 +1653,9 @@ $('emojiBtn').onclick = () => {
   $('emojiTray').hidden = false;
   $('emojiBtn').setAttribute('aria-pressed', 'true');
 };
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeTrays(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeTrays();
+});
 
 // A soft two-note chime every two seconds, made in the browser (no sound file needed).
 function makeRinger() {
@@ -1501,7 +1666,10 @@ function makeRinger() {
       ctx ||= new AudioContext();
       ctx.resume?.();
       const t = ctx.currentTime;
-      [[659.25, 0], [880, 0.18]].forEach(([freq, delay]) => {
+      [
+        [659.25, 0],
+        [880, 0.18],
+      ].forEach(([freq, delay]) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'sine';
@@ -1516,9 +1684,18 @@ function makeRinger() {
     } catch {}
   };
   return {
-    start() { if (timer) return; chime(); timer = setInterval(chime, 2000); },
-    stop() { clearInterval(timer); timer = null; },
-    get on() { return !!timer; },
+    start() {
+      if (timer) return;
+      chime();
+      timer = setInterval(chime, 2000);
+    },
+    stop() {
+      clearInterval(timer);
+      timer = null;
+    },
+    get on() {
+      return !!timer;
+    },
   };
 }
 
@@ -1575,7 +1752,11 @@ chrome.storage.local.get(['cameraId', 'micId']).then((saved) => {
 });
 
 const videoConstraints = () => ({ width: 640, height: 480, ...(cameraId ? { deviceId: { exact: cameraId } } : {}) });
-const audioConstraints = () => ({ echoCancellation: true, noiseSuppression: true, ...(micId ? { deviceId: { exact: micId } } : {}) });
+const audioConstraints = () => ({
+  echoCancellation: true,
+  noiseSuppression: true,
+  ...(micId ? { deviceId: { exact: micId } } : {}),
+});
 
 // Like getUserMedia, but if the chosen device is gone (unplugged), fall back to the default one.
 async function getMedia(kind) {
@@ -1588,7 +1769,11 @@ async function getMedia(kind) {
     if (kind === 'video') cameraId = '';
     else micId = '';
     chrome.storage.local.set({ cameraId, micId });
-    addChat('', `Your chosen ${kind === 'video' ? 'camera' : 'mic'} isn’t available, so the default one is used.`, 'system');
+    addChat(
+      '',
+      `Your chosen ${kind === 'video' ? 'camera' : 'mic'} isn’t available, so the default one is used.`,
+      'system',
+    );
     return navigator.mediaDevices.getUserMedia(constraints());
   }
 }
@@ -1596,7 +1781,8 @@ async function getMedia(kind) {
 async function listDevices() {
   const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
   // Chrome adds "default"/"communications" stand-ins for audio; "System default" covers those.
-  const real = (kind) => devices.filter((d) => d.kind === kind && d.deviceId && !['default', 'communications'].includes(d.deviceId));
+  const real = (kind) =>
+    devices.filter((d) => d.kind === kind && d.deviceId && !['default', 'communications'].includes(d.deviceId));
   fillDevices($('camSelect'), real('videoinput'), cameraId, 'Camera');
   fillDevices($('micSelect'), real('audioinput'), micId, 'Microphone');
   // Without camera/mic permission, Chrome hides device names.
@@ -1624,7 +1810,10 @@ $('camSelect').onchange = async () => {
     const [track] = (await getMedia('video')).getVideoTracks();
     if (!pc || !localStream) return track.stop(); // the call ended meanwhile
     track.enabled = old.enabled;
-    await pc.getSenders().find((s) => s.track === old)?.replaceTrack(track);
+    await pc
+      .getSenders()
+      .find((s) => s.track === old)
+      ?.replaceTrack(track);
     old.stop();
     if (!localStream) return track.stop();
     localStream.removeTrack(old);
@@ -1736,7 +1925,9 @@ function createPeer() {
     remoteStream.addTrack(track);
     if (track.kind === 'audio') watchTheirVoice();
     $('remote').srcObject = remoteStream;
-    $('remote').play().catch(() => {});
+    $('remote')
+      .play()
+      .catch(() => {});
     track.onunmute = render;
     render();
     if (track.kind === 'video') send({ local: true, type: 'cam-available' }); // a fullscreen tab may want it
@@ -1859,8 +2050,11 @@ async function turnOnCamera(voice = false) {
 // Reuse an audio slot the other side offered, or add one; either way we can swap the mic in later.
 function micTransceiver() {
   if (audioTx && pc.getTransceivers().includes(audioTx)) return audioTx;
-  audioTx = pc.getTransceivers().find((t) => t.receiver.track?.kind === 'audio' && !t.sender.track && t.currentDirection !== 'stopped')
-    || pc.addTransceiver('audio', { direction: 'sendrecv', streams: [localStream] });
+  audioTx =
+    pc
+      .getTransceivers()
+      .find((t) => t.receiver.track?.kind === 'audio' && !t.sender.track && t.currentDirection !== 'stopped') ||
+    pc.addTransceiver('audio', { direction: 'sendrecv', streams: [localStream] });
   if (audioTx.direction !== 'sendrecv') audioTx.direction = 'sendrecv';
   audioTx.sender.setStreams?.(localStream);
   return audioTx;
@@ -2062,11 +2256,16 @@ function render() {
 
   $('placeholder').hidden = seeingThem;
   $('faces').replaceChildren(avatarEl(me.avatar, 52), ...(peer ? [avatarEl(peer.avatar, 52)] : []));
-  $('phText').textContent = incoming ? `${incoming.name} is calling…`
-    : !status.connected ? 'Not in a room yet. Use Invite to start one.'
-    : !bothHere ? 'Waiting for them to join.'
-    : !inCall ? 'Camera’s off.'
-    : pc.connectionState === 'connected' ? 'On a voice call'
-    : 'Connecting…';
+  $('phText').textContent = incoming
+    ? `${incoming.name} is calling…`
+    : !status.connected
+      ? 'Not in a room yet. Use Invite to start one.'
+      : !bothHere
+        ? 'Waiting for them to join.'
+        : !inCall
+          ? 'Camera’s off.'
+          : pc.connectionState === 'connected'
+            ? 'On a voice call'
+            : 'Connecting…';
 }
 render();

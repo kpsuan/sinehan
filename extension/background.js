@@ -71,7 +71,8 @@ chrome.runtime.onConnect.addListener((port) => {
     if (msg.type === 'goodnight' && fromWatchTab) saveSpot(msg);
     // Your own play / pause / jump, for the sidebar's chat (theirs arrive from the relay).
     if (fromWatchTab && ['play', 'pause', 'seeked'].includes(msg.type)) {
-      for (const p of ports) if (p.name === 'panel') postTo(p, { type: 'playback', action: msg.type, time: msg.time, mine: true });
+      for (const p of ports)
+        if (p.name === 'panel') postTo(p, { type: 'playback', action: msg.type, time: msg.time, mine: true });
     }
     if (msg.type === 'chat') {
       remember({ ...msg, mine: true });
@@ -124,7 +125,10 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg.type === 'open-sidebar') {
     // From the floating camera's exit button; must run right away, while Chrome still counts the click.
     if (!sender.tab) return reply({ ok: false });
-    chrome.sidePanel.open({ windowId: sender.tab.windowId }).then(() => reply({ ok: true }), () => reply({ ok: false }));
+    chrome.sidePanel.open({ windowId: sender.tab.windowId }).then(
+      () => reply({ ok: true }),
+      () => reply({ ok: false }),
+    );
     return true;
   }
   if (msg.type === 'join-invite') {
@@ -143,16 +147,25 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     disconnect();
     archiveParty(); // Leave ends the party: its chat moves to "Past parties"
   } else if (msg.type === 'sessions') {
-    historyWrite.then(() => chrome.storage.local.get('sessions')).then(({ sessions = [] }) =>
-      reply(sessions.map(({ messages, ...summary }) => ({ ...summary, count: messages.length }))));
+    historyWrite
+      .then(() => chrome.storage.local.get('sessions'))
+      .then(({ sessions = [] }) =>
+        reply(sessions.map(({ messages, ...summary }) => ({ ...summary, count: messages.length }))),
+      );
     return true;
   } else if (msg.type === 'session') {
-    chrome.storage.local.get('sessions').then(({ sessions = [] }) => reply(sessions.find((x) => x.id === msg.id) || null));
+    chrome.storage.local
+      .get('sessions')
+      .then(({ sessions = [] }) => reply(sessions.find((x) => x.id === msg.id) || null));
     return true;
   } else if (msg.type === 'delete-session' || msg.type === 'clear-sessions') {
     historyWrite = historyWrite
       .then(() => chrome.storage.local.get('sessions'))
-      .then(({ sessions = [] }) => chrome.storage.local.set({ sessions: msg.type === 'clear-sessions' ? [] : sessions.filter((x) => x.id !== msg.id) }));
+      .then(({ sessions = [] }) =>
+        chrome.storage.local.set({
+          sessions: msg.type === 'clear-sessions' ? [] : sessions.filter((x) => x.id !== msg.id),
+        }),
+      );
     historyWrite.then(() => reply({ ok: true }));
     return true;
   } else if (msg.type === 'guides') {
@@ -165,14 +178,20 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     const guide = cleanGuide(msg.guide);
     if (!guide) return reply(null);
     if (status.connected && status.room) guide.room = status.room;
-    saveGuides([guide], !!guide.room && guide.room === status.room).then(() => readGuides()).then((list) => reply(list.find((g) => g.id === guide.id) || null));
+    saveGuides([guide], !!guide.room && guide.room === status.room)
+      .then(() => readGuides())
+      .then((list) => reply(list.find((g) => g.id === guide.id) || null));
     return true;
   } else if (msg.type === 'guide-tick') {
     const tick = { id: String(msg.id || ''), key: String(msg.key || ''), v: !!msg.v, at: Date.now() };
-    tickGuide(tick, true).then(() => readGuides()).then((list) => reply(list.find((g) => g.id === tick.id) || null));
+    tickGuide(tick, true)
+      .then(() => readGuides())
+      .then((list) => reply(list.find((g) => g.id === tick.id) || null));
     return true;
   } else if (msg.type === 'guide-delete') {
-    guidesWrite = guidesWrite.then(readGuides).then((list) => chrome.storage.local.set({ guides: list.filter((g) => g.id !== msg.id) }));
+    guidesWrite = guidesWrite
+      .then(readGuides)
+      .then((list) => chrome.storage.local.set({ guides: list.filter((g) => g.id !== msg.id) }));
     guidesWrite.then(() => reply(true));
     return true;
   } else if (msg.type === 'resume') {
@@ -232,11 +251,19 @@ function joinRoom(server, room) {
 // When a party ends, its chat is saved with when it was and what you watched; newest 20 are kept.
 const MAX_SESSIONS = 20;
 async function archiveNow() {
-  const { history = [], room, partyShows = [], sessions = [] } = await chrome.storage.local.get(['history', 'room', 'partyShows', 'sessions']);
+  const {
+    history = [],
+    room,
+    partyShows = [],
+    sessions = [],
+  } = await chrome.storage.local.get(['history', 'room', 'partyShows', 'sessions']);
   const update = { history: [], partyShows: [] };
   if (history.length) {
     const shows = [...new Set([...partyShows, watch?.title].filter(Boolean))];
-    update.sessions = [{ id: crypto.randomUUID(), room, startedAt: history[0].at, endedAt: Date.now(), shows, messages: history }, ...sessions].slice(0, MAX_SESSIONS);
+    update.sessions = [
+      { id: crypto.randomUUID(), room, startedAt: history[0].at, endedAt: Date.now(), shows, messages: history },
+      ...sessions,
+    ].slice(0, MAX_SESSIONS);
   }
   await chrome.storage.local.set(update);
 }
@@ -248,7 +275,9 @@ function noteShow(title) {
   if (!title) return;
   historyWrite = historyWrite
     .then(() => chrome.storage.local.get('partyShows'))
-    .then(({ partyShows = [] }) => (partyShows.includes(title) ? null : chrome.storage.local.set({ partyShows: [...partyShows, title].slice(-5) })))
+    .then(({ partyShows = [] }) =>
+      partyShows.includes(title) ? null : chrome.storage.local.set({ partyShows: [...partyShows, title].slice(-5) }),
+    )
     .catch(console.error);
 }
 
@@ -278,15 +307,33 @@ function cleanGuide(g) {
     wiki: /^[a-z0-9-]+(\.[a-z0-9-]+)*\.fandom\.com$/.test(g.wiki || '') ? g.wiki : '',
     by: str(g.by, 30),
     at: Number(g.at) || Date.now(),
-    episodes: (Array.isArray(g.episodes) ? g.episodes : []).slice(0, 150).map((e) => ({
-      key: str(e.key, 104), season: Number(e.season) || 0, number: Number(e.number) || 0, label: str(e.label, 20), title: str(e.title, 120),
-      kind: str(e.kind, 20), order: Number(e.order) || 0,
-      reason: str(e.reason, 160), pasted: !!e.pasted, guides: Number(e.guides) || 0, comments: Number(e.comments) || 0, summary: !!e.summary, summaryTerm: str(e.summaryTerm, 40), fandom: !!e.fandom,
-      url: /^https:\/\//.test(e.url || '') ? str(e.url, 400) : '',
-      added: !!e.added,
-    })).filter((e) => GUIDE_KEY.test(e.key)),
+    episodes: (Array.isArray(g.episodes) ? g.episodes : [])
+      .slice(0, 150)
+      .map((e) => ({
+        key: str(e.key, 104),
+        season: Number(e.season) || 0,
+        number: Number(e.number) || 0,
+        label: str(e.label, 20),
+        title: str(e.title, 120),
+        kind: str(e.kind, 20),
+        order: Number(e.order) || 0,
+        reason: str(e.reason, 160),
+        pasted: !!e.pasted,
+        guides: Number(e.guides) || 0,
+        comments: Number(e.comments) || 0,
+        summary: !!e.summary,
+        summaryTerm: str(e.summaryTerm, 40),
+        fandom: !!e.fandom,
+        url: /^https:\/\//.test(e.url || '') ? str(e.url, 400) : '',
+        added: !!e.added,
+      }))
+      .filter((e) => GUIDE_KEY.test(e.key)),
     threads: (Array.isArray(g.threads) ? g.threads : []).slice(0, 6).map((t) => ({
-      title: str(t.title, 200), sub: str(t.sub, 60), upvotes: Number(t.upvotes) || 0, url: /^https:\/\//.test(t.url || '') ? str(t.url, 400) : '', pasted: !!t.pasted,
+      title: str(t.title, 200),
+      sub: str(t.sub, 60),
+      upvotes: Number(t.upvotes) || 0,
+      url: /^https:\/\//.test(t.url || '') ? str(t.url, 400) : '',
+      pasted: !!t.pasted,
     })),
     done,
   };
@@ -294,7 +341,13 @@ function cleanGuide(g) {
 // The artwork picked on a guide's page: TVmaze pictures or a small uploaded one; the newest pick wins.
 function cleanArt(a) {
   if (!a || typeof a !== 'object') return null;
-  const ok = (x) => (typeof x === 'string' && x.length < 60000 && (x === '' || /^(https:\/\/static\.tvmaze\.com\/uploads\/images\/[\w/.-]+|data:image\/jpeg;base64,[A-Za-z0-9+/=]+)$/.test(x)) ? x : '');
+  const ok = (x) =>
+    typeof x === 'string' &&
+    x.length < 60000 &&
+    (x === '' ||
+      /^(https:\/\/static\.tvmaze\.com\/uploads\/images\/[\w/.-]+|data:image\/jpeg;base64,[A-Za-z0-9+/=]+)$/.test(x))
+      ? x
+      : '';
   return { poster: ok(a.poster), background: ok(a.background), at: Number(a.at) || 0 };
 }
 function mergeGuide(mine, theirs) {
@@ -306,8 +359,15 @@ function mergeGuide(mine, theirs) {
   return { ...newer, room: mine.room || theirs.room, art, done };
 }
 function guideSummary(g) {
-  return { id: g.id, show: g.show, topic: g.topic, by: g.by, at: g.at, count: g.episodes.length,
-    watched: g.episodes.filter((e) => g.done[e.key]?.v).length };
+  return {
+    id: g.id,
+    show: g.show,
+    topic: g.topic,
+    by: g.by,
+    at: g.at,
+    count: g.episodes.length,
+    watched: g.episodes.filter((e) => g.done[e.key]?.v).length,
+  };
 }
 const panels = (msg) => {
   for (const p of ports) if (p.name === 'panel') postTo(p, msg);
@@ -360,9 +420,24 @@ function addFromPage(msg) {
       const g = list.find((x) => x.id === msg.id && x.room === status.room);
       if (!g || g.episodes.some((e) => e.key === key)) return;
       const m = key.match(/^S(\d+)E(\d+)$/);
-      g.episodes.push({ key, season: m ? Number(m[1]) : 0, number: m ? Number(m[2]) : 0, label: m ? `S${m[1]} E${m[2]}` : 'Film',
-        title: str(msg.title, 120), kind: m ? '' : str(msg.kind, 20) || 'Films', order: 0, reason: '', pasted: false, guides: 0, comments: 0,
-        summary: false, summaryTerm: '', fandom: false, url: '', added: true });
+      g.episodes.push({
+        key,
+        season: m ? Number(m[1]) : 0,
+        number: m ? Number(m[2]) : 0,
+        label: m ? `S${m[1]} E${m[2]}` : 'Film',
+        title: str(msg.title, 120),
+        kind: m ? '' : str(msg.kind, 20) || 'Films',
+        order: 0,
+        reason: '',
+        pasted: false,
+        guides: 0,
+        comments: 0,
+        summary: false,
+        summaryTerm: '',
+        fandom: false,
+        url: '',
+        added: true,
+      });
       if (m) g.episodes.sort((a, b) => a.season - b.season || a.number - b.number);
       g.at = Date.now();
       await chrome.storage.local.set({ guides: list });
@@ -450,7 +525,12 @@ chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
   if (tabId !== watch?.tabId) return;
   const urlChanged = info.url && showKey(info.url) !== showKey(watch.url);
   if (urlChanged && !announceTimer) announceFrom = watch.url; // where we were before this run of changes
-  watch = { tabId, url: tab.url || watch.url, title: tab.title || watch.title, favIconUrl: tab.favIconUrl || watch.favIconUrl };
+  watch = {
+    tabId,
+    url: tab.url || watch.url,
+    title: tab.title || watch.title,
+    favIconUrl: tab.favIconUrl || watch.favIconUrl,
+  };
   chrome.storage.local.set({ watch });
   if (urlChanged) {
     clearTimeout(announceTimer);
@@ -477,9 +557,23 @@ function showKey(url) {
 // and messages that arrive while it's closed are still there when it reopens.
 let historyWrite = Promise.resolve();
 function remember(msg) {
-  const entry = { id: msg.id, name: msg.name, text: msg.text, avatar: msg.avatar, vt: msg.vt, mine: msg.mine, at: Date.now() };
+  const entry = {
+    id: msg.id,
+    name: msg.name,
+    text: msg.text,
+    avatar: msg.avatar,
+    vt: msg.vt,
+    mine: msg.mine,
+    at: Date.now(),
+  };
   // A shared watch guide shows as a card with an Open button.
-  if (msg.guide?.id) entry.guide = { id: str(msg.guide.id, 200), show: str(msg.guide.show, 100), topic: str(msg.guide.topic, 60), count: Number(msg.guide.count) || 0 };
+  if (msg.guide?.id)
+    entry.guide = {
+      id: str(msg.guide.id, 200),
+      show: str(msg.guide.show, 100),
+      topic: str(msg.guide.topic, 60),
+      count: Number(msg.guide.count) || 0,
+    };
   historyWrite = historyWrite
     .then(() => chrome.storage.local.get('history'))
     .then(({ history = [] }) => chrome.storage.local.set({ history: [...history, entry].slice(-HISTORY_LIMIT) }))
@@ -500,14 +594,18 @@ function onCallSignal(msg) {
   if (panelOpen || pendingCall || msg.description?.type !== 'offer') return;
   pendingCall = { name: msg.name || 'They', at: Date.now() };
   broadcastLocal({ local: true, type: 'incoming-call', name: pendingCall.name });
-  chrome.notifications?.create('sinehan-call', {
-    type: 'basic',
-    iconUrl: 'icons/icon128.png',
-    title: `${pendingCall.name} is calling`,
-    message: 'Open Sinehan to answer.',
-    requireInteraction: true,
-    priority: 2,
-  }, () => void chrome.runtime.lastError);
+  chrome.notifications?.create(
+    'sinehan-call',
+    {
+      type: 'basic',
+      iconUrl: 'icons/icon128.png',
+      title: `${pendingCall.name} is calling`,
+      message: 'Open Sinehan to answer.',
+      requireInteraction: true,
+      priority: 2,
+    },
+    () => void chrome.runtime.lastError,
+  );
   clearTimeout(pendingTimer);
   pendingTimer = setTimeout(clearPendingCall, 40000);
 }
@@ -561,7 +659,11 @@ function connect(server, room) {
   sock.onmessage = (e) => {
     lastHeard = Date.now();
     let msg;
-    try { msg = JSON.parse(e.data); } catch { return; }
+    try {
+      msg = JSON.parse(e.data);
+    } catch {
+      return;
+    }
     if (msg.type === 'pong') {
       answersPings = true;
       return;
@@ -597,14 +699,18 @@ function connect(server, room) {
     if (msg.type === 'guide-add') addFromPage(msg);
     if (msg.type === 'guide-art') {
       const art = cleanArt(msg);
-      guidesWrite = guidesWrite.then(readGuides).then(async (list) => {
-        const g = list.find((x) => x.id === msg.id && x.room === status.room);
-        if (!g || (g.art?.at || 0) >= art.at) return;
-        g.art = art;
-        await chrome.storage.local.set({ guides: list });
-      }).catch(console.error);
+      guidesWrite = guidesWrite
+        .then(readGuides)
+        .then(async (list) => {
+          const g = list.find((x) => x.id === msg.id && x.room === status.room);
+          if (!g || (g.art?.at || 0) >= art.at) return;
+          g.art = art;
+          await chrome.storage.local.set({ guides: list });
+        })
+        .catch(console.error);
     }
-    if (msg.type === 'guide-tick') tickGuide({ id: str(msg.id, 200), key: str(msg.key, 104), v: !!msg.v, at: Number(msg.at) || Date.now() }, false);
+    if (msg.type === 'guide-tick')
+      tickGuide({ id: str(msg.id, 200), key: str(msg.key, 104), v: !!msg.v, at: Number(msg.at) || Date.now() }, false);
     if (msg.type === 'chat') {
       remember({ ...msg, mine: false });
       // Lets the show's tab know whether to flash the message on the video (sidebar closed or hidden by fullscreen).

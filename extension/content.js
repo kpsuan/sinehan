@@ -131,7 +131,13 @@ function onVideoEvent(e) {
   if (e.type === 'waiting') return onWaiting();
   if (e.type === 'playing') return onPlaying();
   if (e.type === 'pause') clearTimeout(stallTimer);
-  if (applied && Date.now() < applied.until && video.paused === applied.paused && Math.abs(video.currentTime - applied.time) < 1.5) return;
+  if (
+    applied &&
+    Date.now() < applied.until &&
+    video.paused === applied.paused &&
+    Math.abs(video.currentTime - applied.time) < 1.5
+  )
+    return;
   applied = null; // a real local action: from here on nothing is an echo of the old remote change
   if (e.type === 'pause' && myBuffering) onPlaying(); // paused on purpose while loading: stop holding them
   sendState(e.type);
@@ -278,7 +284,8 @@ function onRemote(msg) {
   if (msg.paused) video.pause();
   else video.play().catch(() => toast('Click the video once so the browser lets it autoplay'));
   // Big jumps (skipping the intro, rewinding a scene) get called out so they're not a surprise.
-  if (msg.type === 'seeked' && Math.abs(delta) > 10) toast(`They ${delta > 0 ? 'skipped ahead' : 'went back'} ${clock(Math.abs(delta))}`);
+  if (msg.type === 'seeked' && Math.abs(delta) > 10)
+    toast(`They ${delta > 0 ? 'skipped ahead' : 'went back'} ${clock(Math.abs(delta))}`);
   else if (msg.type === 'play' || msg.type === 'pause') toast(msg.paused ? 'Paused' : 'Playing');
 }
 
@@ -421,7 +428,8 @@ function detectAd() {
     const text = node.nodeValue.trim();
     if (!text || text.length > 40 || !AD_LABELS.some((re) => re.test(text))) continue;
     const el = node.parentElement;
-    if (el && !el.closest('[data-sinehan]') && el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return true;
+    if (el && !el.closest('[data-sinehan]') && el.checkVisibility({ opacityProperty: true, visibilityProperty: true }))
+      return true;
   }
   return false;
 }
@@ -448,12 +456,21 @@ function holdHand(name) {
   if (!handEl) {
     handEl = document.createElement('div');
     handEl.dataset.sinehan = '';
-    handEl.style.cssText = 'position:fixed;inset:0;z-index:2147483645;pointer-events:none;opacity:0;' +
+    handEl.style.cssText =
+      'position:fixed;inset:0;z-index:2147483645;pointer-events:none;opacity:0;' +
       'box-shadow:inset 0 0 140px 40px rgba(201,182,242,.55)';
   }
   if (handEl.parentNode !== host) host.appendChild(handEl);
-  handEl.animate([{ opacity: 0 }, { opacity: 1, offset: 0.25 }, { opacity: 0.35, offset: 0.5 }, { opacity: 1, offset: 0.7 }, { opacity: 0 }],
-    { duration: 2600, easing: 'ease-in-out' });
+  handEl.animate(
+    [
+      { opacity: 0 },
+      { opacity: 1, offset: 0.25 },
+      { opacity: 0.35, offset: 0.5 },
+      { opacity: 1, offset: 0.7 },
+      { opacity: 0 },
+    ],
+    { duration: 2600, easing: 'ease-in-out' },
+  );
   toast(`${name || 'They'} is holding your hand`);
 }
 
@@ -488,7 +505,8 @@ function showCount(n) {
   if (!countEl) {
     countEl = document.createElement('div');
     countEl.dataset.sinehan = '';
-    countEl.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2147483647;pointer-events:none;' +
+    countEl.style.cssText =
+      'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2147483647;pointer-events:none;' +
       'width:150px;height:150px;border-radius:50%;display:grid;place-items:center;background:rgba(22,18,30,.58);backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);border:1px solid rgba(255,255,255,.12);' +
       `color:#efeaf6;font:600 72px/1 ${FONT};box-shadow:0 8px 40px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.1)`;
   }
@@ -496,7 +514,13 @@ function showCount(n) {
   const host = document.fullscreenElement || document.body;
   if (countEl.parentNode !== host) host.appendChild(countEl);
   countEl.textContent = n;
-  countEl.animate([{ transform: 'translate(-50%,-50%) scale(1.25)', opacity: 0.4 }, { transform: 'translate(-50%,-50%) scale(1)', opacity: 1 }], { duration: 300, easing: 'ease-out' });
+  countEl.animate(
+    [
+      { transform: 'translate(-50%,-50%) scale(1.25)', opacity: 0.4 },
+      { transform: 'translate(-50%,-50%) scale(1)', opacity: 1 },
+    ],
+    { duration: 300, easing: 'ease-out' },
+  );
 }
 
 // A soft two-note chime every two seconds, made in the browser (no sound file needed).
@@ -508,7 +532,10 @@ function makeRinger() {
       ctx ||= new AudioContext();
       ctx.resume?.();
       const t = ctx.currentTime;
-      [[659.25, 0], [880, 0.18]].forEach(([freq, delay]) => {
+      [
+        [659.25, 0],
+        [880, 0.18],
+      ].forEach(([freq, delay]) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'sine';
@@ -523,9 +550,18 @@ function makeRinger() {
     } catch {}
   };
   return {
-    start() { if (timer) return; chime(); timer = setInterval(chime, 2000); },
-    stop() { clearInterval(timer); timer = null; },
-    get on() { return !!timer; },
+    start() {
+      if (timer) return;
+      chime();
+      timer = setInterval(chime, 2000);
+    },
+    stop() {
+      clearInterval(timer);
+      timer = null;
+    },
+    get on() {
+      return !!timer;
+    },
   };
 }
 
@@ -539,7 +575,8 @@ function callBanner(name, ring) {
   if (ring) tabRinger.start();
   callEl = document.createElement('div');
   callEl.dataset.sinehan = '';
-  callEl.style.cssText = 'position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:2147483647;display:flex;align-items:center;gap:10px;' +
+  callEl.style.cssText =
+    'position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:2147483647;display:flex;align-items:center;gap:10px;' +
     'padding:9px 10px 9px 16px;border-radius:9px;background:rgba(22,18,30,.62);backdrop-filter:blur(18px) saturate(140%);color:#efeaf6;' +
     `font:13px/1.4 ${FONT};box-shadow:0 8px 28px rgba(0,0,0,.35)`;
   const label = document.createElement('span');
@@ -553,7 +590,9 @@ function callBanner(name, ring) {
   const answer = btn('Answer', '#c9b6f2', '#1b1325');
   answer.onclick = () => {
     callBannerOff();
-    ask({ type: 'open-sidebar' }, (r) => { if (!r?.ok) toast('Click the Sinehan icon to answer'); });
+    ask({ type: 'open-sidebar' }, (r) => {
+      if (!r?.ok) toast('Click the Sinehan icon to answer');
+    });
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
   };
   const decline = btn('Decline', 'rgba(229,134,143,.18)', '#f0b4bb');
@@ -584,7 +623,9 @@ function goodnight(time, name) {
   applied = { paused: true, time: typeof time === 'number' ? time : video.currentTime, until: Date.now() + 1500 };
   video.pause();
   if (typeof time === 'number' && Math.abs(video.currentTime - time) > 1) seek(time);
-  toast(`${name ? `${name} stopped for tonight. ` : 'Goodnight. '}Saved at ${clock(typeof time === 'number' ? time : video.currentTime)}.`);
+  toast(
+    `${name ? `${name} stopped for tonight. ` : 'Goodnight. '}Saved at ${clock(typeof time === 'number' ? time : video.currentTime)}.`,
+  );
 }
 // Opened from "Pick up where you left off": go to the saved spot, paused, once the player is ready.
 function checkResume() {
@@ -644,7 +685,8 @@ function topBar(top) {
     const started = Date.now();
     el = document.createElement('div');
     el.dataset.sinehan = '';
-    el.style.cssText = `position:fixed;left:50%;top:${top}px;transform:translateX(-50%);z-index:2147483647;display:flex;align-items:center;gap:12px;` +
+    el.style.cssText =
+      `position:fixed;left:50%;top:${top}px;transform:translateX(-50%);z-index:2147483647;display:flex;align-items:center;gap:12px;` +
       'padding:9px 10px 9px 16px;border-radius:9px;background:rgba(22,18,30,.62);backdrop-filter:blur(18px) saturate(140%);color:#efeaf6;' +
       `font:13px/1.4 ${FONT};box-shadow:0 8px 28px rgba(0,0,0,.35)`;
     const label = document.createElement('span');
@@ -661,7 +703,8 @@ function topBar(top) {
     if (action) {
       const b = document.createElement('button');
       b.textContent = action.label;
-      b.style.cssText = 'border:0;border-radius:7px;padding:6px 12px;background:#c9b6f2;color:#1b1325;font:inherit;font-weight:600;cursor:pointer';
+      b.style.cssText =
+        'border:0;border-radius:7px;padding:6px 12px;background:#c9b6f2;color:#1b1325;font:inherit;font-weight:600;cursor:pointer';
       b.onclick = action.onClick;
       el.append(b);
     } else {
@@ -692,7 +735,11 @@ function connectionDropped(who) {
     applied = { paused: true, time: video.currentTime, until: Date.now() + 1500 };
     video.pause();
   }
-  netBar.show(who === 'me' ? 'Connection lost. Reconnecting…' : 'Their connection dropped. Waiting for them…', null, 'head-tilt');
+  netBar.show(
+    who === 'me' ? 'Connection lost. Reconnecting…' : 'Their connection dropped. Waiting for them…',
+    null,
+    'head-tilt',
+  );
   clearTimeout(dropGiveUp);
   // They may not be coming back soon: stop the bar after two minutes (we still count you in if they do).
   dropGiveUp = setTimeout(() => {
@@ -721,7 +768,9 @@ function theyreBack() {
 
 // The picture this page publishes for link previews, so invites can show the show.
 function pagePicture() {
-  const meta = document.querySelector('meta[property="og:image"], meta[name="og:image"], meta[name="twitter:image"], meta[property="twitter:image"]');
+  const meta = document.querySelector(
+    'meta[property="og:image"], meta[name="og:image"], meta[name="twitter:image"], meta[property="twitter:image"]',
+  );
   const src = meta?.content || video?.poster || '';
   try {
     const u = new URL(src, location.href);
@@ -742,12 +791,17 @@ async function netflixLookup(id) {
     if (r.ok) {
       const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
       const meta = (p) => doc.querySelector(`meta[property="${p}"], meta[name="${p}"]`)?.content || '';
-      title = meta('og:title').replace(/^Watch\s+/i, '').replace(/\s*[|\-–]\s*Netflix.*$/i, '').trim();
+      title = meta('og:title')
+        .replace(/^Watch\s+/i, '')
+        .replace(/\s*[|\-–]\s*Netflix.*$/i, '')
+        .trim();
       image = /^https:\/\//.test(meta('og:image')) ? meta('og:image') : '';
       // Today's public title page: the show's name is the page heading, its artwork is the hero image.
       if (!title || title === 'Netflix') title = doc.querySelector('h1')?.textContent.trim().slice(0, 120) || '';
       if (!image) {
-        const hero = doc.querySelector('[data-uia="hero"] img[src^="https://"]') || doc.querySelector('img[src*="nflxso.net"][src*=".jpg"]');
+        const hero =
+          doc.querySelector('[data-uia="hero"] img[src^="https://"]') ||
+          doc.querySelector('img[src*="nflxso.net"][src*=".jpg"]');
         image = hero?.getAttribute('src') || '';
       }
     }
@@ -766,8 +820,13 @@ async function netflixLookup(id) {
 function askNetflixPlayer(id) {
   return new Promise((resolve) => {
     const nonce = Math.random().toString(36).slice(2);
-    const done = (meta) => { window.removeEventListener('message', onReply); resolve(meta || {}); };
-    const onReply = (e) => { if (e.source === window && e.data?.source === 'watch-party-reply' && e.data.nonce === nonce) done(e.data.meta); };
+    const done = (meta) => {
+      window.removeEventListener('message', onReply);
+      resolve(meta || {});
+    };
+    const onReply = (e) => {
+      if (e.source === window && e.data?.source === 'watch-party-reply' && e.data.nonce === nonce) done(e.data.meta);
+    };
     window.addEventListener('message', onReply);
     window.postMessage({ source: 'watch-party', want: 'meta', id, nonce }, '*');
     setTimeout(() => done({}), 1500);
@@ -837,7 +896,8 @@ function showFollowBanner(url, title, from) {
   bannerEl?.remove();
   bannerEl = document.createElement('div');
   bannerEl.dataset.sinehan = '';
-  bannerEl.style.cssText = 'position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:2147483647;display:flex;align-items:center;gap:10px;' +
+  bannerEl.style.cssText =
+    'position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:2147483647;display:flex;align-items:center;gap:10px;' +
     'padding:9px 10px 9px 14px;border-radius:9px;background:rgba(22,18,30,.58);backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);border:1px solid rgba(255,255,255,.12);color:#efeaf6;' +
     `font:13px/1.4 ${FONT};box-shadow:0 6px 24px rgba(0,0,0,.45);max-width:min(560px,90vw)`;
   const label = document.createElement('span');
@@ -845,7 +905,8 @@ function showFollowBanner(url, title, from) {
   label.textContent = `They’re now watching ${title ? `“${title}”` : 'something else'}`;
   const go = document.createElement('button');
   go.textContent = 'Go there';
-  go.style.cssText = 'flex:none;border:0;border-radius:6px;padding:6px 10px;background:#c9b6f2;color:#1b1325;font:inherit;font-weight:600;cursor:pointer';
+  go.style.cssText =
+    'flex:none;border:0;border-radius:6px;padding:6px 10px;background:#c9b6f2;color:#1b1325;font:inherit;font-weight:600;cursor:pointer';
   go.onclick = () => ask({ type: 'follow', url });
   const close = document.createElement('button');
   close.textContent = '✕';
@@ -1108,11 +1169,17 @@ function buildOverlay(fsHost) {
     cam.style.left = `${left}px`;
     cam.style.top = `${top}px`;
     // Zoom from the corner nearest the screen edge, so it grows inward and never off-screen.
-    cam.style.setProperty('--origin', `${top + h / 2 > innerHeight / 2 ? 'bottom' : 'top'} ${left + w / 2 > innerWidth / 2 ? 'right' : 'left'}`);
+    cam.style.setProperty(
+      '--origin',
+      `${top + h / 2 > innerHeight / 2 ? 'bottom' : 'top'} ${left + w / 2 > innerWidth / 2 ? 'right' : 'left'}`,
+    );
   }
-  chrome.storage.local.get('camPos').then(({ camPos }) => {
-    if (camPos) placeCam(camPos.x * innerWidth, camPos.y * innerHeight);
-  }).catch(() => {});
+  chrome.storage.local
+    .get('camPos')
+    .then(({ camPos }) => {
+      if (camPos) placeCam(camPos.x * innerWidth, camPos.y * innerHeight);
+    })
+    .catch(() => {});
   let drag = null;
   cam.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 || e.composedPath().some((el) => el.tagName === 'BUTTON')) return;
@@ -1156,7 +1223,14 @@ function buildOverlay(fsHost) {
   };
 
   function sendChat(text) {
-    const msg = { type: 'chat', id: crypto.randomUUID(), name: me.name, avatar: me.avatar, text, vt: video?.currentTime };
+    const msg = {
+      type: 'chat',
+      id: crypto.randomUUID(),
+      name: me.name,
+      avatar: me.avatar,
+      text,
+      vt: video?.currentTime,
+    };
     post(msg);
     add({ ...msg, mine: true });
   }
@@ -1257,9 +1331,12 @@ function ensureFont() {
 }
 
 function isEmojiOnly(text) {
-  return /\p{Extended_Pictographic}/u.test(text) && !/[0-9#*]/.test(text)
-    && /^(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\p{Emoji_Component}|‍|️|\s)+$/u.test(text)
-    && [...new Intl.Segmenter().segment(text.replace(/\s/g, ''))].length <= 8;
+  return (
+    /\p{Extended_Pictographic}/u.test(text) &&
+    !/[0-9#*]/.test(text) &&
+    /^(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\p{Emoji_Component}|‍|️|\s)+$/u.test(text) &&
+    [...new Intl.Segmenter().segment(text.replace(/\s/g, ''))].length <= 8
+  );
 }
 
 // Emoji drift up from the bottom-right of the video and fade out, like live-stream reactions.
