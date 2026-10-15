@@ -7,7 +7,7 @@
   <meta name="description" content="Sinehan is a Chrome extension that keeps a show in sync between two people in two places, with chat and a video call beside it." />
   <meta property="og:title" content="Sinehan · a movie theater for two" />
   <meta property="og:description" content="Same show, same second, two places. With chat and a video call beside it." />
-  <meta property="og:image" content="https://sinehan.live/static/still.webp" />
+  <meta property="og:image" content="https://sinehan.live/static/film-bridge.webp" />
   <link rel="icon" href="/static/logo.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -58,7 +58,7 @@
     .url { flex: 1; max-width: 420px; margin: 0 auto; padding: 5px 14px; border-radius: 999px; background: #262120; color: var(--muted); font-size: 13px; text-align: center; }
     .stage { display: grid; grid-template-columns: 1fr 300px; }
     .frame { position: relative; min-height: 520px; overflow: hidden; isolation: isolate; }
-    .frame::before { content: ''; position: absolute; inset: 0; z-index: -1; background: url('/static/still.webp') center / cover;
+    .frame::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--img, url('/static/film-bridge.webp')) center / cover;
       animation: drift 24s ease-in-out infinite alternate; }
     @keyframes drift { from { transform: scale(1.02) translate(0, 0); } to { transform: scale(1.12) translate(-2%, -1.5%); } }
     .frame.held::before { animation-play-state: paused; }
@@ -126,6 +126,8 @@
     .end p { margin: 0 0 30px; color: var(--muted); font-size: 18px; }
     footer { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 28px 0 48px; color: var(--faint); font-size: 14px; }
     footer a:hover { color: var(--text); }
+    .credits { flex-basis: 100%; margin: 6px 0 0; font-size: 12px; color: var(--faint); }
+    .credits a { text-decoration: underline; text-decoration-color: rgba(255, 255, 255, .2); }
 
     /* ---------- Motion ---------- */
     .reveal { opacity: 0; transform: translateY(26px); transition: opacity .9s ease, transform .9s cubic-bezier(.2, .7, .2, 1); }
@@ -205,7 +207,7 @@
     <div class="window" aria-label="Sinehan running next to a show in Chrome">
       <div class="chrome"><span class="dots"><i></i><i></i><i></i></span><span class="url">youtube.com/watch</span></div>
       <div class="stage">
-        <div class="frame" id="heroFrame">
+        <div class="frame" id="heroFrame" style="--img:url(/static/film-bridge.webp)">
           <span class="toast" id="heroToast">Her: this scene is so good</span>
           <div class="bar"></div>
         </div>
@@ -220,8 +222,8 @@
         <span class="tag">Sync</span>
       </div>
       <div class="visual pair" id="sync">
-        <div class="frame"><span class="count">3</span><span class="who"><img src="/static/avatar1.png" alt="" style="background:#c9b6f2" />You</span></div>
-        <div class="frame"><span class="count">3</span><span class="who"><img src="/static/avatar3.png" alt="" style="background:#bfe0d0" />Her</span></div>
+        <div class="frame" style="--img:url(/static/film-sintel.webp)"><span class="count">3</span><span class="who"><img src="/static/avatar1.png" alt="" style="background:#c9b6f2" />You</span></div>
+        <div class="frame" style="--img:url(/static/film-sintel.webp)"><span class="count">3</span><span class="who"><img src="/static/avatar3.png" alt="" style="background:#bfe0d0" />Her</span></div>
       </div>
 
       <div class="row">
@@ -230,7 +232,7 @@
         <span class="tag">Holds</span>
       </div>
       <div class="visual holds" id="holds">
-        <div class="frame dim">
+        <div class="frame dim" style="--img:url(/static/film-action.webp)">
           <span class="toast">They're watching an ad. Paused until it's over.</span>
           <span class="paused"><i></i><i></i></span>
         </div>
@@ -242,11 +244,11 @@
         <span class="tag">Together</span>
       </div>
       <div class="visual" id="talk">
-        <div class="frame">
+        <div class="frame" style="--img:url(/static/film-canal.webp)">
           <div class="cam" style="left:24px;top:24px;background:#bfe0d0"><img src="/static/avatar3.png" alt="" /></div>
           <div class="chat">
             <span class="m">wait rewind that<small>41:02</small></span>
-            <span class="m me">already did 😂<small>41:05</small></span>
+            <span class="m me">already did<small>41:05</small></span>
             <span class="m">okay this part is so good</span>
           </div>
         </div>
@@ -258,10 +260,10 @@
         <span class="tag">Invite</span>
       </div>
       <div class="visual" id="invite">
-        <div class="frame dim held">
+        <div class="frame dim held" style="--img:url(/static/film-laundromat.webp)">
           <div class="invite">
             <div class="from"><img src="/static/avatar1.png" alt="" /><span><b>narp</b> invited you to watch</span></div>
-            <h3>Sunset Hills</h3>
+            <h3>Cosmos Laundromat</h3>
             <span class="site">youtube.com</span>
             <span class="join">Join the party</span>
           </div>
@@ -291,6 +293,7 @@
     <footer>
       <span>Sinehan · sinehan.live</span>
       <a href="/download">Download</a>
+      <p class="credits">Film stills from Blender open movies: <a href="https://mango.blender.org">Tears of Steel</a> and <a href="https://durian.blender.org">Sintel</a> (CC BY 3.0), <a href="https://gooseberry.blender.org">Cosmos Laundromat</a> (CC BY-SA 4.0), © Blender Foundation. Cropped and compressed.</p>
     </footer>
   </div>
   <script>
@@ -330,7 +333,7 @@
       }
 
       // Hero: chat pops up over the film and reactions float by.
-      const lines = [['Her: this scene is so good', '❤️'], ['You: wait for it…', '😭'], ['Her: NO WAY', '😱'], ['You: told you 😌', '🍿']];
+      const lines = [['Her: this scene is so good', '❤️'], ['You: wait for it…', '❤️'], ['Her: NO WAY', '❤️'], ['You: told you', '❤️']];
       let li = 0;
       setInterval(() => {
         li = (li + 1) % lines.length;
@@ -377,7 +380,6 @@
           await wait(900);
           for (const m of msgs) { m.classList.add('on'); await wait(1300); }
           burst(f, '❤️', 4);
-          await wait(1200); burst(f, '🍿', 2);
           await wait(3200);
         }
       })();

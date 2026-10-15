@@ -15,7 +15,11 @@ const STATIC_FILES = new Map([
   ['avatar2.png', 'image/png'],
   ['avatar3.png', 'image/png'],
   ['avatar4.png', 'image/png'],
-  ['still.webp', 'image/webp'],
+  ['film-bridge.webp', 'image/webp'],
+  ['film-sintel.webp', 'image/webp'],
+  ['film-action.webp', 'image/webp'],
+  ['film-canal.webp', 'image/webp'],
+  ['film-laundromat.webp', 'image/webp'],
   ['sidebar-dark.webp', 'image/webp'],
   ['hbomax.png', 'image/png'],
 ]);
