@@ -598,15 +598,20 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     check('…and syncs with the party', await until(() => gp.$eval('#sync', (x) => x.classList.contains('live'))));
     await gp.locator('.ep .tick').nth(1).click();
     check('ticking on the page ticks it in their sidebar', await until(() => pB2.$$eval('.g-ep', (r) => r[1]?.classList.contains('done'))));
+    await gp.fill('#addInput', 'S1E9');
+    await gp.click('#addForm button');
+    check('you can add an episode on the page too', await until(async () => (await gp.$$eval('.ep', (r) => r.length)) === 4));
+    check('…and it reaches their sidebar', await until(async () => (await pB2.$$eval('.g-ep', (r) => r.length)) === 4));
     await gp.reload();
     check('the page remembers ticks on that device', await until(() => gp.$$eval('.ep', (r) => r[1]?.classList.contains('done'))));
+    check('…and the episode added there', await until(async () => (await gp.$$eval('.ep', (r) => r.length)) === 4));
     await gp.close();
     // Add your own episode: it lands in order and shows up on their side.
     await pA.evaluate(() => { Reddit.episodeGuide = async () => null; });
     await pA.fill('#guideAdd', 'S1E5');
     await pA.click('.g-add button');
-    check('you can add an episode yourself', await until(async () => (await pA.$$eval('.g-ep', (r) => r.length)) === 4));
-    check('…and it shows up on their side', await until(async () => (await pB2.$$eval('.g-ep', (r) => r.length)) === 4));
+    check('you can add an episode yourself', await until(async () => (await pA.$$eval('.g-ep', (r) => r.length)) === 5));
+    check('…and it shows up on their side', await until(async () => (await pB2.$$eval('.g-ep', (r) => r.length)) === 5));
     await pB2.click('.g-back');
     check('their saved guides list it', await until(async () => (await pB2.$$eval('.g-saved .t-title', (t) => t.map((x) => x.textContent))).includes('Test Show · The Arc')),
       await pB2.evaluate(() => `mode=${episodesMode} open=${!!openGuide} results=${$('bestResults').textContent.slice(0, 160)}`));

@@ -342,6 +342,27 @@ function tickGuide(tick, share) {
   return guidesWrite;
 }
 // When you're both here: catch each other up on this party's guides (never other parties').
+// An episode added on a guide's page (any device): add it to this party's copy of the guide.
+function addFromPage(msg) {
+  const key = str(msg.key, 104);
+  if (!GUIDE_KEY.test(key)) return;
+  guidesWrite = guidesWrite
+    .then(readGuides)
+    .then(async (list) => {
+      const g = list.find((x) => x.id === msg.id && x.room === status.room);
+      if (!g || g.episodes.some((e) => e.key === key)) return;
+      const m = key.match(/^S(\d+)E(\d+)$/);
+      g.episodes.push({ key, season: m ? Number(m[1]) : 0, number: m ? Number(m[2]) : 0, label: m ? `S${m[1]} E${m[2]}` : 'Film',
+        title: str(msg.title, 120), kind: m ? '' : str(msg.kind, 20) || 'Films', order: 0, reason: '', pasted: false, guides: 0, comments: 0,
+        summary: false, summaryTerm: '', fandom: false, url: '', added: true });
+      if (m) g.episodes.sort((a, b) => a.season - b.season || a.number - b.number);
+      g.at = Date.now();
+      await chrome.storage.local.set({ guides: list });
+      panels({ type: 'guides-changed', added: [], id: g.id });
+    })
+    .catch(console.error);
+}
+
 function shareGuides() {
   guidesWrite.then(readGuides).then((list) => {
     const mine = list.filter((g) => g.room && g.room === status.room);
@@ -565,6 +586,7 @@ function connect(server, room) {
         saveGuides([g], false, 'them');
       }
     }
+    if (msg.type === 'guide-add') addFromPage(msg);
     if (msg.type === 'guide-tick') tickGuide({ id: str(msg.id, 200), key: str(msg.key, 104), v: !!msg.v, at: Number(msg.at) || Date.now() }, false);
     if (msg.type === 'chat') {
       remember({ ...msg, mine: false });

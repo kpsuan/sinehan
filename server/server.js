@@ -223,8 +223,10 @@ wss.on('connection', (ws) => {
       return;
     }
     if (ws.channel) {
-      if (msg.type !== 'guide-tick') return;
-      const tick = { type: 'guide-tick', id: String(msg.id || '').slice(0, 200), key: String(msg.key || '').slice(0, 104), v: !!msg.v, at: Number(msg.at) || Date.now() };
+      if (msg.type !== 'guide-tick' && msg.type !== 'guide-add') return;
+      const tick = msg.type === 'guide-add'
+        ? { type: 'guide-add', id: String(msg.id || '').slice(0, 200), key: String(msg.key || '').slice(0, 104), title: String(msg.title || '').slice(0, 120), kind: String(msg.kind || '').slice(0, 20) }
+        : { type: 'guide-tick', id: String(msg.id || '').slice(0, 200), key: String(msg.key || '').slice(0, 104), v: !!msg.v, at: Number(msg.at) || Date.now() };
       const partyRoom = channelRoom.get(ws.channel);
       if (partyRoom && guideChannel(partyRoom, tick.id) === ws.channel) broadcast(partyRoom, null, tick);
       for (const page of channelSockets.get(ws.channel) || []) if (page !== ws) send(page, tick);

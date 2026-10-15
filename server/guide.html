@@ -102,6 +102,13 @@
     .meta { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; color: var(--faint); font-size: 13px; font-variant-numeric: tabular-nums; }
     .meta .src { padding: 0 6px; border-radius: 4px; background: rgba(201, 182, 242, .12); color: var(--accent); font-size: 11.5px; font-weight: 600; line-height: 20px; }
 
+    .add { margin: 34px 0 0; display: flex; flex-direction: column; gap: 8px; max-width: 520px; }
+    .add label { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+    .add-row { display: flex; gap: 8px; }
+    .add input { flex: 1; min-width: 0; padding: 11px 14px; border: 0; border-radius: 10px; background: var(--raised); color: var(--text); font: 15px 'Inter', system-ui, sans-serif; outline: none; }
+    .add input:focus { box-shadow: 0 0 0 2px var(--accent); }
+    .add button { flex: none; padding: 0 20px; border-radius: 10px; background: var(--accent); color: var(--ink); font-weight: 600; }
+    .add-note { margin: 0; color: var(--muted); font-size: 13px; }
     .foot { margin: 30px 4px 0; color: var(--faint); font-size: 13px; }
     .foot a { color: var(--muted); text-decoration: underline; text-decoration-color: rgba(255, 255, 255, .2); }
     .empty { max-width: 460px; margin: 60px auto; padding: 0 16px; color: var(--muted); text-align: center; }
@@ -155,6 +162,14 @@
         <span class="shown" id="shown"></span>
       </div>
       <div class="grid" id="list"></div>
+      <form class="add" id="addForm">
+        <label for="addInput">Add to this guide</label>
+        <div class="add-row">
+          <input id="addInput" maxlength="100" autocomplete="off" placeholder="S2E5, 2x05 or the episode's title" />
+          <button type="submit">Add</button>
+        </div>
+        <p class="add-note" id="addNote" hidden></p>
+      </form>
       <p class="foot">Tap a picture to read about it on the fan wiki, and the circle when you've watched it. Made with <a href="/">Sinehan</a>, a movie theater for two.</p>
     </div>
   </main>
@@ -228,6 +243,23 @@
       for (const k of ticked) if (k) done[k] = { v: true, at: 0 };
       try { Object.assign(done, JSON.parse(localStorage.getItem(store) || '{}')); } catch {}
       const save = () => { try { localStorage.setItem(store, JSON.stringify(done)); } catch {} };
+      const addedStore = `sinehan-guide-added:${id}`;
+      const ADD_KEY = /^(S\d+E\d+|T:[\p{L}\p{N} ]{1,100})$/u;
+      // Put an episode into the list, in order (from this page, or added by someone in the party).
+      function insertEpisode(e) {
+        if (!ADD_KEY.test(e.key || '') || episodes.some((x) => x.key === e.key)) return false;
+        episodes.push({ key: e.key, title: String(e.title || '').slice(0, 120), reason: '', kind: String(e.kind || '').slice(0, 20), added: true });
+        const n = (k) => k.match(/^S(\d+)E(\d+)$/)?.slice(1).map(Number) || [0, 0];
+        if (!episodes.some((x) => x.kind)) episodes.sort((a, b) => n(a.key)[0] - n(b.key)[0] || n(a.key)[1] - n(b.key)[1]);
+        return true;
+      }
+      try { for (const e of JSON.parse(localStorage.getItem(addedStore) || '[]')) insertEpisode(e); } catch {}
+      const rememberAdded = (e) => {
+        try {
+          const list = JSON.parse(localStorage.getItem(addedStore) || '[]');
+          localStorage.setItem(addedStore, JSON.stringify([...list.filter((x) => x.key !== e.key), e].slice(-100)));
+        } catch {}
+      };
 
       document.title = `${g.s}${g.t ? ` · ${g.t}` : ''} · watch guide`;
       $('show').textContent = g.s;
@@ -243,7 +275,7 @@
       // Which season is showing ("all", "S3", or "Films"); starts on the one with what's up next.
       const sectionOf = (e) => e.kind || `S${e.key.match(/^S(\d+)/)?.[1] || ''}`;
       const sectionName = (sec) => (/^S\d+$/.test(sec) ? `Season ${sec.slice(1)}` : sec);
-      const sections = [...new Set(episodes.map(sectionOf))];
+      let sections = [...new Set(episodes.map(sectionOf))];
       let showing = null;
       $('season').onchange = () => {
         showing = $('season').value;
@@ -253,6 +285,7 @@
 
       let firstRender = true;
       function render() {
+        sections = [...new Set(episodes.map(sectionOf))];
         const isDone = (k) => !!done[k]?.v;
         const watched = episodes.filter((e) => isDone(e.key)).length;
         const films = episodes.some((e) => e.kind);
@@ -389,7 +422,8 @@
           }
           // The wide key art for the header (or the poster, blurred, if there's none).
           fetch(`https://api.tvmaze.com/shows/${show.id}/images`).then((x) => x.json()).then((images) => {
-            const wide = images.filter((x) => x.type === 'background').sort((a, b) => (b.resolutions?.original?.width || 0) - (a.resolutions?.original?.width || 0))[0];
+            // The newest key art (TVmaze lists images oldest first; a newer one has a higher id).
+            const wide = images.filter((x) => x.type === 'background').sort((a, b) => b.id - a.id)[0];
             const url = wide?.resolutions?.original?.url;
             setBackdrop(url ? art(url) : art(show.image?.original), !url);
           }).catch(() => setBackdrop(art(show.image?.original), true));
@@ -460,6 +494,42 @@
         if (wiki) render();
       }
 
+      // ---- Adding an episode ----
+      $('addInput').placeholder = episodes.some((e) => e.kind) ? 'A film or series, by its title' : "S2E5, 2x05 or the episode's title";
+      $('addForm').onsubmit = (ev) => {
+        ev.preventDefault();
+        const text = $('addInput').value.trim();
+        if (!text) return;
+        const note = (msg) => {
+          $('addNote').textContent = msg;
+          $('addNote').hidden = false;
+        };
+        let e;
+        if (episodes.some((x) => x.kind)) {
+          e = { key: `T:${norm(text).slice(0, 100)}`, title: text.slice(0, 120), kind: /\bseries\b/i.test(text) ? 'Series' : 'Films' };
+        } else {
+          const m = text.match(/s(?:eason)?\s*(\d{1,2})\s*[,.\-:]?\s*e(?:p(?:isode)?)?\.?\s*(\d{1,3})/i) || text.match(/\b(\d{1,2})\s*[x×]\s*(\d{1,3})\b/);
+          let key = m ? `S${Number(m[1])}E${Number(m[2])}` : '';
+          if (!key) {
+            // by title, from the show's episode list
+            const want = norm(text);
+            for (const [k, x] of info) if (x.title && norm(x.title) === want) key = k;
+            if (!key) for (const [k, x] of info) if (x.title && norm(x.title).startsWith(want) && want.length >= 4) { key = k; break; }
+          }
+          if (!key) return note("Couldn't tell which episode. Try S2E5, or its exact title.");
+          if (info.size && !info.has(key)) return note(`${key.replace(/^S(\d+)E(\d+)$/, 'S$1 E$2')} isn't in ${g.s}'s episode list.`);
+          e = { key, title: info.get(key)?.title || '' };
+        }
+        if (!insertEpisode(e)) return note('That one is already in this guide.');
+        rememberAdded(e);
+        if (ws?.readyState === 1) ws.send(JSON.stringify({ type: 'guide-add', id, key: e.key, title: e.title, kind: e.kind || '' }));
+        showing = sectionOf(episodes.find((x) => x.key === e.key));
+        render();
+        $('addInput').value = '';
+        note(`Added ${e.title || e.key.replace(/^S(\d+)E(\d+)$/, 'S$1 E$2')}${ws?.readyState === 1 ? '. Your party sees it too.' : '.'}`);
+        document.querySelector(`[data-key="${CSS.escape(e.key)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      };
+
       // ---- Live ticks with the party ----
       let ws = null;
       function setTick(key, v) {
@@ -487,7 +557,10 @@
               save();
               render();
             }
+          } else if (msg.type === 'guide-add' && msg.id === id) {
+            if (insertEpisode({ key: msg.key, title: msg.title, kind: msg.kind })) render();
           } else if (msg.type === 'guide-sync' && msg.guide?.id === id) {
+            for (const e of Array.isArray(msg.guide.episodes) ? msg.guide.episodes.slice(0, 200) : []) insertEpisode(e);
             for (const [k, t] of Object.entries(msg.guide.done || {})) {
               if (KEY.test(k) && t && (!done[k] || t.at > done[k].at)) done[k] = { v: !!t.v, at: t.at };
             }

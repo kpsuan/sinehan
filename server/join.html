@@ -201,7 +201,8 @@
           const tv = r.ok ? await r.json() : null;
           if (tv && flat(tv.name) === flat(name)) {
             const images = await (await fetch(`https://api.tvmaze.com/shows/${tv.id}/images`, { signal: timeout() })).json();
-            const wide = images.filter((x) => x.type === 'background').sort((a, b) => (b.resolutions?.original?.width || 0) - (a.resolutions?.original?.width || 0))[0];
+            // The newest key art (TVmaze lists images oldest first; a newer one has a higher id).
+            const wide = images.filter((x) => x.type === 'background').sort((a, b) => b.id - a.id)[0];
             const url = wide?.resolutions?.original?.url || tv.image?.original;
             if (url) return url.replace(/^http:/, 'https:');
           }
