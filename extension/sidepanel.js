@@ -114,6 +114,13 @@ function onMessage(msg) {
   } else if (msg.type === 'room-full') {
     $('wlError').textContent = `That party is full (${msg.max || 10} people at most). Ask them for a new invite link.`;
     $('wlError').hidden = false;
+  } else if (msg.type === 'match-changed') {
+    const before = tonight?.id;
+    loadTonight();
+    // A deck dealt by them: say so in the chat.
+    ask({ type: 'match-get' }, (m) => {
+      if (m && m.id !== before && !m.byMe) addChat('', `${m.by || 'They'} dealt a deck. Open Guides → Tonight to swipe.`, 'system');
+    });
   } else if (msg.type === 'guesses-changed') {
     loadGuesses();
   } else if (msg.type === 'guides-changed') {
@@ -966,11 +973,16 @@ function setEpisodesMode(mode) {
   episodesMode = mode;
   $('modeBest').setAttribute('aria-selected', String(mode === 'best'));
   $('modeGuide').setAttribute('aria-selected', String(mode === 'guide'));
+  $('modeTonight').setAttribute('aria-selected', String(mode === 'tonight'));
+  $('bestForm').hidden = mode === 'tonight';
   $('guideFields').hidden = mode !== 'guide';
   $('bestSubmit').textContent = mode === 'guide' ? 'Make guide' : 'Ask Reddit';
   bestRun += 1; // drop whatever the other tab was loading
   $('bestResults').replaceChildren();
-  if (mode === 'guide') {
+  if (mode === 'tonight') {
+    loadTonight();
+    renderTonight();
+  } else if (mode === 'guide') {
     if (openGuide) renderGuide(openGuide);
     else listGuides();
   } else if ($('bestQuery').value.trim()) {
@@ -979,6 +991,215 @@ function setEpisodesMode(mode) {
 }
 $('modeBest').onclick = () => setEpisodesMode('best');
 $('modeGuide').onclick = () => setEpisodesMode('guide');
+$('modeTonight').onclick = () => setEpisodesMode('tonight');
+// ---- Tonight: swipe to match ----
+// One of you deals a deck; you each swipe on your own; a show you both say yes to is a match. The
+// background keeps the deck and both sides' answers (theirs are only used to find matches).
+const X_ICON = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>';
+const HEART_ICON = '<svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></svg>';
+const GENRES = ['Any', 'Crime', 'Drama', 'Comedy', 'Thriller', 'Mystery', 'Romance', 'Science-Fiction', 'Fantasy', 'Action', 'Horror', 'Anime', 'Family'];
+let tonight = null; // the deck from the background
+let tonightSeenMatches = new Set();
+let dealing = false;
+const el = (tag, props = {}, ...kids) => {
+  const n = Object.assign(document.createElement(tag), props);
+  n.append(...kids);
+  return n;
+};
+function loadTonight() {
+  ask({ type: 'match-get' }, (m) => {
+    tonight = m || null;
+    if (episodesMode === 'tonight' && !$('bestView').hidden) renderTonight();
+  });
+}
+// Where to watch a TVmaze show: a search on its service, or a web search.
+function watchUrl(show) {
+  const where = show.webChannel?.name || show.network?.name || '';
+  const q = encodeURIComponent(show.name);
+  const by = [
+    [/netflix/i, `https://www.netflix.com/search?q=${q}`],
+    [/prime|amazon/i, `https://www.primevideo.com/search/ref=atv_sr_sug_sc?phrase=${q}`],
+    [/\bmax\b|hbo/i, `https://play.max.com/search?q=${q}`],
+    [/disney/i, `https://www.disneyplus.com/search?q=${q}`],
+    [/hulu/i, `https://www.hulu.com/search?q=${q}`],
+    [/apple/i, `https://tv.apple.com/search?term=${q}`],
+    [/crunchyroll/i, `https://www.crunchyroll.com/search?q=${q}`],
+    [/youtube/i, `https://www.youtube.com/results?search_query=${q}`],
+  ].find(([re]) => re.test(where));
+  return { where, url: by ? by[1] : `https://www.google.com/search?q=${encodeURIComponent(`watch ${show.name} online`)}` };
+}
+const tvCard = (s) => {
+  const { where, url } = watchUrl(s);
+  return {
+    id: `tv:${s.id}`, kind: 'show', title: s.name,
+    sub: [s.premiered?.slice(0, 4), where, (s.genres || []).slice(0, 2).join(', ')].filter(Boolean).join(' · '),
+    summary: String(s.summary || '').replace(/<[^>]+>/g, '').trim().slice(0, 260),
+    image: String(s.image?.medium || '').replace(/^http:/, 'https:'), url, where,
+  };
+};
+async function dealDeck(genre) {
+  const cards = [];
+  // 1. Carry on with what you're watching: each saved guide's next episode.
+  const saved = (await askP({ type: 'guides' })) || [];
+  for (const x of saved.slice(0, 4)) {
+    const g = await askP({ type: 'guide-get', id: x.id });
+    const next = g?.episodes.find((e) => !isDone(g, e.key));
+    if (!next) continue;
+    let image = /^https:\/\/static\.tvmaze\.com\//.test(g.art?.poster || '') ? g.art.poster : '';
+    let url = '';
+    try {
+      const r = await fetch(`https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(g.show)}`);
+      const s = r.ok ? await r.json() : null;
+      if (s) {
+        image ||= String(s.image?.medium || '').replace(/^http:/, 'https:');
+        url = watchUrl(s).url;
+      }
+    } catch {}
+    cards.push({ id: `guide:${g.id}`, kind: 'continue', title: g.topic ? `${g.show} · ${g.topic}` : g.show,
+      sub: `Up next: ${next.kind ? next.title : `${next.label}${next.title ? ` · ${next.title}` : ''}`}`, summary: '', image, url: url || (await guidePageLink({ ...g, saved: true })), where: '' });
+  }
+  // 2. Well-liked shows from TVmaze in that genre (a few pages of its catalogue, the most-watched first).
+  const pages = new Set();
+  while (pages.size < 4) pages.add(Math.floor(Math.random() * 300));
+  const shows = (await Promise.all([...pages].map((n) => fetch(`https://api.tvmaze.com/shows?page=${n}`).then((r) => (r.ok ? r.json() : [])).catch(() => [])))).flat();
+  const picks = shows
+    .filter((s) => s.image?.medium && (s.rating?.average || 0) >= 7 && (s.weight || 0) >= 70 && (genre === 'Any' || (s.genres || []).includes(genre)))
+    .sort((a, b) => (b.weight || 0) - (a.weight || 0) || (b.rating?.average || 0) - (a.rating?.average || 0))
+    .slice(0, 30);
+  for (let i = picks.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [picks[i], picks[j]] = [picks[j], picks[i]];
+  }
+  cards.push(...picks.slice(0, Math.max(0, 16 - cards.length)).map(tvCard));
+  return cards;
+}
+
+function renderTonight() {
+  const out = [];
+  const together = status.connected && status.peers > 1;
+  const m = tonight;
+  const them = peer?.name || 'They';
+  const intro = (text, pose = 'sit') => {
+    const box = el('div', { className: 'tn-intro' });
+    box.innerHTML = Bantay.svg(pose, { coat: bantayCoat }); // fixed markup
+    box.append(el('span', { textContent: text }));
+    return box;
+  };
+  if (!m) {
+    out.push(intro(together
+      ? 'Can’t decide? Deal a deck: you each swipe on your own, and a show you both say yes to is a match.'
+      : 'Start a party first. Then deal a deck and you each swipe; a show you both like is a match.'));
+    const genre = el('select', { id: 'tnGenre' });
+    genre.append(...GENRES.map((g) => new Option(g === 'Any' ? 'Any genre' : g.replace('Science-Fiction', 'Sci-fi'), g)));
+    const deal = el('button', { type: 'button', className: 'primary', textContent: dealing ? 'Dealing…' : 'Deal a deck', disabled: !together || dealing });
+    deal.onclick = async () => {
+      dealing = true;
+      renderTonight();
+      const cards = await dealDeck(genre.value).catch(() => []);
+      dealing = false;
+      if (!cards.length) {
+        renderTonight();
+        $('bestResults').append(note('Couldn’t find shows just now. Try another genre.'));
+        return;
+      }
+      ask({ type: 'match-start', cards, by: myName() }, (deck) => {
+        tonight = deck;
+        renderTonight();
+      });
+    };
+    out.push(el('div', { className: 'tn-row' }, genre, deal));
+    $('bestResults').replaceChildren(el('div', { className: 'tn' }, ...out));
+    return;
+  }
+  const matches = m.cards.filter((c) => m.mine[c.id] && m.theirs[c.id]);
+  const next = m.cards.find((c) => m.mine[c.id] === undefined);
+  const theirCount = Object.keys(m.theirs).length;
+  // A new match: celebrate it.
+  const fresh = matches.find((c) => !tonightSeenMatches.has(`${m.id}|${c.id}`));
+  if (fresh) {
+    tonightSeenMatches.add(`${m.id}|${fresh.id}`);
+    const box = el('div', { className: 'tn-match' });
+    box.innerHTML = Bantay.svg('party', { coat: bantayCoat }); // fixed markup
+    const go = el('button', { type: 'button', className: 'primary', textContent: fresh.where ? `Watch it on ${fresh.where}` : 'Watch it' });
+    go.onclick = () => fresh.url && ask({ type: 'follow', url: fresh.url }, showStatus);
+    box.append(el('b', { textContent: 'It’s a match!' }), el('span', { className: 'tn-sub', textContent: `You and ${them} both picked ${fresh.title}.` }), go);
+    out.push(box);
+  }
+  if (next) {
+    const done = m.cards.length - m.cards.filter((c) => m.mine[c.id] === undefined).length;
+    out.push(el('div', { className: 'tn-progress' }, el('span', { textContent: `${done + 1} of ${m.cards.length}` }),
+      el('span', { textContent: theirCount ? `${them} has swiped ${theirCount}` : `${m.byMe ? 'You' : them} dealt this deck` })));
+    const card = el('div', { className: 'tn-card' });
+    if (next.image) card.append(el('img', { src: next.image, alt: '' }));
+    else card.append(el('div', { className: 'tn-noimg', textContent: next.title }));
+    if (next.kind === 'continue') card.append(el('span', { className: 'tn-tag', textContent: 'Keep watching' }));
+    card.append(el('span', { className: 'tn-stamp yes', textContent: 'YES' }), el('span', { className: 'tn-stamp no', textContent: 'NOPE' }));
+    const body = el('div', { className: 'tn-body' }, el('b', { textContent: next.title }));
+    if (next.sub) body.append(el('span', { className: 'tn-sub', textContent: next.sub }));
+    if (next.summary) body.append(el('span', { className: 'tn-sum', textContent: next.summary }));
+    card.append(body);
+    const vote = (yes) => {
+      card.style.transform = `translateX(${yes ? 120 : -120}%) rotate(${yes ? 14 : -14}deg)`;
+      card.style.opacity = '0';
+      setTimeout(() => ask({ type: 'match-vote', card: next.id, yes }), 180);
+    };
+    // Drag it left or right (or use the buttons).
+    let startX = null;
+    card.onpointerdown = (e) => {
+      startX = e.clientX;
+      card.setPointerCapture(e.pointerId);
+      card.classList.add('dragging');
+    };
+    card.onpointermove = (e) => {
+      if (startX == null) return;
+      const dx = e.clientX - startX;
+      card.style.transform = `translateX(${dx}px) rotate(${dx / 18}deg)`;
+      card.querySelector('.tn-stamp.yes').style.opacity = String(Math.max(0, Math.min(1, dx / 90)));
+      card.querySelector('.tn-stamp.no').style.opacity = String(Math.max(0, Math.min(1, -dx / 90)));
+    };
+    card.onpointerup = (e) => {
+      if (startX == null) return;
+      const dx = e.clientX - startX;
+      startX = null;
+      card.classList.remove('dragging');
+      if (Math.abs(dx) > 90) return vote(dx > 0);
+      card.style.transform = '';
+      card.querySelectorAll('.tn-stamp').forEach((s) => (s.style.opacity = '0'));
+    };
+    out.push(card);
+    const no = el('button', { type: 'button', className: 'no' });
+    no.innerHTML = `${X_ICON}<span>Nope</span>`; // fixed markup
+    no.onclick = () => vote(false);
+    const yes = el('button', { type: 'button', className: 'yes' });
+    yes.innerHTML = `${HEART_ICON}<span>Yes</span>`; // fixed markup
+    yes.onclick = () => vote(true);
+    out.push(el('div', { className: 'tn-votes' }, no, yes));
+  } else {
+    // Done swiping: the matches, or the closest picks while you wait for them.
+    const theirsDone = m.cards.every((c) => m.theirs[c.id] !== undefined);
+    if (!matches.length) {
+      out.push(intro(theirsDone ? 'No match this round. These got a yes from one of you:' : `You’re done. Waiting for ${them} to finish swiping…`, theirsDone ? 'tilt' : 'lying'));
+    } else {
+      out.push(el('div', { className: 'gt-sub', textContent: matches.length === 1 ? 'Your match' : 'Your matches' }));
+    }
+    const shown = matches.length ? matches : theirsDone ? m.cards.filter((c) => m.mine[c.id] || m.theirs[c.id]).slice(0, 6) : [];
+    const list = el('div', { className: 'tn-list' });
+    for (const c of shown) {
+      const go = el('button', { type: 'button', className: 'primary', textContent: 'Watch' });
+      go.onclick = () => c.url && ask({ type: 'follow', url: c.url }, showStatus);
+      list.append(el('div', { className: 'tn-item' }, ...(c.image ? [el('img', { src: c.image, alt: '' })] : []), el('span', {}, el('b', { textContent: c.title }), c.sub || ''), go));
+    }
+    if (shown.length) out.push(list);
+  }
+  const again = el('button', { type: 'button', textContent: 'New deck' });
+  again.onclick = () => ask({ type: 'match-end' }, () => {
+    tonight = null;
+    renderTonight();
+  });
+  out.push(el('div', { className: 'tn-row' }, again));
+  $('bestResults').replaceChildren(el('div', { className: 'tn' }, ...out));
+}
+
 const norm = (s) =>
   String(s || '')
     .toLowerCase()

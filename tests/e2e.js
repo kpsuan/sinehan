@@ -1084,6 +1084,29 @@ const vstate = (p) =>
     check('a verdict shows on both sides, with the score', await until(async () => /got it!/.test(await card(pA).innerText()) && /: \S+ 1/.test(await card(pA).innerText())));
 
     // ---------------------------------------------------------------
+    section('Tonight: swipe to match');
+    // (TVmaze is mocked: a fixed deck of three shows)
+    for (const pg of [pA, pB2]) await pg.evaluate(() => { dealDeck = async () => [
+      { id: 'tv:1', kind: 'show', title: 'Alpha', sub: '2020', summary: '', image: '', url: 'https://example.com/alpha', where: '' },
+      { id: 'tv:2', kind: 'show', title: 'Bravo', sub: '2021', summary: '', image: '', url: 'https://example.com/bravo', where: '' },
+      { id: 'tv:3', kind: 'show', title: 'Charlie', sub: '2022', summary: '', image: '', url: 'https://example.com/charlie', where: '' },
+    ]; showBest(true); setEpisodesMode('tonight'); });
+    await pA.locator('.tn-row button.primary').click();
+    check('dealing a deck reaches them', await until(() => pB2.locator('.tn-card').count().then((n) => n > 0)));
+    check('…with a note in their chat', (await logLines(pB2)).some((l) => /dealt a deck/.test(l.text)));
+    const swipe = async (pg, yes) => { await pg.locator(`.tn-votes .${yes ? 'yes' : 'no'}`).click(); await sleep(450); };
+    await swipe(pA, false); await swipe(pA, true); await swipe(pA, true);
+    check('their answers stay hidden', !(await pB2.locator('.tn-match').count()));
+    await swipe(pB2, true);
+    check('one yes isn’t a match', !(await pB2.locator('.tn-match').count()));
+    await swipe(pB2, true);
+    check('both saying yes is a match, on both sides', await until(async () => (await pB2.locator('.tn-match').count()) > 0 && (await pA.locator('.tn-match').count()) > 0));
+    check('…for the right show', /Bravo/.test(await pB2.locator('.tn-match').innerText()));
+    await pA.evaluate(() => showBest(false));
+    await pB2.evaluate(() => { showBest(false); setEpisodesMode('best'); });
+    await pA.evaluate(() => setEpisodesMode('best'));
+
+    // ---------------------------------------------------------------
     section('Bantay reacts');
     const laughing = (v) => v.evaluate(() => [...document.querySelectorAll('[data-sinehan] svg.bantay')].some((x) => x.getAttribute('aria-label') === 'Bantay laughing'));
     await pA.fill('#msg', '😂');

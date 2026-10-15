@@ -226,6 +226,21 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     if (watch) chrome.tabs.reload(watch.tabId).catch(() => {});
     reply(true);
     return;
+  } else if (msg.type === 'match-get') {
+    readMatch().then((m) => reply(m && m.room === status.room ? m : null));
+    return true;
+  } else if (msg.type === 'match-start') {
+    startDeck(msg).then(reply);
+    return true;
+  } else if (msg.type === 'match-vote') {
+    voteCard(str(msg.card, 80), !!msg.yes, true).then(reply);
+    return true;
+  } else if (msg.type === 'match-end') {
+    chrome.storage.local.remove('matchDeck').then(() => {
+      panels({ type: 'match-changed' });
+      reply(true);
+    });
+    return true;
   } else if (msg.type === 'guesses') {
     guessWrite.then(readGuesses).then((list) => reply({ list: list.map(guessView), wants: revealWants }));
     return true;
@@ -572,6 +587,57 @@ function setVerdict(id, verdict, share) {
   });
 }
 
+// ---- Tonight: swipe to match ----
+// One of you deals a deck of shows; you each swipe on your own; a show you both say yes to is a match.
+// The deck and both sides' answers are kept here, so the other person can swipe later.
+async function readMatch() {
+  return (await chrome.storage.local.get('matchDeck')).matchDeck || null;
+}
+let matchWrite = Promise.resolve();
+function changeMatch(fn) {
+  const run = matchWrite.then(readMatch).then(async (m) => {
+    const next = await fn(m);
+    if (next) await chrome.storage.local.set({ matchDeck: next });
+    panels({ type: 'match-changed' });
+    return next;
+  });
+  matchWrite = run.catch(console.error);
+  return run;
+}
+const cleanCard = (c) => c && {
+  id: str(c.id, 80),
+  kind: c.kind === 'continue' ? 'continue' : 'show',
+  title: str(c.title, 120),
+  sub: str(c.sub, 160),
+  summary: str(c.summary, 300),
+  image: /^https:\/\/(static\.tvmaze\.com|upload\.wikimedia\.org)\//.test(c.image || '') ? str(c.image, 600) : '',
+  url: /^https:\/\//.test(c.url || '') ? str(c.url, 600) : '',
+  where: str(c.where, 40),
+};
+function startDeck(msg) {
+  const cards = (Array.isArray(msg.cards) ? msg.cards : []).slice(0, 30).map(cleanCard).filter((c) => c?.id && c.title);
+  if (!cards.length) return Promise.resolve(null);
+  return changeMatch(() => {
+    const deck = { id: crypto.randomUUID(), by: str(msg.by, 30), byMe: true, at: Date.now(), room: status.room, cards, mine: {}, theirs: {} };
+    send({ type: 'match-deck', id: deck.id, by: deck.by, cards });
+    return deck;
+  });
+}
+function theirDeck(msg) {
+  const cards = (Array.isArray(msg.cards) ? msg.cards : []).slice(0, 30).map(cleanCard).filter((c) => c?.id && c.title);
+  if (!cards.length) return;
+  changeMatch(() => ({ id: str(msg.id, 80), by: str(msg.by, 30), byMe: false, at: Date.now(), room: status.room, cards, mine: {}, theirs: {} }));
+}
+function voteCard(card, yes, mine, deckId) {
+  return changeMatch((m) => {
+    if (!m || !m.cards.some((c) => c.id === card)) return null;
+    if (!mine && deckId && deckId !== m.id) return null;
+    (mine ? m.mine : m.theirs)[card] = yes;
+    if (mine) send({ type: 'match-vote', id: m.id, card, yes });
+    return m;
+  });
+}
+
 // ---- Watch streak ----
 // Each day you're in a party together counts; two or more days in a row get a small celebration
 // (once a day), on the video and in the chat.
@@ -837,6 +903,8 @@ function connect(server, room) {
     }
     if (msg.type === 'guide-add') addFromPage(msg);
     if (msg.type === 'guess-lock') theirGuess(msg);
+    if (msg.type === 'match-deck') theirDeck(msg);
+    if (msg.type === 'match-vote') voteCard(str(msg.card, 80), !!msg.yes, false, str(msg.id, 80));
     if (msg.type === 'guess-reveal-ask') wantReveal('them', str(msg.show, 100));
     if (msg.type === 'guess-open') openTheirGuess(msg);
     if (msg.type === 'guess-verdict') setVerdict(str(msg.id, 80), msg.verdict === 'right' ? 'right' : msg.verdict === 'wrong' ? 'wrong' : null, false);
