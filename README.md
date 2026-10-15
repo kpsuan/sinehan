@@ -1,5 +1,7 @@
 # Sinehan
 
+<p align="center"><img src="store/promo-440x280.png" alt="sinehan, a movie theater for two" width="440"></p>
+
 A movie theater for two. Sinehan is a Chrome extension that keeps two people's video playback in sync on any site
 (YouTube, Netflix, Prime Video, Crunchyroll, …), with chat, a video call and reactions in the sidebar. A small relay
 server passes messages between them; there are no accounts.
@@ -14,6 +16,14 @@ server passes messages between them; there are no accounts.
 - **Watch guides**: best episodes and watch orders pulled from Reddit, TVmaze and Wikipedia, shared and ticked off together.
 - **Phone companion**: chat, reactions and a remote for the show playing on the laptop.
 - **Past parties**: each party's chat is saved with what you watched.
+
+## Screenshots
+
+![Synced playback with chat in the sidebar](store/1-watch-together.png)
+
+![3-2-1 countdown and breaks](store/2-countdown-breaks.png)
+
+![No accounts needed](store/3-no-accounts.png)
 
 ## Project layout
 
