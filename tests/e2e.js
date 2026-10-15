@@ -591,7 +591,7 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     check('the guide page lists it on any device', await until(async () => (await gp.$$eval('.ep', (r) => r.length)) === 3) && (await text(gp, '#show')) === 'Test Show');
     check('…with what was already ticked', await gp.$eval('.ep', (r) => r.classList.contains('done')));
     check('…and syncs with the party', await until(() => gp.$eval('#sync', (x) => x.classList.contains('live'))));
-    await gp.locator('.ep').nth(1).click();
+    await gp.locator('.ep .tick').nth(1).click();
     check('ticking on the page ticks it in their sidebar', await until(() => pB2.$$eval('.g-ep', (r) => r[1]?.classList.contains('done'))));
     await gp.reload();
     check('the page remembers ticks on that device', await until(() => gp.$$eval('.ep', (r) => r[1]?.classList.contains('done'))));

@@ -732,7 +732,8 @@
       .map((it) => ({ key: `T:${norm(it.title).slice(0, 100)}`, kind: it.kind, order: it.order, season: 0, number: 0, label: it.kind === 'Films' ? 'Film' : it.kind === 'Series' ? 'Series' : 'Short',
         title: it.title, pasted: it.pasted, guides: it.guides.size, comments: 0, summary: false, fandom: it.wiki, reason: it.reason, url: '' }));
     if (!episodes.length) problems.push(`Couldn’t find a list for “${topic || name}”. Try the saga or phase name (like “Infinity Saga”), or paste a watch-order thread.`);
-    return { show: name, topic, episodes, threads, problems, hasGuide: false, franchise: true };
+    const wikiHost = (await findWiki(name, null).catch(() => null))?.host || '';
+    return { show: name, topic, episodes, threads, problems, hasGuide: false, franchise: true, wiki: wikiHost };
   }
 
   async function watchGuide(show, topic = '', link = '') {
@@ -868,7 +869,9 @@
       const films = await franchiseGuide(name, topic, link);
       if (films.episodes.length) return films;
     }
-    return { show: name, topic, episodes, threads, problems, hasGuide: !!guide };
+    // The show's fan wiki, so a guide's episodes can link to their pages.
+    const wikiHost = (await findWiki(name, guide).catch(() => null))?.host || '';
+    return { show: name, topic, episodes, threads, problems, hasGuide: !!guide, wiki: wikiHost };
   }
 
   const api = { bestEpisodes, watchGuide, listedIn, threadPath, findWiki, fandomTopic, episodesNamed, listsIn, titlesIn, sameShow, episodesIn, rank, label, snippet, makeGuide, wikiSummaries, describedIn, titleIn, stems, searchUrl: (show) => `https://www.reddit.com/search/?q=${encodeURIComponent(`${show} best episodes`)}` };

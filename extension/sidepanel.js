@@ -816,7 +816,7 @@ async function listGuides() {
   const list = (await askP({ type: 'guides' })) || [];
   if (run !== bestRun || episodesMode !== 'guide') return;
   if (!list.length) {
-    $('bestResults').replaceChildren(note('Make a guide for a show (and a story, if you like). Saved guides show up here for both of you.'));
+    $('bestResults').replaceChildren(note('Make a guide for a show or a franchise (and a story or saga, if you like). Saved guides show up here for both of you.'));
     return;
   }
   const h = document.createElement('h2');
@@ -912,6 +912,12 @@ $('guideLinkToggle').onclick = () => {
 $('guideTopic').addEventListener('input', () => looksLikeLink($('guideTopic').value) && sortGuideFields());
 $('guideLink').addEventListener('change', sortGuideFields);
 
+// Long text cut at a word, with an ellipsis.
+const short = (text, n) => {
+  const t = String(text || '').trim();
+  return t.length <= n ? t : `${t.slice(0, n).replace(/\s+\S*$/, '')}…`;
+};
+
 // sinehan.live/guide#g=… : the guide packed into the link (squeezed, then base64url), with the party's
 // room when it's saved and you're in one, so ticks on that page sync live.
 async function guidePageLink(g) {
@@ -920,8 +926,9 @@ async function guidePageLink(g) {
     id: g.id,
     s: g.show,
     t: g.topic || '',
-    e: g.episodes.map((e) => [e.key, e.title || '', (e.reason || '').slice(0, 90), e.kind || '']),
+    e: g.episodes.map((e) => [e.key, e.title || '', short(e.reason, 110), e.kind || '']),
     d: g.episodes.filter((e) => isDone(g, e.key)).map((e) => e.key),
+    f: g.wiki || '', // the fan wiki, so the page can link each episode to its page
   };
   const server = ($('server').value.trim() || DEFAULT_SERVER).replace(/\/+$/, '');
   if (g.saved && status.connected && status.room) Object.assign(data, { r: status.room, w: server });

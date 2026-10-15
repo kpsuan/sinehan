@@ -261,6 +261,7 @@ function cleanGuide(g) {
     id: str(g.id, 200),
     show: str(g.show, 100),
     topic: str(g.topic, 100),
+    wiki: /^[a-z0-9-]+(\.[a-z0-9-]+)*\.fandom\.com$/.test(g.wiki || '') ? g.wiki : '',
     by: str(g.by, 30),
     at: Number(g.at) || Date.now(),
     episodes: (Array.isArray(g.episodes) ? g.episodes : []).slice(0, 150).map((e) => ({
