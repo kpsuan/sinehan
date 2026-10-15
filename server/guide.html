@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0c0a10" />
+  <title>sinehan · watch guide</title>
+  <link rel="icon" href="/static/logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root { color-scheme: dark; --bg: #0c0a10; --card: #16121c; --raised: #1f1927; --text: #efeaf6; --muted: #9a90aa; --faint: #6d6479;
+      --accent: #c9b6f2; --ink: #1b1325; --live: #9fd6b0; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; min-height: 100%; }
+    body { background: var(--bg); color: var(--text); font: 15px/1.45 'Inter', system-ui, sans-serif; }
+    [hidden] { display: none !important; }
+    button { font: inherit; color: inherit; border: 0; cursor: pointer; background: none; }
+    .app { max-width: 620px; margin: 0 auto; padding: max(16px, env(safe-area-inset-top)) 16px max(28px, env(safe-area-inset-bottom)); }
+
+    header { display: flex; align-items: center; gap: 8px; margin: 4px 2px 22px; color: var(--muted); font-size: 14px; }
+    header img { width: 22px; height: 22px; }
+    header a { color: inherit; text-decoration: none; font-weight: 600; }
+    .kicker { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+    h1 { margin: 4px 0 2px; font-size: 30px; line-height: 1.15; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+    .topic { margin: 0; color: var(--muted); font-size: 16px; }
+    .progress { margin: 18px 0 6px; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; color: var(--muted); }
+    .progress b { color: var(--text); }
+    .sync { display: inline-flex; align-items: center; gap: 6px; }
+    .sync::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #5a5066; }
+    .sync.live::before { background: var(--live); }
+    .bar { height: 5px; border-radius: 999px; background: var(--raised); overflow: hidden; }
+    .bar i { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--accent); transition: width .3s; }
+
+    .section { margin: 24px 4px 8px; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+    .ep { display: flex; gap: 12px; align-items: flex-start; width: 100%; padding: 12px 14px; margin-bottom: 6px; border-radius: 12px; background: var(--card); text-align: left;
+      transition: background .15s; }
+    .ep:active { transform: scale(.99); }
+    .ep.next { background: #221b2e; }
+    .box { flex: none; width: 22px; height: 22px; margin-top: 1px; border-radius: 6px; background: var(--raised); display: grid; place-items: center; color: var(--ink); }
+    .box svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; opacity: 0; }
+    .ep.done .box { background: var(--accent); }
+    .ep.done .box svg { opacity: 1; }
+    .ep.done .title { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--faint); }
+    .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .title { font-weight: 600; }
+    .why { color: var(--muted); font-size: 13px; }
+    .up { margin-left: 8px; color: var(--accent); font-size: 12px; font-weight: 600; }
+
+    .foot { margin: 28px 4px 0; color: var(--faint); font-size: 13px; }
+    .foot a { color: var(--muted); }
+    .empty { margin-top: 40px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header><img src="/static/logo.png" alt="" /><a href="/">sinehan</a></header>
+
+    <section id="guide" hidden>
+      <p class="kicker">Watch guide</p>
+      <h1 id="show"></h1>
+      <p class="topic" id="topic" hidden></p>
+      <div class="progress"><span id="count"></span><span class="sync" id="sync">Saved on this device</span></div>
+      <div class="bar"><i id="bar"></i></div>
+      <div id="list"></div>
+      <p class="foot">Tap to tick off what you've watched. Made with <a href="/">Sinehan</a>, a movie theater for two.</p>
+    </section>
+
+    <p class="empty" id="empty" hidden>This link doesn't have a watch guide in it. Ask for a new link, or make one in the Sinehan sidebar.</p>
+  </main>
+
+  <script>
+    // The guide travels in the link itself (after #, which browsers never send to the server). Ticks are
+    // kept on this device, and if the link came from a party, they sync live with it through the relay.
+    (async () => {
+      const $ = (id) => document.getElementById(id);
+      const CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>';
+
+      async function decode(text) {
+        const b64 = text.replace(/-/g, '+').replace(/_/g, '/');
+        const bytes = Uint8Array.from(atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4)), (c) => c.charCodeAt(0));
+        const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+        return JSON.parse(await new Response(stream).text());
+      }
+      let g;
+      try {
+        g = await decode(new URLSearchParams(location.hash.slice(1)).get('g') || '');
+        if (!g?.s || !Array.isArray(g.e)) throw new Error('no guide');
+      } catch {
+        $('empty').hidden = false;
+        return;
+      }
+
+      const KEY = /^(S\d+E\d+|T:[\p{L}\p{N} ]{1,100})$/u;
+      const episodes = g.e.filter((e) => Array.isArray(e) && KEY.test(e[0])).slice(0, 200)
+        .map(([key, title, reason, kind]) => ({ key, title: String(title || '').slice(0, 120), reason: String(reason || '').slice(0, 160), kind: String(kind || '').slice(0, 20) }));
+      const id = String(g.id || `${g.s}|${g.t || ''}`).slice(0, 200);
+      const label = (k) => k.replace(/^S(\d+)E(\d+)$/, 'S$1 E$2');
+
+      // Ticks: what the link carried, then this device's own, then live ones (newest wins).
+      const store = `sinehan-guide:${id}`;
+      let done = {};
+      for (const k of Array.isArray(g.d) ? g.d : []) done[k] = { v: true, at: 0 };
+      try { Object.assign(done, JSON.parse(localStorage.getItem(store) || '{}')); } catch {}
+      const save = () => { try { localStorage.setItem(store, JSON.stringify(done)); } catch {} };
+
+      document.title = `${g.s}${g.t ? ` · ${g.t}` : ''} · watch guide`;
+      $('show').textContent = g.s;
+      if (g.t) {
+        $('topic').textContent = g.t;
+        $('topic').hidden = false;
+      }
+      $('guide').hidden = false;
+
+      let firstRender = true;
+      function render() {
+        const isDone = (k) => !!done[k]?.v;
+        const watched = episodes.filter((e) => isDone(e.key)).length;
+        const noun = episodes.some((e) => e.kind) ? 'title' : 'episode';
+        $('count').innerHTML = `<b>${watched}</b> of ${episodes.length} ${noun}${episodes.length === 1 ? '' : 's'} watched`;
+        $('bar').style.width = `${episodes.length ? (watched / episodes.length) * 100 : 0}%`;
+        const next = episodes.find((e) => !isDone(e.key));
+        const out = [];
+        let section = null;
+        let nextRow = null;
+        for (const e of episodes) {
+          const sec = e.kind || `Season ${e.key.match(/^S(\d+)/)?.[1] || ''}`;
+          if (sec !== section) {
+            section = sec;
+            const h = document.createElement('div');
+            h.className = 'section';
+            h.textContent = sec;
+            out.push(h);
+          }
+          const row = document.createElement('button');
+          row.className = `ep${isDone(e.key) ? ' done' : ''}${e === next ? ' next' : ''}`;
+          row.setAttribute('aria-pressed', String(isDone(e.key)));
+          const box = document.createElement('span');
+          box.className = 'box';
+          box.innerHTML = CHECK; // fixed markup
+          const body = document.createElement('span');
+          body.className = 'body';
+          const title = document.createElement('span');
+          title.className = 'title';
+          title.textContent = e.kind ? e.title : e.title ? `${label(e.key)} · ${e.title}` : label(e.key);
+          if (e === next) {
+            const up = document.createElement('span');
+            up.className = 'up';
+            up.textContent = 'Up next';
+            title.append(up);
+          }
+          body.append(title);
+          if (e.reason) {
+            const why = document.createElement('span');
+            why.className = 'why';
+            why.textContent = e.reason;
+            body.append(why);
+          }
+          row.append(box, body);
+          row.onclick = () => tick(e.key, !isDone(e.key));
+          out.push(row);
+          if (e === next) nextRow = row;
+        }
+        const y = window.scrollY;
+        $('list').replaceChildren(...out);
+        if (firstRender && nextRow && episodes.indexOf(next) > 2) nextRow.scrollIntoView({ block: 'center' });
+        else window.scrollTo(0, y);
+        firstRender = false;
+      }
+
+      // Live: join the party's room quietly (like the phone remote) and share ticks.
+      let ws = null;
+      function tick(key, v) {
+        const t = { v, at: Date.now() };
+        done[key] = t;
+        save();
+        render();
+        if (ws?.readyState === 1) ws.send(JSON.stringify({ type: 'guide-tick', id, key, v, at: t.at }));
+      }
+      function connect() {
+        if (!g.r || !/^wss?:\/\//.test(g.w || '')) return;
+        ws = new WebSocket(g.w);
+        ws.onopen = () => {
+          ws.send(JSON.stringify({ type: 'join', room: String(g.r).slice(0, 64), companion: true }));
+          $('sync').textContent = 'Syncing with your party';
+          $('sync').classList.add('live');
+        };
+        ws.onmessage = (m) => {
+          let msg;
+          try { msg = JSON.parse(m.data); } catch { return; }
+          if (msg.type === 'guide-tick' && msg.id === id && KEY.test(msg.key || '')) {
+            if (!done[msg.key] || msg.at >= done[msg.key].at) {
+              done[msg.key] = { v: !!msg.v, at: Number(msg.at) || Date.now() };
+              save();
+              render();
+            }
+          } else if (msg.type === 'guide-sync' && msg.guide?.id === id) {
+            for (const [k, t] of Object.entries(msg.guide.done || {})) {
+              if (KEY.test(k) && t && (!done[k] || t.at > done[k].at)) done[k] = { v: !!t.v, at: t.at };
+            }
+            save();
+            render();
+          }
+        };
+        ws.onclose = () => {
+          $('sync').textContent = 'Saved on this device';
+          $('sync').classList.remove('live');
+          setTimeout(connect, 4000);
+        };
+      }
+      setInterval(() => ws?.readyState === 1 && ws.send(JSON.stringify({ type: 'ping' })), 20000);
+      render();
+      connect();
+    })();
+  </script>
+</body>
+</html>

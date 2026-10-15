@@ -117,7 +117,7 @@
     try {
       const url = 'https://en.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=content&rvslots=main&format=json&formatversion=2&redirects=1&origin=*'
         + `&titles=${encodeURIComponent(titles.join('|'))}`;
-      const r = await fetch(url, { credentials: 'omit' });
+      const r = await fetch(url, { credentials: 'omit', headers: WIKI_AGENT });
       if (!r.ok) return out;
       for (const pg of (await r.json())?.query?.pages || []) {
         const text = pg.revisions?.[0]?.slots?.main?.content || '';
@@ -502,9 +502,11 @@
     let wiki = null;
     for (const slug of slugs.slice(0, 6)) {
       try {
-        const info = await fandomJson(`${slug}.fandom.com`, 'action=query&meta=siteinfo');
+        const r = await fetch(`https://${slug}.fandom.com/api.php?action=query&meta=siteinfo&format=json&formatversion=2&origin=*`, { credentials: 'omit' });
+        if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) continue;
+        const info = await r.json();
         if (info?.query?.general) {
-          wiki = { host: `${slug}.fandom.com`, name: info.query.general.sitename || `${show} Wiki` };
+          wiki = { host: new URL(r.url).host, name: info.query.general.sitename || `${show} Wiki` };
           break;
         }
       } catch {}
@@ -558,12 +560,190 @@
     return [...new Set(out.map((t) => t.toLowerCase()))].slice(0, 20);
   }
 
+  // "Greys Anatomy" is "Grey's Anatomy", "911" is "9-1-1", "mentalist" is "The Mentalist"; "MCU" is no TV show.
+  function sameShow(a, b) {
+    const flat = (s) => norm(s).replace(/^the /, '').replace(/ /g, '');
+    return !!flat(a) && flat(a) === flat(b);
+  }
+
+  // ---- Watch order for a franchise (films and series) ----
+  // The franchise's fan wiki has pages for sagas and phases whose infobox lists their films, series
+  // and shorts in release order. Reddit watch-order threads add titles written like "Iron Man (2008)".
+  const LIST_FIELDS = [
+    [/^(films?|movies?)$/i, 'Films'],
+    [/^(series|shows?|television|tv series|television series|disney\+ series|netflix series)$/i, 'Series'],
+    [/^(one[- ]?shots?|short films?|shorts|specials?)$/i, 'Short films'],
+  ];
+  function listsIn(wikitext) {
+    const out = [];
+    for (const [, field, value] of wikitext.matchAll(/\n\s*\|\s*([a-z+ -]+?)\s*=([^\n]*(?:\n(?!\s*\||\}\})[^\n]*)*)/gi)) {
+      const kind = LIST_FIELDS.find(([re]) => re.test(field.trim()))?.[1];
+      if (!kind) continue;
+      for (const [, target, label] of value.matchAll(/\[\[([^|\]#]+)(?:\|([^\]]+))?\]\]/g)) {
+        const title = plain(label || target).replace(/\s*\((film|tv series|series|miniseries|\d{4}(?: film)?)\)$/i, '').trim();
+        if (title && !/^(category|file|image):/i.test(target) && !/^(season|series|volume|part) \d+$/i.test(title)) out.push({ title, kind });
+      }
+    }
+    return out;
+  }
+  // "1. Iron Man (2008)", "- Captain America: The First Avenger (2011) – set in WWII"
+  function titlesIn(text) {
+    const out = [];
+    for (const raw of String(text || '').split(/\n+/)) {
+      const line = raw.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[*_~`>]+/g, '').trim();
+      const m = line.match(/^(?:[-•·]\s*|\d{1,3}[.)]\s*)?([^()\n]{2,80}?)\s*\(((?:19|20)\d\d)\)/);
+      if (m) out.push({ title: m[1].trim().replace(/[:\-–—]+$/, '').trim(), year: m[2] });
+    }
+    return out;
+  }
+  // Wikidata: a saga or film series and its parts (expanding trilogies and phases), by release date.
+  // Wikimedia asks apps to say who they are.
+  const WIKI_AGENT = { 'Api-User-Agent': 'Sinehan/2.12 (https://sinehan.live)' };
+  const FILM_TYPES = new Set(['Q11424', 'Q24869', 'Q202866', 'Q506240', 'Q1054574', 'Q93204', 'Q229390', 'Q20650540']);
+  const SERIES_TYPES = new Set(['Q5398426', 'Q1259759', 'Q581714', 'Q117467246', 'Q15416', 'Q63952888', 'Q21191270', 'Q526877']);
+  async function wikidata(params) {
+    const r = await fetch(`https://www.wikidata.org/w/api.php?format=json&origin=*&${params}`, { credentials: 'omit', headers: WIKI_AGENT });
+    if (!r.ok) throw new Error(`wikidata ${r.status}`);
+    return r.json();
+  }
+  async function wdEntities(ids) {
+    const out = {};
+    for (let i = 0; i < ids.length; i += 50) {
+      Object.assign(out, (await wikidata(`action=wbgetentities&languages=en|mul&props=labels|claims&ids=${ids.slice(i, i + 50).join('|')}`)).entities || {});
+    }
+    return out;
+  }
+  const wdVals = (e, p) => (e?.claims?.[p] || []).map((c) => c.mainsnak?.datavalue?.value).filter(Boolean);
+  const wdLabel = (e) => e?.labels?.en?.value || e?.labels?.mul?.value || '';
+  async function wikidataParts(queries) {
+    for (const q of queries) {
+      const found = await wikidata(`action=wbsearchentities&language=en&limit=6&search=${encodeURIComponent(q)}`);
+      const ids = (found.search || []).map((x) => x.id);
+      if (!ids.length) continue;
+      const cands = await wdEntities(ids);
+      // The first match whose parts are mostly films and series (not, say, the novel's six books).
+      for (const root of ids.map((id) => cands[id]).filter((e) => wdVals(e, 'P527').length >= 2)) {
+      let level = wdVals(root, 'P527').map((v) => v.id);
+      const leaves = [];
+      for (let depth = 0; depth < 3 && level.length && leaves.length < 150; depth++) {
+        const ents = await wdEntities(level);
+        const next = [];
+        for (const id of level) {
+          const e = ents[id];
+          const types = wdVals(e, 'P31').map((v) => v.id);
+          const sub = wdVals(e, 'P527').map((v) => v.id);
+          const isWork = types.some((t) => FILM_TYPES.has(t) || SERIES_TYPES.has(t));
+          if (sub.length && !isWork) next.push(...sub);
+          else if (wdLabel(e)) leaves.push({ title: wdLabel(e), kind: types.some((t) => SERIES_TYPES.has(t)) ? 'Series' : 'Films', work: isWork, date: wdVals(e, 'P577').map((v) => v.time).sort()[0] || '' });
+        }
+        level = next;
+      }
+      const works = leaves.filter((l) => l.work);
+      if (works.length >= 2 && works.length >= leaves.length / 2) return { name: wdLabel(root), id: root.id, leaves: works.sort((a, b) => a.date.localeCompare(b.date)) };
+      }
+    }
+    return null;
+  }
+
+  async function franchiseGuide(name, topic, link) {
+    const items = new Map(); // norm(title) -> item
+    const threads = [];
+    const problems = [];
+    const add = (title, kind, source, reason = '') => {
+      const id = norm(title);
+      if (!id) return;
+      if (!items.has(id)) items.set(id, { title, kind, order: items.size, wiki: false, pasted: false, guides: new Set(), reason });
+      const it = items.get(id);
+      if (source === 'wiki') it.wiki = true;
+      else if (source) it.guides.add(source);
+      if (!it.reason && reason) it.reason = reason;
+      return it;
+    };
+
+    // 1. The fan wiki: the best-matching saga/phase page with lists of films and series.
+    try {
+      const wiki = await findWiki(name, null);
+      if (wiki) {
+        const search = await fandomJson(wiki.host, `action=query&list=search&srsearch=${encodeURIComponent(topic || name)}&srlimit=6&srnamespace=0`);
+        const titles = (search?.query?.search || []).map((r) => r.title).filter((t) => !t.includes('/')).slice(0, 5);
+        if (titles.length) {
+          const pages = await fandomJson(wiki.host, `action=query&prop=revisions&rvprop=content&rvslots=main&titles=${encodeURIComponent(titles.join('|'))}`);
+          const byTitle = new Map((pages?.query?.pages || []).map((p) => [p.title, p.revisions?.[0]?.slots?.main?.content || '']));
+          for (const t of titles) {
+            const lists = listsIn(byTitle.get(t) || '');
+            if (lists.length < 2) continue;
+            for (const { title, kind } of lists) add(title, kind, 'wiki', '');
+            threads.push({ title: `${wiki.name}: ${t}`, sub: 'fandom.com', upvotes: 0, comments: 0, pasted: false, url: `https://${wiki.host}/wiki/${encodeURIComponent(t.replace(/ /g, '_'))}` });
+            break;
+          }
+        }
+      }
+    } catch {}
+
+    // 1b. No list on a fan wiki: Wikidata's parts of the saga or film series, by release date.
+    if (!items.size) {
+      try {
+        const parts = await wikidataParts([...new Set([topic, topic && `${name} ${topic}`, name, `${name} film series`].filter(Boolean))]);
+        if (parts) {
+          for (const { title, kind, date } of parts.leaves) add(title, kind, 'wiki', date.slice(1, 5));
+          threads.push({ title: `Wikidata: ${parts.name}`, sub: 'wikidata.org', upvotes: 0, comments: 0, pasted: false, url: `https://www.wikidata.org/wiki/${parts.id}` });
+        }
+      } catch {}
+    }
+
+    // 2. A watch-order thread you pasted, and Reddit's top ones.
+    const useThread = (t, pasted) => {
+      threads.push({ title: t.title, sub: t.sub, upvotes: t.upvotes, comments: t.comments.length, url: t.url, pasted });
+      const listed = titlesIn(t.body);
+      for (const { title, year } of listed) {
+        const it = add(title, 'Films', t.url, year);
+        if (it && pasted) it.pasted = true;
+      }
+      return listed.length;
+    };
+    const path = link ? threadPath(link) : null;
+    if (link && !path) problems.push('That link isn’t a Reddit thread.');
+    if (path) {
+      try {
+        if (!useThread(await readThread(path), true)) problems.push('Your thread didn’t list titles we could read (like “Iron Man (2008)”).');
+      } catch (e) {
+        problems.push(`Reddit didn’t open your thread (${String(e?.message || e).replace(/^reddit\s*/, '') || 'no answer'}).`);
+      }
+    }
+    if (!items.size || topic) {
+      try {
+        const q = `${name} ${topic} watch order`.replace(/\s+/g, ' ');
+        const search = await getJson(`/search.json?q=${encodeURIComponent(q)}&sort=relevance&t=all&type=link&limit=25&raw_json=1`);
+        const found = (search?.data?.children || []).map((c) => c.data)
+          .filter((d) => d && !d.over_18 && /order|guide|list|watch/i.test(d.title) && (!topic || norm(`${d.title} ${d.selftext}`).includes(norm(topic))))
+          .sort((a, b) => b.score - a.score).slice(0, 2);
+        await Promise.all(found.map(async (d) => {
+          try { useThread(await readThread(d.permalink.replace(/\/$/, '')), false); } catch {}
+        }));
+      } catch {}
+    }
+
+    // In: from the wiki or your thread, or listed by 2+ Reddit guides.
+    const kinds = ['Films', 'Series', 'Short films'];
+    const episodes = [...items.values()]
+      .filter((it) => it.wiki || it.pasted || it.guides.size >= 2)
+      .sort((a, b) => kinds.indexOf(a.kind) - kinds.indexOf(b.kind) || a.order - b.order)
+      .slice(0, 150)
+      .map((it) => ({ key: `T:${norm(it.title).slice(0, 100)}`, kind: it.kind, order: it.order, season: 0, number: 0, label: it.kind === 'Films' ? 'Film' : it.kind === 'Series' ? 'Series' : 'Short',
+        title: it.title, pasted: it.pasted, guides: it.guides.size, comments: 0, summary: false, fandom: it.wiki, reason: it.reason, url: '' }));
+    if (!episodes.length) problems.push(`Couldn’t find a list for “${topic || name}”. Try the saga or phase name (like “Infinity Saga”), or paste a watch-order thread.`);
+    return { show: name, topic, episodes, threads, problems, hasGuide: false, franchise: true };
+  }
+
   async function watchGuide(show, topic = '', link = '') {
     const name = String(show || '').trim().slice(0, 100);
     if (!name) throw new Error('no show');
     topic = String(topic || '').trim().slice(0, 100);
     const terms = topicTerms(topic);
-    const guide = await episodeGuide(name);
+    // A single TV series has an episode list; a franchise ("MCU") gets a watch order of films and series.
+    const found = await episodeGuide(name);
+    const guide = found && sameShow(found.name, name) ? found : null;
+    if (!guide) return franchiseGuide(name, topic, link);
     const entries = new Map(); // key -> { key, pasted, guides: Set, comments, summary, reason, url }
     const entry = (key) => {
       if (!entries.has(key)) entries.set(key, { key, pasted: false, guides: new Set(), comments: 0, summary: false, fandom: false, reason: '', url: '' });
@@ -683,10 +863,15 @@
           pasted: e.pasted, guides: e.guides.size, comments: e.comments, summary: e.summary, summaryTerm: e.summaryTerm || '', fandom: e.fandom, reason: e.reason, url: e.url };
       })
       .sort((a, b) => a.season - b.season || a.number - b.number);
+    // Nothing as a TV series ("Harry Potter" is also a TV special): try it as films instead.
+    if (!episodes.length && !link) {
+      const films = await franchiseGuide(name, topic, link);
+      if (films.episodes.length) return films;
+    }
     return { show: name, topic, episodes, threads, problems, hasGuide: !!guide };
   }
 
-  const api = { bestEpisodes, watchGuide, listedIn, threadPath, findWiki, fandomTopic, episodesNamed, episodesIn, rank, label, snippet, makeGuide, wikiSummaries, describedIn, titleIn, stems, searchUrl: (show) => `https://www.reddit.com/search/?q=${encodeURIComponent(`${show} best episodes`)}` };
+  const api = { bestEpisodes, watchGuide, listedIn, threadPath, findWiki, fandomTopic, episodesNamed, listsIn, titlesIn, sameShow, episodesIn, rank, label, snippet, makeGuide, wikiSummaries, describedIn, titleIn, stems, searchUrl: (show) => `https://www.reddit.com/search/?q=${encodeURIComponent(`${show} best episodes`)}` };
   if (typeof module !== 'undefined') module.exports = api;
   else self.Reddit = api;
 })();

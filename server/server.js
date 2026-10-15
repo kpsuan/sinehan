@@ -9,6 +9,7 @@ const rooms = new Map(); // room -> Set<ws>
 const JOIN_PAGE = fs.readFileSync(path.join(__dirname, 'join.html'));
 const LANDING_PAGE = fs.readFileSync(path.join(__dirname, 'landing.html'));
 const PARTY_PAGE = fs.readFileSync(path.join(__dirname, 'party.html'));
+const GUIDE_PAGE = fs.readFileSync(path.join(__dirname, 'guide.html'));
 // Only these exact files are served from public/.
 const STATIC_FILES = new Map([
   ['logo.png', 'image/png'],
@@ -57,6 +58,11 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/party') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     return res.end(PARTY_PAGE);
+  }
+  // A watch guide as a page, for any device. The guide itself is in the link after #, so it never reaches us.
+  if (url.pathname === '/guide') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    return res.end(GUIDE_PAGE);
   }
   if (url.pathname === '/' || url.pathname === '/index.html') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });

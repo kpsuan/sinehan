@@ -345,9 +345,10 @@
     .gf-toggle { align-self: flex-start; padding: 2px; border: 0; background: none; color: var(--accent); font-size: 12px; }
     .gf-toggle:hover:not(:disabled) { background: none; text-decoration: underline; }
     /* Saved watch guides */
-    .g-back { margin: 0 0 8px; padding: 2px 4px; border: 0; background: none; color: var(--muted); font-size: 12px; }
-    .g-back::before { content: '‹ '; }
-    .g-back:hover:not(:disabled) { background: none; color: var(--text); }
+    .g-back { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 10px; padding: 6px 12px 6px 9px; border: 0; border-radius: 7px;
+      background: var(--btn); color: var(--text); font-size: 12px; font-weight: 600; }
+    .g-back::before { content: ''; width: 6px; height: 6px; border-left: 1.8px solid currentColor; border-bottom: 1.8px solid currentColor; transform: rotate(45deg); margin-left: 3px; }
+    .g-back:hover:not(:disabled) { background: var(--hover); }
     .g-saved-h { margin: 6px 4px 8px; }
     .g-saved { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; border-radius: 7px; background: var(--soft); }
     .g-saved-open { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; border: 0; background: none; text-align: left; }
@@ -366,7 +367,9 @@
     .gc-open, .line.me .gc-open { margin-top: 6px; padding: 5px 10px; border: 0; border-radius: 6px; font-size: 12px; font-weight: 600; background: #c9b6f2; color: #1b1325; }
     .gc-open:hover:not(:disabled), .line.me .gc-open:hover:not(:disabled) { background: #d8c9f7; }
     /* Watch guide checklist */
-    .g-head { display: flex; align-items: center; gap: 8px; margin: 2px 2px 8px; }
+    .g-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 2px 2px 8px; }
+    #bestClear { flex: none; padding: 7px; color: var(--muted); }
+    #bestClear svg { width: 16px; height: 16px; }
     .g-head .g-count { flex: 1; font-size: 12px; color: var(--muted); }
     .g-head button { font-size: 11px; padding: 4px 8px; }
     .g-bar { height: 4px; margin: 0 2px 10px; border-radius: 999px; background: var(--field); overflow: hidden; }
@@ -614,6 +617,7 @@
     <form id="bestForm">
       <div class="bf-row">
         <input id="bestQuery" maxlength="100" placeholder="Show name" autocomplete="off" />
+        <button type="button" id="bestClear" class="icon" title="Clear and start over" aria-label="Clear" hidden><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg></button>
         <button id="bestSubmit" class="primary">Ask Reddit</button>
       </div>
       <div id="guideFields" hidden>

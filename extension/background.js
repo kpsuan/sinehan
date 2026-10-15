@@ -249,11 +249,13 @@ async function readGuides() {
   return (await chrome.storage.local.get('guides')).guides || [];
 }
 const str = (x, n) => String(x ?? '').slice(0, n);
+// An episode ("S4E7") or, in a franchise's watch order, a title ("T:iron man").
+const GUIDE_KEY = /^(S\d+E\d+|T:[\p{L}\p{N} ]{1,100})$/u;
 function cleanGuide(g) {
   if (!g || typeof g !== 'object' || !g.id || !g.show) return null;
   const done = {};
   for (const [k, t] of Object.entries(g.done || {}).slice(0, 300)) {
-    if (/^S\d+E\d+$/.test(k) && t && typeof t.at === 'number') done[k] = { v: !!t.v, at: t.at };
+    if (GUIDE_KEY.test(k) && t && typeof t.at === 'number') done[k] = { v: !!t.v, at: t.at };
   }
   return {
     id: str(g.id, 200),
@@ -262,10 +264,11 @@ function cleanGuide(g) {
     by: str(g.by, 30),
     at: Number(g.at) || Date.now(),
     episodes: (Array.isArray(g.episodes) ? g.episodes : []).slice(0, 150).map((e) => ({
-      key: str(e.key, 12), season: Number(e.season) || 0, number: Number(e.number) || 0, label: str(e.label, 20), title: str(e.title, 120),
+      key: str(e.key, 104), season: Number(e.season) || 0, number: Number(e.number) || 0, label: str(e.label, 20), title: str(e.title, 120),
+      kind: str(e.kind, 20), order: Number(e.order) || 0,
       reason: str(e.reason, 160), pasted: !!e.pasted, guides: Number(e.guides) || 0, comments: Number(e.comments) || 0, summary: !!e.summary, summaryTerm: str(e.summaryTerm, 40), fandom: !!e.fandom,
       url: /^https:\/\//.test(e.url || '') ? str(e.url, 400) : '',
-    })).filter((e) => /^S\d+E\d+$/.test(e.key)),
+    })).filter((e) => GUIDE_KEY.test(e.key)),
     threads: (Array.isArray(g.threads) ? g.threads : []).slice(0, 6).map((t) => ({
       title: str(t.title, 200), sub: str(t.sub, 60), upvotes: Number(t.upvotes) || 0, url: /^https:\/\//.test(t.url || '') ? str(t.url, 400) : '', pasted: !!t.pasted,
     })),
@@ -307,7 +310,7 @@ function saveGuides(incoming, share, from = null) {
   return guidesWrite;
 }
 function tickGuide(tick, share) {
-  if (!tick.id || !/^S\d+E\d+$/.test(tick.key)) return guidesWrite;
+  if (!tick.id || !GUIDE_KEY.test(tick.key)) return guidesWrite;
   guidesWrite = guidesWrite
     .then(readGuides)
     .then(async (list) => {
@@ -530,7 +533,7 @@ function connect(server, room) {
       const g = cleanGuide(msg.guide);
       if (g) saveGuides([g], false, 'them');
     }
-    if (msg.type === 'guide-tick') tickGuide({ id: str(msg.id, 200), key: str(msg.key, 12), v: !!msg.v, at: Number(msg.at) || Date.now() }, false);
+    if (msg.type === 'guide-tick') tickGuide({ id: str(msg.id, 200), key: str(msg.key, 104), v: !!msg.v, at: Number(msg.at) || Date.now() }, false);
     if (msg.type === 'chat') {
       remember({ ...msg, mine: false });
       // Lets the show's tab know whether to flash the message on the video (sidebar closed or hidden by fullscreen).

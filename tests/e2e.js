@@ -582,6 +582,20 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     check('…and Open guide opens it on their side', await until(async () => (await pB2.$$eval('.g-ep', (r) => r.length)) === 3));
     await pA.locator('.g-ep').first().click();
     check('ticking an episode ticks it for both', await until(() => pB2.$eval('.g-ep', (r) => r.classList.contains('done'))));
+    // The guide as a page, on another device: same list, and ticks there reach the party.
+    const pageLink = await pA.evaluate(() => guidePageLink(openGuide));
+    check('Page link carries the guide in the link (after #)', /\/guide#g=[\w-]+$/.test(pageLink), pageLink.slice(0, 80));
+    const gp = await A.ctx.newPage();
+    await gp.setViewportSize({ width: 390, height: 844 });
+    await gp.goto(pageLink);
+    check('the guide page lists it on any device', await until(async () => (await gp.$$eval('.ep', (r) => r.length)) === 3) && (await text(gp, '#show')) === 'Test Show');
+    check('…with what was already ticked', await gp.$eval('.ep', (r) => r.classList.contains('done')));
+    check('…and syncs with the party', await until(() => gp.$eval('#sync', (x) => x.classList.contains('live'))));
+    await gp.locator('.ep').nth(1).click();
+    check('ticking on the page ticks it in their sidebar', await until(() => pB2.$$eval('.g-ep', (r) => r[1]?.classList.contains('done'))));
+    await gp.reload();
+    check('the page remembers ticks on that device', await until(() => gp.$$eval('.ep', (r) => r[1]?.classList.contains('done'))));
+    await gp.close();
     await pB2.click('.g-back');
     check('their saved guides list it', await until(async () => (await pB2.$$eval('.g-saved .t-title', (t) => t.map((x) => x.textContent))).includes('Test Show · The Arc')),
       await pB2.evaluate(() => `mode=${episodesMode} open=${!!openGuide} results=${$('bestResults').textContent.slice(0, 160)}`));

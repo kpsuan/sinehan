@@ -663,7 +663,7 @@ function addChat(name, text, kind, avatar, vt, into = $('log'), guide = null) {
       title.textContent = guide.topic ? `${guide.show} · ${guide.topic}` : guide.show;
       const meta = document.createElement('span');
       meta.className = 'gc-meta';
-      meta.textContent = `${guide.count} episode${guide.count === 1 ? '' : 's'}`;
+      meta.textContent = `${guide.count} to watch`;
       const open = document.createElement('button');
       open.type = 'button';
       open.className = 'gc-open';
@@ -912,6 +912,44 @@ $('guideLinkToggle').onclick = () => {
 $('guideTopic').addEventListener('input', () => looksLikeLink($('guideTopic').value) && sortGuideFields());
 $('guideLink').addEventListener('change', sortGuideFields);
 
+// sinehan.live/guide#g=… : the guide packed into the link (squeezed, then base64url), with the party's
+// room when it's saved and you're in one, so ticks on that page sync live.
+async function guidePageLink(g) {
+  const data = {
+    v: 1,
+    id: g.id,
+    s: g.show,
+    t: g.topic || '',
+    e: g.episodes.map((e) => [e.key, e.title || '', (e.reason || '').slice(0, 90), e.kind || '']),
+    d: g.episodes.filter((e) => isDone(g, e.key)).map((e) => e.key),
+  };
+  const server = ($('server').value.trim() || DEFAULT_SERVER).replace(/\/+$/, '');
+  if (g.saved && status.connected && status.room) Object.assign(data, { r: status.room, w: server });
+  const squeezed = new Blob([JSON.stringify(data)]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+  const bytes = new Uint8Array(await new Response(squeezed).arrayBuffer());
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  const packed = btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return `${server.replace(/^ws/, 'http')}/guide#g=${packed}`;
+}
+
+// Clear: empty the boxes and the results, back to your saved guides.
+function updateClear() {
+  $('bestClear').hidden = !($('bestQuery').value || $('guideTopic').value || $('guideLink').value || $('bestResults').childElementCount);
+}
+$('bestClear').onclick = () => {
+  $('bestQuery').value = $('guideTopic').value = $('guideLink').value = '';
+  showLinkRow(false);
+  bestRun += 1;
+  openGuide = null;
+  $('bestResults').replaceChildren();
+  if (episodesMode === 'guide') listGuides();
+  updateClear();
+  $('bestQuery').focus();
+};
+for (const id of ['bestQuery', 'guideTopic', 'guideLink']) $(id).addEventListener('input', updateClear);
+new MutationObserver(updateClear).observe($('bestResults'), { childList: true });
+
 // Save (and send to them) or, once saved, post its card in chat again.
 async function saveGuide(g) {
   const { problems, saved, ...guide } = g;
@@ -950,7 +988,8 @@ async function renderGuide(g, fresh = false) {
   head.className = 'g-head';
   const count = document.createElement('span');
   count.className = 'g-count';
-  count.textContent = `${g.topic ? `${g.topic} · ` : ''}${total} episode${total === 1 ? '' : 's'} · ${watched} watched`;
+  const noun = g.franchise || g.episodes.some((e) => e.kind) ? 'title' : 'episode';
+  count.textContent = `${g.topic ? `${g.topic} · ` : ''}${total} ${noun}${total === 1 ? '' : 's'} · ${watched} watched`;
   const share = document.createElement('button');
   share.type = 'button';
   if (!g.saved) {
@@ -970,7 +1009,21 @@ async function renderGuide(g, fresh = false) {
       share.disabled = true;
     };
   }
-  head.append(count, share);
+  // A page for any device (phone, tablet, someone without the extension), with the guide inside the link.
+  const page = document.createElement('button');
+  page.type = 'button';
+  page.textContent = 'Page link';
+  page.title = 'Copy a link to this guide as a page that opens on any device';
+  page.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(await guidePageLink(g));
+      page.textContent = 'Link copied';
+    } catch {
+      page.textContent = 'Couldn’t copy';
+    }
+    setTimeout(() => (page.textContent = 'Page link'), 1800);
+  };
+  head.append(count, share, page);
   const bar = document.createElement('div');
   bar.className = 'g-bar';
   const fill = document.createElement('i');
@@ -982,11 +1035,12 @@ async function renderGuide(g, fresh = false) {
   let season = null;
   let nextRow = null;
   for (const e of g.episodes) {
-    if (e.season !== season) {
-      season = e.season;
+    const section = e.kind || `Season ${e.season}`;
+    if (section !== season) {
+      season = section;
       const h = document.createElement('div');
       h.className = 'g-season';
-      h.textContent = `Season ${season}`;
+      h.textContent = section;
       out.push(h);
     }
     const row = document.createElement('button');
@@ -1000,7 +1054,7 @@ async function renderGuide(g, fresh = false) {
     body.className = 'g-body';
     const title = document.createElement('span');
     title.className = 'g-title';
-    title.textContent = e.title ? `${e.label} · ${e.title}` : e.label;
+    title.textContent = e.kind ? e.title : e.title ? `${e.label} · ${e.title}` : e.label;
     if (e === next) {
       const n = document.createElement('span');
       n.className = 'g-next';
@@ -1374,9 +1428,11 @@ $('camSelect').onchange = async () => {
   if (!pc || !old) return;
   try {
     const [track] = (await getMedia('video')).getVideoTracks();
+    if (!pc || !localStream) return track.stop(); // the call ended meanwhile
     track.enabled = old.enabled;
     await pc.getSenders().find((s) => s.track === old)?.replaceTrack(track);
     old.stop();
+    if (!localStream) return track.stop();
     localStream.removeTrack(old);
     localStream.addTrack(track);
     $('local').srcObject = localStream;
@@ -1482,6 +1538,7 @@ function createPeer() {
     if (candidate) signal({ candidate: candidate.toJSON() });
   };
   pc.ontrack = ({ track }) => {
+    if (!remoteStream) return; // a late track from a call that just ended
     remoteStream.addTrack(track);
     if (track.kind === 'audio') watchTheirVoice();
     $('remote').srcObject = remoteStream;
@@ -1598,6 +1655,7 @@ async function turnOnCamera(voice = false) {
     await setMic(true);
   }
   listDevices(); // names are visible now that we have permission
+  if (!localStream) return false; // the call ended while it was starting
   send({ type: 'mic', on: !!localStream.getAudioTracks().length });
   if (!localStream.getAudioTracks().length) addChat('', 'Your mic is off. Click the mic button to talk.', 'system');
   render();
@@ -1625,12 +1683,13 @@ async function setMic(on) {
       addChat('', `Couldn’t turn on your mic: ${e.message || e.name}`, 'system');
       return;
     }
+    if (!pc || !localStream) return track.stop(); // the call ended while the mic was starting
     localStream.addTrack(track);
     await micTransceiver().sender.replaceTrack(track);
   } else if (!on && current) {
     await micTransceiver().sender.replaceTrack(null);
     current.stop(); // releases the microphone itself
-    localStream.removeTrack(current);
+    localStream?.removeTrack(current);
   }
   micOn = on;
   chrome.storage.local.set({ micOn });
