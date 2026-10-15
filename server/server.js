@@ -15,7 +15,9 @@ const STATIC_FILES = new Map([
   ['avatar2.png', 'image/png'],
   ['avatar3.png', 'image/png'],
   ['avatar4.png', 'image/png'],
-  ['preview.webp', 'image/webp'],
+  ['still.webp', 'image/webp'],
+  ['sidebar-dark.webp', 'image/webp'],
+  ['hbomax.png', 'image/png'],
 ]);
 const KLIPY_API_KEY = process.env.KLIPY_API_KEY;
 

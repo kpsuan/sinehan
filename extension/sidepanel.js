@@ -57,6 +57,8 @@ function onMessage(msg) {
     if (pc && msg.on === false && theirMicOn !== false) addChat('', `${peer?.name ? `${peer.name}’s` : 'Their'} mic is off`, 'system');
     theirMicOn = !!msg.on;
     render();
+  } else if (msg.type === 'hold' && msg.reason === 'break') {
+    addChat('', msg.active ? `${msg.name || 'They'} is on a CR break` : `${msg.name || 'They'} is back`, 'system');
   } else if (msg.type === 'typing') {
     showTyping(msg.name);
   } else if (msg.type === 'hand') {
@@ -123,14 +125,19 @@ Array.from({ length: AVATAR_COUNT }, (_, i) => {
   button.setAttribute('role', 'radio');
   button.setAttribute('aria-label', `Picture ${i + 1}`);
   button.append(avatarEl(i, 40));
-  button.onclick = () => {
-    me.avatar = i;
-    chrome.storage.local.set({ avatar: i });
-    sendProfile(false);
-    renderProfiles();
-  };
+  button.onclick = () => setAvatar(i);
   $('avatars').append(button);
+  const small = button.cloneNode(true);
+  small.onclick = () => setAvatar(i);
+  $('wlAvatars').append(small);
 });
+
+function setAvatar(i) {
+  me.avatar = i;
+  chrome.storage.local.set({ avatar: i });
+  sendProfile(false);
+  renderProfiles();
+}
 
 $('connect').onclick = () => {
   const server = $('server').value.trim();
@@ -150,6 +157,44 @@ $('disconnect').onclick = () => {
 // Gear icon in the header shows/hides the settings section.
 $('settingsBtn').onclick = () => ($('settings').open = !$('settings').open);
 $('settings').addEventListener('toggle', () => $('settingsBtn').setAttribute('aria-pressed', String($('settings').open)));
+
+// ---- Welcome (not in a party yet) ----
+function renderWelcome() {
+  const show = !status.room && !$('settings').open && $('historyView').hidden;
+  $('welcome').hidden = !show;
+  document.body.classList.toggle('welcome', show);
+}
+$('settings').addEventListener('toggle', renderWelcome);
+$('wlName').addEventListener('input', () => {
+  $('name').value = $('wlName').value;
+  $('name').dispatchEvent(new Event('input')); // same as typing in Settings
+});
+$('wlStart').onclick = async () => {
+  $('wlError').hidden = true;
+  await $('invite').onclick(); // makes a room, connects, copies the link
+  addChat('', 'Invite link copied. Send it to the other person.', 'system');
+};
+$('wlJoin').onsubmit = (e) => {
+  e.preventDefault();
+  let link;
+  try {
+    link = new URL($('wlLink').value.trim());
+  } catch {}
+  const room = link?.searchParams.get('room');
+  if (!link || !/^https?:$/.test(link.protocol) || !room) {
+    $('wlError').textContent = 'That doesn’t look like a Sinehan invite link.';
+    $('wlError').hidden = false;
+    return;
+  }
+  $('wlError').hidden = true;
+  const server = `${link.protocol === 'https:' ? 'wss:' : 'ws:'}//${link.host}`;
+  $('server').value = server;
+  $('room').value = room;
+  ask({ type: 'connect', server, room }, showStatus);
+  const to = link.searchParams.get('to');
+  if (to && /^https?:\/\//.test(to)) ask({ type: 'follow', url: to }); // open the show they're on
+  $('wlLink').value = '';
+};
 
 function showStatus(s) {
   if (!s) return;
@@ -173,6 +218,7 @@ function showStatus(s) {
   if (s.peers < 2) askedPeer = false;
   render();
   renderWatch();
+  renderWelcome();
 }
 const pollStatus = () => ask({ type: 'status' }, showStatus);
 pollStatus();
@@ -201,6 +247,8 @@ $('invite').onclick = async () => {
   // Who's inviting and to what, so the invite page can say so.
   link += `&n=${encodeURIComponent(myName())}&a=${me.avatar}`;
   if (tab?.url?.startsWith('http')) link += `&to=${encodeURIComponent(tab.url)}&t=${encodeURIComponent((tab.title || '').slice(0, 120))}`;
+  const picture = showPicture(tab?.url, status.watch?.tabId === tab?.id ? status.watch?.image : null);
+  if (picture) link += `&img=${encodeURIComponent(picture)}`;
 
   try {
     await navigator.clipboard.writeText(link);
@@ -218,14 +266,29 @@ $('invite').onclick = async () => {
 let copiedTimer = null;
 $('inviteLink').onclick = () => $('inviteLink').select();
 
+// A picture of the show for the invite page: YouTube's own thumbnail, otherwise the image the page
+// publishes for link previews (reported by the show's tab).
+function showPicture(url, published) {
+  try {
+    const u = new URL(url);
+    const v = u.searchParams.get('v');
+    if (/(^|\.)youtube\.com$/.test(u.hostname) && /^[\w-]{6,20}$/.test(v || '')) return `https://i.ytimg.com/vi/${v}/hqdefault.jpg`;
+  } catch {}
+  return /^https:\/\//.test(published || '') && published.length < 600 ? published : null;
+}
+
 function renderProfiles() {
   $('who').replaceChildren(avatarEl(me.avatar, 30), ...(peer ? [avatarEl(peer.avatar, 30)] : []));
   $('names').textContent = peer ? `${myName()} & ${peer.name}` : myName();
   $('myAvatar').replaceChildren(avatarEl(me.avatar, 48));
-  [...$('avatars').children].forEach((b, i) => {
-    b.classList.toggle('selected', i === me.avatar);
-    b.setAttribute('aria-checked', String(i === me.avatar));
-  });
+  for (const list of [$('avatars'), $('wlAvatars')]) {
+    [...list.children].forEach((b, i) => {
+      b.classList.toggle('selected', i === me.avatar);
+      b.setAttribute('aria-checked', String(i === me.avatar));
+    });
+  }
+  $('wlAvatar').replaceChildren(avatarEl(me.avatar, 38));
+  if (document.activeElement !== $('wlName')) $('wlName').value = $('name').value;
   render();
 }
 
@@ -320,6 +383,7 @@ async function renderWatch() {
   [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true }).catch(() => []);
   $('watchHere').hidden = !(activeTab?.url?.startsWith('http') && activeTab.id !== w?.tabId);
   $('countdownBtn').disabled = !w || !(status.connected && status.peers > 1);
+  $('breakBtn').disabled = !onBreak && !(status.connected && status.peers > 1);
   $('handBtn').disabled = !(status.connected && status.peers > 1);
   // Their prompt goes away once we're on the same thing.
   $('watchBar').hidden = !status.connected;
@@ -345,6 +409,20 @@ $('handBtn').onclick = () => {
   $('handBtn').classList.add('sent');
 };
 $('countdownBtn').onclick = () => send({ local: true, type: 'countdown-start' }); // the show's tab runs it
+
+// CR break: the show's tab pauses both of you; "I'm back" counts you both back in.
+let onBreak = false;
+const BREAK_ICON = $('breakBtn').innerHTML;
+$('breakBtn').onclick = () => {
+  if (!status.watch) return addChat('', 'Open your show first (or click Watch here), then take a break.', 'system');
+  send({ local: true, type: 'break-toggle' });
+};
+function renderBreak() {
+  $('breakBtn').classList.toggle('on', onBreak);
+  if (onBreak) $('breakBtn').textContent = 'I’m back';
+  else $('breakBtn').innerHTML = BREAK_ICON; // fixed icon markup from this file
+  $('breakBtn').title = onBreak ? 'End your break: count down 3-2-1 and play' : 'CR break: pause for both of you';
+}
 
 // ---- Chat ----
 // History is kept by the background script, so closing the sidebar doesn't lose it.
@@ -456,6 +534,7 @@ let openSession = null;
 function showHistory(on) {
   document.body.classList.toggle('show-history', on);
   $('historyView').hidden = !on;
+  renderWelcome();
   $('historyBtn').setAttribute('aria-pressed', String(on));
   if (on) listSessions();
 }
@@ -831,6 +910,10 @@ function sendCallState(force = false) {
 const relays = new Map(); // tab view id -> RTCPeerConnection
 
 async function onLocal(msg) {
+  if (msg.type === 'break-state') {
+    onBreak = !!msg.active;
+    return renderBreak();
+  }
   const relay = relays.get(msg.from);
   if (msg.type === 'call-control') {
     // From the floating camera in fullscreen.

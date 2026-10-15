@@ -168,6 +168,14 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     const pA = await openPanel(A);
     const pB = await openPanel(B);
     check('fresh sidebar shows "Not connected"', (await text(pA, '#status')) === 'Not connected');
+    await pA.click('#settingsBtn'); // close Settings to see the first screen
+    check('first screen is the welcome screen', await pA.$eval('#welcome', (w) => !w.hidden) && await pA.$eval('.chat', (c) => getComputedStyle(c).display === 'none'));
+    await pA.fill('#wlName', 'Alice');
+    check('welcome: name is saved like in Settings', (await pA.inputValue('#name')) === 'Alice');
+    await pA.fill('#wlLink', 'not a link');
+    await pA.press('#wlLink', 'Enter');
+    check('welcome: a bad invite link is explained', await pA.$eval('#wlError', (e) => !e.hidden));
+    await pA.click('#settingsBtn');
     check('Start call disabled before connecting', await pA.$eval('#start', (b) => b.disabled));
 
     await connect(pA, 'Alice', 'r1');
@@ -175,7 +183,12 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     check('settings collapse after connecting', await until(() => pA.$eval('#settings', (d) => !d.open)));
     check('gear reflects settings closed', (await pA.$eval('#settingsBtn', (b) => b.getAttribute('aria-pressed'))) === 'false');
 
-    await connect(pB, 'Bob', 'r1');
+    if (await pB.$eval('#settings', (d) => d.open)) await pB.click('#settingsBtn');
+    await pB.fill('#wlName', 'Bob');
+    await pB.fill('#wlLink', `http://localhost:${RELAY_PORT}/join?room=r1&n=Alice&a=0`);
+    await pB.press('#wlLink', 'Enter');
+    check('welcome: pasting an invite link joins the party', await until(async () => (await text(pB, '#status')) !== 'Not connected'));
+    check('…and the welcome screen gives way to the call and chat', await until(() => pB.$eval('#welcome', (w) => w.hidden)));
     check('both show "Together"', await until(async () => (await text(pA, '#status')) === 'Together' && (await text(pB, '#status')) === 'Together'));
     check('A header shows both names', await until(async () => (await text(pA, '#names')) === 'Alice & Bob'), await text(pA, '#names'));
     check('B header shows both names', await until(async () => (await text(pB, '#names')) === 'Bob & Alice'), await text(pB, '#names'));
@@ -539,6 +552,16 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     check('3-2-1 shows on both screens', await until(async () => (await shown(vA2, /^[321]$/)) && (await shown(vB, /^[321]$/))));
     check('…then both play together', await until(async () => { const a = await vstate(vA2); const b = await vstate(vB); return !a.paused && !b.paused && Math.abs(a.t - b.t) < 1; }, 6000), await both());
 
+    await pA.click('#breakBtn');
+    check('CR break pauses both', await until(async () => (await vstate(vA2)).paused && (await vstate(vB)).paused, 5000), await both());
+    check('…they see who is away, with a timer', await until(() => shown(vB, /fran is on a CR break\s*\d+:\d\d/)));
+    check('…and you get an "I’m back" button', await until(async () => (await text(pA, '#breakBtn')) === 'I’m back') && await shown(vA2, /I’m back/));
+    check('…no emoji in the sidebar header', !(await pA.$eval('.top', (t) => /[\u{1F300}-\u{1FAFF}]/u.test(t.textContent))));
+    await vA2.locator('button', { hasText: 'I’m back' }).click();
+    check('coming back counts both in, then plays together', await until(async () => { const a = await vstate(vA2); const b = await vstate(vB); return !a.paused && !b.paused && Math.abs(a.t - b.t) < 1; }, 7000), await both());
+    // (faded-out pop-ups stay in the page invisibly, so only count what's actually showing)
+    const showing = (p, re) => p.evaluate((src) => [...document.querySelectorAll('[data-sinehan]')].some((e) => new RegExp(src).test(e.textContent) && getComputedStyle(e).opacity !== '0'), re.source);
+    check('…and the break notice is gone', await until(async () => !(await showing(vB, /CR break/)), 5000));
     await vA2.evaluate(() => { const v = document.getElementById('v'); v.playbackRate = 0; v.dispatchEvent(new Event('waiting')); });
     check('when one side is loading, the other waits', await until(async () => (await vstate(vB)).paused, 5000), await both());
     check('…and is told why', await until(() => shown(vB, /loading/i)));
@@ -608,7 +631,7 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     check('closing Past parties returns to where you were', await pB2.evaluate(() => document.getElementById('historyView').hidden && !document.body.classList.contains('show-history')
       && getComputedStyle(document.getElementById('settings')).display !== 'none'));
     await pB2.click('#settingsBtn');
-    check('…and closing Settings shows the chat again', await pB2.$eval('.chat', (c) => getComputedStyle(c).display !== 'none'));
+    check('…and closing Settings shows the welcome screen (not in a party)', await pB2.$eval('#welcome', (w) => !w.hidden) && await pB2.$eval('.chat', (c) => getComputedStyle(c).display === 'none'));
 
     await connect(pB2, 'Bob', 'r2');
     await until(async () => (await text(pB2, '#status')) === 'Waiting for them to join');

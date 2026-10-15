@@ -11,42 +11,66 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <style>
-    :root { color-scheme: dark; --text: #efeaf6; --muted: #9a90aa; --faint: #6d6479; --accent: #c9b6f2; --accent-ink: #1b1325; --edge: rgba(255, 255, 255, .09); }
+    :root { color-scheme: dark; --text: #efeaf6; --muted: #9a90aa; --faint: #6d6479; --accent: #c9b6f2; --accent-ink: #1b1325; }
     * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; color: var(--text);
-      font: 15px/1.5 'Inter', system-ui, sans-serif;
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 32px 18px; color: var(--text);
+      font: 16px/1.55 'Inter', system-ui, sans-serif;
       background: radial-gradient(90% 60% at 50% 0%, #241c31 0%, #120f17 55%, #0b090e 100%); }
     [hidden] { display: none !important; }
 
-    .card { width: 100%; max-width: 400px; padding: 28px; border-radius: 12px; background: rgba(255, 255, 255, .035);
-      box-shadow: 0 24px 60px rgba(0, 0, 0, .45); backdrop-filter: blur(16px); }
-    .brand { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; font-weight: 500; }
-    .brand img { width: 22px; height: 22px; }
+    /* The show itself as the backdrop (from the invite link), dimmed so the card stays readable. */
+    .backdrop { position: fixed; inset: -40px; z-index: -1; background: center / cover no-repeat; opacity: 0;
+      filter: blur(4px) brightness(.42) saturate(1.1); transform: scale(1.04); transition: opacity 1.2s ease; }
+    .backdrop.on { opacity: 1; animation: slowpan 30s ease-in-out infinite alternate; }
+    @keyframes slowpan { to { transform: scale(1.12) translate(-1.5%, -1%); } }
+    .shade { position: fixed; inset: 0; z-index: -1; pointer-events: none;
+      background: radial-gradient(70% 70% at 50% 45%, transparent 0%, rgba(8, 6, 10, .55) 100%); }
+    body.has-bg .card { background: rgba(18, 14, 24, .5); backdrop-filter: blur(22px) saturate(140%); }
+    @media (prefers-reduced-motion: reduce) { .backdrop.on { animation: none; } }
 
-    .who { display: flex; align-items: center; gap: 12px; margin: 26px 0 6px; }
-    .avatar { width: 48px; height: 48px; border-radius: 50%; overflow: hidden; flex: none; }
+    .card { width: 100%; max-width: 540px; padding: 40px 44px 34px; border-radius: 16px; background: rgba(255, 255, 255, .035);
+      box-shadow: 0 30px 80px rgba(0, 0, 0, .5); backdrop-filter: blur(16px); }
+    .brand { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 14px; font-weight: 500; }
+    .brand img { width: 24px; height: 24px; }
+
+    /* "hello", written out like a pen stroke, in the logo's colors */
+    .hello { display: block; width: 100%; max-width: 420px; height: auto; margin: 0 auto; overflow: visible; }
+    .hello text { font: 700 96px 'Inter', system-ui, sans-serif; letter-spacing: -0.04em; fill: var(--text); }
+    .hello .pen { animation: write 2.2s cubic-bezier(.45, .05, .35, 1) .3s forwards; }
+    @keyframes write { to { transform: translateX(560px); } }
+
+    .who { display: flex; align-items: center; justify-content: center; margin: -6px 0 4px; }
+    .avatar { width: 64px; height: 64px; margin: 26px auto 0; border-radius: 50%; overflow: hidden; flex: none; animation: arrive .6s ease .1s both; }
     .avatar img { width: 100%; height: 100%; display: block; }
-    .who p { margin: 0; color: var(--muted); }
+    .who p { margin: 0; color: var(--muted); font-size: 17px; }
     .who strong { color: var(--text); font-weight: 600; }
-    h1 { margin: 14px 0 0; font-size: 24px; font-weight: 700; line-height: 1.25; letter-spacing: -0.02em; overflow-wrap: anywhere; }
-    .site { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; padding: 3px 9px; border-radius: 6px; font-size: 12px;
-      color: var(--muted); background: rgba(255, 255, 255, .05); }
+    .show { text-align: center; }
+    h1 { margin: 16px 0 0; font-size: 32px; font-weight: 700; line-height: 1.2; letter-spacing: -0.025em; overflow-wrap: anywhere; }
+    .site { display: inline-block; margin-top: 12px; padding: 4px 10px; border-radius: 6px; font-size: 13px; color: var(--muted); background: rgba(255, 255, 255, .05); }
 
-    .join { display: block; width: 100%; margin-top: 26px; padding: 12px 18px; border: 0; border-radius: 8px; cursor: pointer;
-      background: var(--accent); color: var(--accent-ink); font: inherit; font-weight: 600; box-shadow: 0 8px 26px rgba(201, 182, 242, .3);
-      transition: background .15s, transform .1s; }
+    .join { display: block; width: 100%; margin-top: 30px; padding: 15px 18px; border: 0; border-radius: 10px; cursor: pointer;
+      background: var(--accent); color: var(--accent-ink); font: inherit; font-size: 16px; font-weight: 600; transition: background .15s, transform .1s; }
     .join:hover { background: #d8c9f7; }
     .join:active { transform: scale(.98); }
-    .note { margin: 12px 0 0; color: var(--faint); font-size: 13px; text-align: center; }
-    .done { margin-top: 22px; padding: 12px 14px; border-radius: 8px; background: rgba(159, 214, 176, .08); color: #cde9d6; }
+    .note { margin: 14px 0 0; color: var(--faint); font-size: 14px; text-align: center; }
+    .done { margin-top: 24px; padding: 14px 16px; border-radius: 10px; background: rgba(159, 214, 176, .08); color: #cde9d6; text-align: center; }
 
-    .steps { margin: 22px 0 0; padding: 0; list-style: none; counter-reset: step; }
-    .steps li { counter-increment: step; display: flex; gap: 10px; padding: 8px 0; color: var(--muted); }
-    .steps li::before { content: counter(step); flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+    .steps { margin: 26px 0 0; padding: 0; list-style: none; counter-reset: step; }
+    .steps li { counter-increment: step; display: flex; gap: 12px; padding: 9px 0; color: var(--muted); }
+    .steps li::before { content: counter(step); flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
       font-size: 12px; font-weight: 600; color: var(--text); background: rgba(255, 255, 255, .07); }
 
-    .features { display: flex; justify-content: center; gap: 14px; margin-top: 22px; padding-top: 18px;
-      color: var(--faint); font-size: 12px; }
+
+    /* Everything after "hello" eases in once it's written. */
+    .after { opacity: 0; transform: translateY(10px); animation: arrive .7s ease forwards; }
+    .after.a1 { animation-delay: 1.9s; } .after.a2 { animation-delay: 2.1s; } .after.a3 { animation-delay: 2.3s; } .after.a4 { animation-delay: 2.5s; }
+    @keyframes arrive { to { opacity: 1; transform: none; } }
+
+    @media (prefers-reduced-motion: reduce) {
+      .hello .pen { animation: none; transform: translateX(560px); }
+      .after { animation: none; opacity: 1; transform: none; }
+    }
+    @media (max-width: 480px) { .card { padding: 30px 22px 26px; } h1 { font-size: 26px; } }
 
     .has-ext { display: none; }
     html[data-wp-ready] .has-ext { display: block; }
@@ -54,30 +78,49 @@
   </style>
 </head>
 <body>
+  <div class="backdrop" id="backdrop"></div>
+  <div class="shade"></div>
   <main class="card">
     <div class="brand"><img src="/static/logo.png" alt="" /> Sinehan</div>
 
-    <div class="who">
-      <div class="avatar" id="avatar"><img id="avatarImg" src="/static/avatar1.png" alt="" /></div>
-      <p><strong id="inviter">Someone</strong> invited you to watch</p>
-    </div>
-    <h1 id="show">a watch party</h1>
-    <span class="site" id="site" hidden><span id="siteName"></span></span>
+    <div class="avatar" id="avatar"><img id="avatarImg" src="/static/avatar1.png" alt="" /></div>
+    <svg class="hello" viewBox="0 0 520 170" role="img" aria-label="Someone" id="penSvg">
+      <defs>
+        <!-- A soft-edged "pen" that sweeps left to right, uncovering the word as it goes. -->
+        <linearGradient id="nib" x1="0" x2="1">
+          <stop offset="0" stop-color="#fff" />
+          <stop offset=".86" stop-color="#fff" />
+          <stop offset="1" stop-color="#fff" stop-opacity="0" />
+        </linearGradient>
+        <mask id="writing" maskUnits="userSpaceOnUse" x="0" y="0" width="520" height="170">
+          <rect class="pen" x="-560" y="0" width="560" height="170" fill="url(#nib)" />
+        </mask>
+      </defs>
+      <text id="penName" x="50%" y="112" text-anchor="middle" mask="url(#writing)">Someone</text>
+    </svg>
 
-    <div class="has-ext">
-      <button class="join" id="wp-join">Join the party</button>
-      <p class="note">You'll go straight to the show. Playback, chat and video stay in sync.</p>
-      <p class="done" id="wp-done" hidden>You're in. Open the show you're watching together.</p>
+    <div class="who after a1">
+      <p>invited you to watch</p>
+    </div>
+    <div class="show after a2">
+      <h1 id="show">a watch party</h1>
+      <span class="site" id="site" hidden><span id="siteName"></span></span>
     </div>
 
-    <div class="needs-ext">
-      <ol class="steps">
-        <li><span>Get the Sinehan extension for Chrome from <span id="askWho">the person who invited you</span>.</span></li>
-        <li><span>Come back and refresh this page.</span></li>
-      </ol>
+    <div class="after a3">
+      <div class="has-ext">
+        <button class="join" id="wp-join">Join the party</button>
+        <p class="note">You'll go straight to the show. Playback, chat and video stay in sync.</p>
+        <p class="done" id="wp-done" hidden>You're in. Open the show you're watching together.</p>
+      </div>
+      <div class="needs-ext">
+        <ol class="steps">
+          <li><span>Get the Sinehan extension for Chrome from <span id="askWho">the person who invited you</span>, or at <a href="/" style="color:inherit">sinehan.live</a>.</span></li>
+          <li><span>Come back and refresh this page.</span></li>
+        </ol>
+      </div>
     </div>
 
-    <div class="features"><span>Synced playback</span><span>·</span><span>Chat</span><span>·</span><span>Video call</span></div>
   </main>
 
   <script>
@@ -89,13 +132,36 @@
       const avatar = Math.min(3, Math.max(0, parseInt(q.get('a'), 10) || 0));
       const title = (q.get('t') || '').trim().slice(0, 120);
       if (name) {
-        document.getElementById('inviter').textContent = name;
+        // The pen writes their name; long names are scaled to fit.
+        const pen = document.getElementById('penName');
+        pen.textContent = name;
+        document.getElementById('penSvg').setAttribute('aria-label', name);
+        document.fonts.ready.then(() => {
+          const w = pen.getComputedTextLength();
+          if (w > 480) pen.style.fontSize = `${Math.floor(96 * 480 / w)}px`;
+        });
         document.getElementById('askWho').textContent = name;
         document.title = `${name} invited you · Sinehan`;
       }
       document.getElementById('avatar').style.background = COLORS[avatar];
       document.getElementById('avatarImg').src = `/static/avatar${avatar + 1}.png`;
       if (title) document.getElementById('show').textContent = title;
+      // The show's picture as the background, only from a secure (https) image address.
+      const img = q.get('img') || '';
+      if (/^https:\/\/[^\s"'()<>]+$/.test(img) && img.length < 600) {
+        const show = (src) => {
+          const bg = document.getElementById('backdrop');
+          bg.style.backgroundImage = `url("${src}")`;
+          bg.classList.add('on');
+          document.body.classList.add('has-bg');
+        };
+        // YouTube's standard thumbnail has black bars; try the full-size one first (tiny = not available).
+        const full = img.replace(/\/hqdefault\.jpg$/, '/maxresdefault.jpg');
+        const probe = new Image();
+        probe.onload = () => (probe.naturalWidth > 200 ? show(full) : show(img));
+        probe.onerror = () => show(img);
+        probe.src = full;
+      }
       try {
         const to = new URL(q.get('to'));
         if (/^https?:$/.test(to.protocol)) {

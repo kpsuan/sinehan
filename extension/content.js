@@ -213,7 +213,7 @@ function onRemote(msg) {
     return;
   }
   if (msg.type === 'sync-request') return sendState('state');
-  if (msg.type === 'hold') return onTheirHold(msg.reason, !!msg.active, msg.time);
+  if (msg.type === 'hold') return onTheirHold(msg.reason, !!msg.active, msg.time, msg.name);
   if (msg.type === 'hand') return holdHand(msg.name);
   if (msg.type === 'countdown') return startCountdown(msg.time);
   if (msg.type === 'now-watching') return showFollowBanner(msg.url, msg.title, msg.from);
@@ -317,13 +317,21 @@ function onPlaying() {
   post({ type: 'hold', reason: 'buffer', active: false });
 }
 
-function onTheirHold(reason, active, time) {
+const HOLD_MESSAGES = {
+  ad: () => 'They’re watching an ad. Paused until it’s over.',
+  buffer: () => 'They’re loading. Waiting for them…',
+  break: (name) => `${name || 'They'} is on a CR break`,
+};
+function onTheirHold(reason, active, time, name) {
   if (active) {
     theirHolds.add(reason);
-    if (!myAd) holdPlayback(reason === 'ad' ? 'They’re watching an ad. Paused until it’s over.' : 'They’re loading. Waiting for them…', time);
+    if (reason === 'break') breakBanner(`${name || 'They'} is on a CR break`);
+    if (!myAd) holdPlayback((HOLD_MESSAGES[reason] || HOLD_MESSAGES.buffer)(name), time);
   } else {
     theirHolds.delete(reason);
-    if (!theirHolds.size && pausedForHold && !myAd) {
+    if (reason === 'break') breakBanner(null);
+    // (Coming back from a break starts a 3-2-1 countdown, which does the playing.)
+    if (!theirHolds.size && pausedForHold && !myAd && !countingDown) {
       releasePlayback();
       toast(reason === 'ad' ? 'Ad’s over. Back together.' : 'Back together.');
     }
@@ -350,6 +358,7 @@ function releasePlayback() {
 }
 
 function clearTheirHolds() {
+  if (theirHolds.has('break')) breakBanner(null);
   theirHolds.clear();
   pausedForHold = false;
 }
@@ -407,16 +416,19 @@ function holdHand(name) {
   if (handEl.parentNode !== host) host.appendChild(handEl);
   handEl.animate([{ opacity: 0 }, { opacity: 1, offset: 0.25 }, { opacity: 0.35, offset: 0.5 }, { opacity: 1, offset: 0.7 }, { opacity: 0 }],
     { duration: 2600, easing: 'ease-in-out' });
-  toast(`${name || 'They'} is holding your hand 🤝`);
+  toast(`${name || 'They'} is holding your hand`);
 }
 
 // ---- 3-2-1 countdown ----
 // Both sides pause at the same spot, count down together, then play at the same moment.
 let countdownTimer = null;
 let countEl = null;
+let countingDown = false;
 function startCountdown(time) {
   if (!video || myAd) return;
   clearInterval(countdownTimer);
+  countingDown = true;
+  pausedForHold = false;
   const at = typeof time === 'number' ? time : video.currentTime;
   applied = { paused: true, time: at, until: Date.now() + 6000 };
   video.pause();
@@ -428,6 +440,7 @@ function startCountdown(time) {
     if (n > 0) return showCount(n);
     clearInterval(countdownTimer);
     showCount(null);
+    countingDown = false;
     applied = { paused: false, time: video.currentTime, until: Date.now() + 1500 };
     video.play().catch(() => toast('Click the video once so the browser lets it autoplay'));
   }, 1000);
@@ -447,6 +460,85 @@ function showCount(n) {
   countEl.textContent = n;
   countEl.animate([{ transform: 'translate(-50%,-50%) scale(1.25)', opacity: 0.4 }, { transform: 'translate(-50%,-50%) scale(1)', opacity: 1 }], { duration: 300, easing: 'ease-out' });
 }
+
+// ---- CR break ----
+// You pause both of you; they see who's away and for how long. "I'm back" counts you both back in.
+let myBreak = false;
+function toggleBreak() {
+  if (!video) return;
+  myBreak = !myBreak;
+  if (myBreak) {
+    applied = { paused: true, time: video.currentTime, until: Date.now() + 1500 };
+    video.pause();
+    post({ type: 'hold', reason: 'break', active: true, name: me.name, time: video.currentTime });
+    breakBanner('You’re on a CR break', true);
+  } else {
+    breakBanner(null);
+    const time = video.currentTime;
+    post({ type: 'countdown', time }); // both count down from where you left off…
+    startCountdown(time);
+    post({ type: 'hold', reason: 'break', active: false, name: me.name }); // …then their hold lifts
+  }
+  post({ local: true, type: 'break-state', active: myBreak });
+}
+
+let breakEl = null;
+let breakTick = null;
+function breakBanner(text, mine = false) {
+  clearInterval(breakTick);
+  breakEl?.remove();
+  breakEl = null;
+  if (!text) return;
+  ensureFont();
+  const started = Date.now();
+  breakEl = document.createElement('div');
+  breakEl.dataset.sinehan = '';
+  breakEl.style.cssText = 'position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:2147483647;display:flex;align-items:center;gap:12px;' +
+    'padding:9px 10px 9px 16px;border-radius:9px;background:rgba(22,18,30,.62);backdrop-filter:blur(18px) saturate(140%);color:#efeaf6;' +
+    `font:13px/1.4 ${FONT};box-shadow:0 8px 28px rgba(0,0,0,.35)`;
+  const label = document.createElement('span');
+  const clockEl = document.createElement('span');
+  clockEl.style.cssText = 'font-variant-numeric:tabular-nums;color:#b9b0c7';
+  breakEl.append(label, clockEl);
+  label.textContent = text;
+  if (mine) {
+    const back = document.createElement('button');
+    back.textContent = 'I’m back';
+    back.style.cssText = 'border:0;border-radius:7px;padding:6px 12px;background:#c9b6f2;color:#1b1325;font:inherit;font-weight:600;cursor:pointer';
+    back.onclick = () => myBreak && toggleBreak();
+    breakEl.append(back);
+  } else {
+    breakEl.style.paddingRight = '16px';
+  }
+  const tick = () => {
+    clockEl.textContent = clock((Date.now() - started) / 1000);
+    const host = document.fullscreenElement || document.body;
+    if (breakEl && breakEl.parentNode !== host) host.appendChild(breakEl); // follows into fullscreen
+  };
+  tick();
+  breakTick = setInterval(tick, 1000);
+}
+
+// The picture this page publishes for link previews, so invites can show the show.
+function pagePicture() {
+  const meta = document.querySelector('meta[property="og:image"], meta[name="og:image"], meta[name="twitter:image"], meta[property="twitter:image"]');
+  const src = meta?.content || video?.poster || '';
+  try {
+    const u = new URL(src, location.href);
+    return u.protocol === 'https:' ? u.href : '';
+  } catch {
+    return '';
+  }
+}
+let reportedPicture = null;
+every(2000, () => {
+  if (!isWatchTab || window.top !== window) return;
+  const pic = pagePicture();
+  if (pic !== reportedPicture) {
+    reportedPicture = pic;
+    post({ type: 'meta', image: pic });
+  }
+});
 
 // ---- "They're watching something else" banner ----
 function showKey(url) {
@@ -515,6 +607,8 @@ async function onLocal(msg) {
   if (msg.to && msg.to !== viewId) return;
   if (msg.type === 'jump') {
     if (isWatchTab && video && typeof msg.time === 'number') seek(msg.time); // the seek then syncs to them
+  } else if (msg.type === 'break-toggle') {
+    if (isWatchTab && video) toggleBreak();
   } else if (msg.type === 'countdown-start') {
     if (isWatchTab && video) {
       const time = video.currentTime;
@@ -584,6 +678,8 @@ function buildOverlay(fsHost) {
         box-shadow: 0 6px 20px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.08); }
       .fab { bottom: 96px; }
       .hand { bottom: 148px; font-size: 18px; }
+      .hand.brk { bottom: 200px; }
+      .hand svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
       .fab:hover, .hand:hover { background: rgba(40,33,52,.65); }
       .fab svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
       .badge { position: absolute; top: -3px; right: -3px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
@@ -605,7 +701,7 @@ function buildOverlay(fsHost) {
       form { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid rgba(255,255,255,.08); }
       input { flex: 1; min-width: 0; padding: 8px 10px; border-radius: 7px; border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.06); color: inherit; font: inherit; outline: none; }
       input:focus { border-color: #c9b6f2; }
-      form button { border: 0; border-radius: 7px; padding: 0 12px; background: #c9b6f2; color: #1b1325; font-weight: 600; box-shadow: 0 4px 16px rgba(201,182,242,.3); }
+      form button { border: 0; border-radius: 7px; padding: 0 12px; background: #c9b6f2; color: #1b1325; font-weight: 600; }
     </style>
     <div class="cam" hidden>
       <video autoplay playsinline muted></video>
@@ -622,7 +718,8 @@ function buildOverlay(fsHost) {
       <div class="quick"></div>
       <form><input maxlength="500" placeholder="Message" autocomplete="off" /><button>Send</button></form>
     </div>
-    <button class="hand" title="Hold their hand">🤝</button>
+    <button class="hand" title="Hold their hand"><svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></svg></button>
+    <button class="hand brk" title="CR break: pause for both of you"><svg viewBox="0 0 24 24"><path d="M14 4H6v16h8" /><path d="M14 4l5 2v14l-5-2z" /><path d="M11 12h.01" /></svg></button>
     <button class="fab" title="Chat">
       <svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z" /></svg>
       <span class="badge" hidden></span>
@@ -721,9 +818,10 @@ function buildOverlay(fsHost) {
     });
     document.exitFullscreen?.().catch(() => {});
   };
+  $('.brk').onclick = () => toggleBreak();
   $('.hand').onclick = () => {
     post({ type: 'hand', name: me.name });
-    toast('Holding their hand 🤝');
+    toast('Holding their hand');
   };
 
   function sendChat(text) {

@@ -55,6 +55,11 @@ chrome.runtime.onConnect.addListener((port) => {
       if (fromWatchTab) lastPos = { time: msg.time, paused: msg.paused, at: Date.now() };
       return;
     }
+    if (msg.type === 'meta') {
+      // The show's link-preview picture, for invite pages.
+      if (fromWatchTab && watch) watch.image = /^https:\/\//.test(msg.image || '') && msg.image.length < 600 ? msg.image : '';
+      return;
+    }
     // Playback messages only count from the show's tab; stray videos elsewhere can't control anything.
     if (fromTab && !fromWatchTab && msg.type !== 'chat') return;
 
