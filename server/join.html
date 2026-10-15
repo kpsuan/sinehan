@@ -34,8 +34,8 @@
     .brand img { width: 24px; height: 24px; }
 
     /* "hello", written out like a pen stroke, in the logo's colors */
-    .hello { display: block; width: 100%; max-width: 420px; height: auto; margin: 0 auto; overflow: visible; }
-    .hello text { font: 700 96px 'Inter', system-ui, sans-serif; letter-spacing: -0.04em; fill: var(--text); }
+    .hello { display: block; width: 100%; max-width: 420px; height: auto; margin: 6px auto 0; overflow: visible; }
+    .hello text { font: 700 58px 'Inter', system-ui, sans-serif; letter-spacing: -0.035em; fill: var(--text); }
     .hello .pen { animation: write 2.2s cubic-bezier(.45, .05, .35, 1) .3s forwards; }
     @keyframes write { to { transform: translateX(560px); } }
 
@@ -85,7 +85,7 @@
     <div class="brand"><img src="/static/logo.png" alt="" /> Sinehan</div>
 
     <div class="avatar" id="avatar"><img id="avatarImg" src="/static/avatar1.png" alt="" /></div>
-    <svg class="hello" viewBox="0 0 520 170" role="img" aria-label="Someone" id="penSvg">
+    <svg class="hello" viewBox="0 0 520 96" role="img" aria-label="Someone" id="penSvg">
       <defs>
         <!-- A soft-edged "pen" that sweeps left to right, uncovering the word as it goes. -->
         <linearGradient id="nib" x1="0" x2="1">
@@ -93,11 +93,11 @@
           <stop offset=".86" stop-color="#fff" />
           <stop offset="1" stop-color="#fff" stop-opacity="0" />
         </linearGradient>
-        <mask id="writing" maskUnits="userSpaceOnUse" x="0" y="0" width="520" height="170">
-          <rect class="pen" x="-560" y="0" width="560" height="170" fill="url(#nib)" />
+        <mask id="writing" maskUnits="userSpaceOnUse" x="0" y="0" width="520" height="96">
+          <rect class="pen" x="-560" y="0" width="560" height="96" fill="url(#nib)" />
         </mask>
       </defs>
-      <text id="penName" x="50%" y="112" text-anchor="middle" mask="url(#writing)">Someone</text>
+      <text id="penName" x="50%" y="66" text-anchor="middle" mask="url(#writing)">Someone</text>
     </svg>
 
     <div class="who after a1">
@@ -141,7 +141,7 @@
         document.getElementById('penSvg').setAttribute('aria-label', name);
         document.fonts.ready.then(() => {
           const w = pen.getComputedTextLength();
-          if (w > 480) pen.style.fontSize = `${Math.floor(96 * 480 / w)}px`;
+          if (w > 480) pen.style.fontSize = `${Math.floor(58 * 480 / w)}px`;
         });
         document.getElementById('askWho').textContent = name;
         document.title = `${name} invited you · Sinehan`;

@@ -18,7 +18,8 @@
     svg text { font-family: 'Inter', system-ui, sans-serif; }
     [hidden] { display: none !important; }
     button { font: inherit; color: inherit; border: 0; cursor: pointer; background: var(--raised); border-radius: 12px; }
-    button:active { transform: scale(.97); }
+    button { transition: transform .08s ease, filter .08s ease; touch-action: manipulation; }
+    button.pressed { transform: scale(.94); filter: brightness(1.35); }
     input { width: 100%; padding: 12px 14px; border: 0; border-radius: 12px; background: var(--raised); color: inherit; font: inherit; outline: none; }
     input:focus { box-shadow: 0 0 0 2px var(--accent); }
     svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; display: block; }
@@ -225,6 +226,7 @@
       function onMessage(m) {
         if (m.type === 'joined' || m.type === 'peer') { watchers = m.count; renderStatus(true); }
         else if (['play', 'pause', 'seeked', 'state'].includes(m.type) && typeof m.time === 'number') {
+          clearTimeout(ackTimer);
           show = { time: m.time, paused: !!m.paused, at: Date.now() }; renderShow();
         } else if (m.type === 'countdown' && typeof m.time === 'number') {
           note('Counting down 3·2·1…', 3200);
@@ -280,10 +282,30 @@
         if (text && ms) noteTimer = setTimeout(() => ($('note').hidden = true), ms);
       }
 
+      // Tap feedback: a visible press (and a tiny buzz where phones support it).
+      document.addEventListener('pointerdown', (e) => {
+        const b = e.target.closest('button');
+        if (!b) return;
+        b.classList.add('pressed');
+        navigator.vibrate?.(8);
+      });
+      for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) {
+        document.addEventListener(ev, () => document.querySelectorAll('button.pressed').forEach((b) => b.classList.remove('pressed')));
+      }
+
+      // Remote commands are done by the laptop's show tab. If nothing changes shortly after, say why.
+      let ackTimer = null;
+      function remote(action) {
+        send({ type: 'remote', action });
+        if (action === 'play' || action === 'pause') { show = { time: now() ?? show.time, paused: action === 'pause', at: Date.now() }; renderShow(); }
+        clearTimeout(ackTimer);
+        ackTimer = setTimeout(() => note(watchers ? 'The laptop didn’t respond. Make sure Sinehan is updated (2.8 or newer) and the show’s tab is open.' : 'No laptop is watching yet.', 6000), 2500);
+      }
+
       // ---- Remote ----
-      $('playBtn').onclick = () => send({ type: 'remote', action: show.paused ? 'play' : 'pause' });
-      $('backBtn').onclick = () => send({ type: 'remote', action: 'back' });
-      $('fwdBtn').onclick = () => send({ type: 'remote', action: 'forward' });
+      $('playBtn').onclick = () => remote(show.paused ? 'play' : 'pause');
+      $('backBtn').onclick = () => remote('back');
+      $('fwdBtn').onclick = () => remote('forward');
       $('countBtn').onclick = () => send({ type: 'countdown', time: now() ?? 0 });
       $('handBtn').onclick = () => { send({ type: 'hand', name: me.name }); note('Holding their hand', 1800); };
       $('breakBtn').onclick = () => {

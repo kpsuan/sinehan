@@ -541,13 +541,41 @@ function pagePicture() {
     return '';
   }
 }
-let reportedPicture = null;
+// Netflix's player page has no preview picture and its tab title is just "Netflix", but each title's
+// own page (/title/<id>) does. We read that page once per title, as you, from inside Netflix.
+const netflixInfo = new Map(); // watch id -> { image, title } (or a pending promise)
+function netflixLookup(id) {
+  if (netflixInfo.has(id)) return netflixInfo.get(id);
+  const pending = fetch(`/title/${id}`, { credentials: 'include' })
+    .then((r) => (r.ok ? r.text() : ''))
+    .then((html) => {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const meta = (p) => doc.querySelector(`meta[property="${p}"], meta[name="${p}"]`)?.content || '';
+      const title = meta('og:title').replace(/^Watch\s+/i, '').replace(/\s*[|\-–]\s*Netflix.*$/i, '').trim();
+      const image = /^https:\/\//.test(meta('og:image')) ? meta('og:image') : '';
+      netflixInfo.set(id, { image, title });
+    })
+    .catch(() => netflixInfo.set(id, { image: '', title: '' }));
+  netflixInfo.set(id, pending);
+  return pending;
+}
+function showInfo() {
+  const id = isNetflix && location.pathname.match(/^\/watch\/(\d+)/)?.[1];
+  if (id) {
+    const info = netflixInfo.get(id);
+    if (!info) netflixLookup(id);
+    return info && !(info instanceof Promise) ? info : { image: '', title: '' };
+  }
+  return { image: pagePicture(), title: '' };
+}
+let reported = null;
 every(2000, () => {
   if (!isWatchTab || window.top !== window) return;
-  const pic = pagePicture();
-  if (pic !== reportedPicture) {
-    reportedPicture = pic;
-    post({ type: 'meta', image: pic });
+  const info = showInfo();
+  const key = `${info.image}|${info.title}`;
+  if (key !== reported) {
+    reported = key;
+    post({ type: 'meta', image: info.image, title: info.title });
   }
 });
 

@@ -246,7 +246,8 @@ $('invite').onclick = async () => {
   let link = `${base}/join?room=${encodeURIComponent(room)}`;
   // Who's inviting and to what, so the invite page can say so.
   link += `&n=${encodeURIComponent(myName())}&a=${me.avatar}`;
-  if (tab?.url?.startsWith('http')) link += `&to=${encodeURIComponent(tab.url)}&t=${encodeURIComponent((tab.title || '').slice(0, 120))}`;
+  const niceTitle = status.watch?.tabId === tab?.id && status.watch?.showTitle;
+  if (tab?.url?.startsWith('http')) link += `&to=${encodeURIComponent(tab.url)}&t=${encodeURIComponent((niceTitle || tab.title || '').slice(0, 120))}`;
   const picture = showPicture(tab?.url, status.watch?.tabId === tab?.id ? status.watch?.image : null);
   if (picture) link += `&img=${encodeURIComponent(picture)}`;
 
@@ -376,7 +377,7 @@ async function renderWatch() {
     $('backdrop').classList.remove('on');
     return;
   }
-  $('watchTitle').textContent = w ? w.title || w.url : 'Nothing yet. Open a show and click Watch here.';
+  $('watchTitle').textContent = w ? w.showTitle || w.title || w.url : 'Nothing yet. Open a show and click Watch here.';
   $('watchTitle').classList.toggle('none', !w);
   $('watchIcon').hidden = !w?.favIconUrl;
   if (w?.favIconUrl && $('watchIcon').src !== w.favIconUrl) $('watchIcon').src = w.favIconUrl;

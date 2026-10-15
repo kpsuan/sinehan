@@ -57,7 +57,10 @@ chrome.runtime.onConnect.addListener((port) => {
     }
     if (msg.type === 'meta') {
       // The show's link-preview picture, for invite pages.
-      if (fromWatchTab && watch) watch.image = /^https:\/\//.test(msg.image || '') && msg.image.length < 600 ? msg.image : '';
+      if (fromWatchTab && watch) {
+        watch.image = /^https:\/\//.test(msg.image || '') && msg.image.length < 600 ? msg.image : '';
+        watch.showTitle = String(msg.title || '').slice(0, 120); // e.g. Netflix's real show name
+      }
       return;
     }
     // Playback messages only count from the show's tab; stray videos elsewhere can't control anything.
@@ -214,8 +217,9 @@ function clearWatch() {
 // there (we were watching together), their tab follows automatically; otherwise they get a prompt.
 function announceShow(from) {
   if (!watch || !/^https?:/.test(watch.url)) return;
-  noteShow(watch.title);
-  send({ type: 'now-watching', url: watch.url, title: watch.title, from });
+  const title = watch.showTitle || watch.title;
+  noteShow(title);
+  send({ type: 'now-watching', url: watch.url, title, from });
 }
 
 // Go where they are: reuse the show's tab if we have one, otherwise open a new one.
