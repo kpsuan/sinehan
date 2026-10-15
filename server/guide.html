@@ -282,6 +282,33 @@
       for (const k of ticked) if (k) done[k] = { v: true, at: 0 };
       try { Object.assign(done, JSON.parse(localStorage.getItem(store) || '{}')); } catch {}
       const save = () => { try { localStorage.setItem(store, JSON.stringify(done)); } catch {} };
+      // The artwork someone picked: { poster, background, at } (URLs; '' = the newest). From the link, then
+      // this device, then live from the party; the newest choice wins.
+      const ART_URL = /^(https:\/\/static\.tvmaze\.com\/uploads\/images\/[\w/.-]+|data:image\/jpeg;base64,[A-Za-z0-9+/=]+)$/;
+      const cleanArt = (x) => (typeof x === 'string' && x.length < 60000 && (x === '' || ART_URL.test(x)) ? x : undefined);
+      const artStore = `sinehan-guide-art:${id}`;
+      let picked = { poster: '', background: '', at: 0 };
+      const fromLink = g.a && typeof g.a === 'object' ? g.a : null;
+      if (fromLink) picked = { poster: cleanArt(fromLink.p ? `https://static.tvmaze.com/uploads/images/${fromLink.p}` : '') || '', background: cleanArt(fromLink.b ? `https://static.tvmaze.com/uploads/images/${fromLink.b}` : '') || '', at: Number(fromLink.at) || 0 };
+      try {
+        const mine = JSON.parse(localStorage.getItem(artStore) || 'null');
+        if (mine && mine.at > picked.at) picked = { poster: cleanArt(mine.poster) || '', background: cleanArt(mine.background) || '', at: mine.at };
+      } catch {}
+      const saveArt = () => { try { localStorage.setItem(artStore, JSON.stringify(picked)); } catch {} };
+      let onArt = null;
+      const shareArt = () => {
+        if (ws?.readyState === 1) ws.send(JSON.stringify({ type: 'guide-art', id, poster: picked.poster, background: picked.background, at: picked.at }));
+      };
+      const takeArt = (a) => {
+        if (!a || !(Number(a.at) > picked.at)) return;
+        const poster = cleanArt(a.poster);
+        const background = cleanArt(a.background);
+        if (poster === undefined || background === undefined) return;
+        picked = { poster, background, at: Number(a.at) };
+        saveArt();
+        onArt?.();
+      };
+
       const addedStore = `sinehan-guide-added:${id}`;
       const ADD_KEY = /^(S\d+E\d+|T:[\p{L}\p{N} ]{1,100})$/u;
       // Put an episode into the list, in order (from this page, or added by someone in the party).
@@ -447,106 +474,118 @@
 
       // ---- Pictures and details ----
       const longDate = (d) => (d ? new Date(`${d}T12:00:00`).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '');
+      // ---- Artwork (a TVmaze show, or none: then just your own pictures) ----
+      const art = (x) => String(x || '').replace(/^http:/, 'https:');
+      function setupArt(show) {
+      // Artwork: the newest by default, or what someone picked. The choice is shared: with the party
+      // (live), and in the guide's link (pictures from TVmaze; uploads go to the party only).
+      let posters = [];
+      let backgrounds = [];
+      const newest = (list) => [...list].sort((a, b) => b.id - a.id)[0];
+      const src = (img, size) => art(img?.resolutions?.[size]?.url || img?.resolutions?.original?.url);
+      const applyArt = () => {
+        const def = posters.find((x) => x.main) || newest(posters);
+        const posterUrl = picked.poster || (def ? src(def, 'medium') : art(show?.image?.medium));
+        if (posterUrl) {
+          $('poster').src = posterUrl;
+          $('posterWrap').hidden = false;
+        }
+        const bg = newest(backgrounds);
+        if (picked.background) setBackdrop(picked.background, false);
+        else if (show) setBackdrop(bg ? src(bg, 'original') : art(show.image?.original), !bg);
+      };
+      onArt = applyArt;
+      applyArt();
+      if (!show) {
+        $('posterWrap').hidden = false; // a blank poster you can put a picture on
+        $('artBtn').hidden = false;
+      } else fetch(`https://api.tvmaze.com/shows/${show.id}/images`).then((x) => x.json()).then((images) => {
+        posters = images.filter((x) => x.type === 'poster').sort((a, b) => b.id - a.id);
+        backgrounds = images.filter((x) => x.type === 'background').sort((a, b) => b.id - a.id);
+        applyArt();
+      }).catch(() => {}).then(() => fetch(`https://api.tvmaze.com/shows/${show.id}/seasons`)).then((x) => x.json()).then((seasons) => {
+        // Each season's own poster too, newest season first.
+        for (const se of [...seasons].reverse()) {
+          if (se.image?.medium) posters.push({ id: `season-${se.number}`, type: 'poster', resolutions: { medium: { url: se.image.medium }, original: { url: se.image.original } } });
+        }
+      }).catch(() => {}).finally(() => ($('artBtn').hidden = false));
+
+      // The picker: every poster or background TVmaze has, newest first, or your own.
+      let pickKind = 'poster';
+      const choose = (url) => {
+        picked = { ...picked, [pickKind]: url, at: Date.now() };
+        saveArt();
+        shareArt();
+        applyArt();
+        showPicker();
+      };
+      const showPicker = () => {
+        const list = pickKind === 'poster' ? posters : backgrounds;
+        const def = pickKind === 'poster' ? posters.find((x) => x.main) || newest(posters) : newest(backgrounds);
+        const current = picked[pickKind] || (def && src(def, pickKind === 'poster' ? 'medium' : 'original'));
+        $('pickPosters').setAttribute('aria-pressed', String(pickKind === 'poster'));
+        $('pickBackgrounds').setAttribute('aria-pressed', String(pickKind !== 'poster'));
+        $('pickerGrid').classList.toggle('wide', pickKind !== 'poster');
+        // First tile: your own picture, shrunk so it can be sent to your party.
+        const own = document.createElement('label');
+        own.className = 'own';
+        own.innerHTML = '<span>Upload your own</span><input type="file" accept="image/*" hidden>'; // fixed markup
+        own.querySelector('input').onchange = async (ev) => {
+          const file = ev.target.files?.[0];
+          if (!file) return;
+          const bitmap = await createImageBitmap(file).catch(() => null);
+          if (!bitmap) return;
+          const shrink = (w, q) => {
+            const c = document.createElement('canvas');
+            c.width = Math.min(w, bitmap.width);
+            c.height = Math.round((bitmap.height * c.width) / bitmap.width);
+            c.getContext('2d').drawImage(bitmap, 0, 0, c.width, c.height);
+            return c.toDataURL('image/jpeg', q);
+          };
+          // Small enough to send (the relay takes messages up to 64 KB).
+          let url = pickKind === 'poster' ? shrink(360, 0.8) : shrink(960, 0.72);
+          if (url.length > 56000) url = pickKind === 'poster' ? shrink(260, 0.7) : shrink(720, 0.6);
+          if (url.length > 56000) url = pickKind === 'poster' ? shrink(200, 0.6) : shrink(560, 0.55);
+          choose(url);
+        };
+        $('pickerGrid').replaceChildren(own, ...list.map((img) => {
+          const url = src(img, pickKind === 'poster' ? 'medium' : 'original');
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = url === current ? 'on' : '';
+          const i = document.createElement('img');
+          i.src = url;
+          i.alt = '';
+          i.loading = 'lazy';
+          b.append(i);
+          b.onclick = () => choose(url);
+          return b;
+        }));
+        $('picker').hidden = false;
+      };
+      $('artBtn').onclick = () => { pickKind = 'poster'; showPicker(); };
+      $('pickPosters').onclick = () => { pickKind = 'poster'; showPicker(); };
+      $('pickBackgrounds').onclick = () => { pickKind = 'background'; showPicker(); };
+      $('pickerClose').onclick = () => ($('picker').hidden = true);
+      $('pickerReset').onclick = () => {
+        picked = { poster: '', background: '', at: Date.now() };
+        saveArt();
+        shareArt();
+        applyArt();
+        showPicker();
+      };
+      document.addEventListener('keydown', (ev) => ev.key === 'Escape' && ($('picker').hidden = true));
+      }
+
       async function seriesDetails() {
         try {
           const r = await fetch(`https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(g.s)}&embed=episodes`);
-          if (!r.ok) return;
+          if (!r.ok) return setupArt(null);
           const show = await r.json();
-          if (flat(show.name) !== flat(g.s)) return; // not sure it's the same show: no pictures rather than wrong ones
+          if (flat(show.name) !== flat(g.s)) return setupArt(null); // not sure it's the same show: no pictures rather than wrong ones
           $('show').textContent = officialName = show.name; // its official name ("911" -> "9-1-1")
           const art = (x) => String(x || '').replace(/^http:/, 'https:');
-          // Artwork: the newest by default, or what you picked for this show (kept on this device).
-          const artKey = `sinehan-art:${show.id}`;
-          let picked = {};
-          try { picked = JSON.parse(localStorage.getItem(artKey) || '{}'); } catch {}
-          const savePicked = () => { try { localStorage.setItem(artKey, JSON.stringify(picked)); } catch {} };
-          let posters = [];
-          let backgrounds = [];
-          const newest = (list) => [...list].sort((a, b) => b.id - a.id)[0];
-          const src = (img, size) => art(img?.resolutions?.[size]?.url || img?.resolutions?.original?.url);
-          const applyArt = () => {
-            const poster = posters.find((x) => x.id === picked.poster) || posters.find((x) => x.main) || newest(posters);
-            const posterUrl = picked.posterOwn || (poster ? src(poster, 'medium') : art(show.image?.medium));
-            if (posterUrl) {
-              $('poster').src = posterUrl;
-              $('posterWrap').hidden = false;
-            }
-            const bg = backgrounds.find((x) => x.id === picked.background) || newest(backgrounds);
-            if (picked.backgroundOwn) setBackdrop(picked.backgroundOwn, false);
-            else setBackdrop(bg ? src(bg, 'original') : art(show.image?.original), !bg);
-          };
-          applyArt();
-          fetch(`https://api.tvmaze.com/shows/${show.id}/images`).then((x) => x.json()).then((images) => {
-            posters = images.filter((x) => x.type === 'poster').sort((a, b) => b.id - a.id);
-            backgrounds = images.filter((x) => x.type === 'background').sort((a, b) => b.id - a.id);
-            applyArt();
-          }).catch(() => {}).then(() => fetch(`https://api.tvmaze.com/shows/${show.id}/seasons`)).then((x) => x.json()).then((seasons) => {
-            // Each season's own poster too, newest season first.
-            for (const se of [...seasons].reverse()) {
-              if (se.image?.medium) posters.push({ id: `season-${se.number}`, type: 'poster', resolutions: { medium: { url: se.image.medium }, original: { url: se.image.original } } });
-            }
-          }).catch(() => {}).finally(() => ($('artBtn').hidden = false));
-
-          // The picker: every poster or background TVmaze has, newest first.
-          let pickKind = 'poster';
-          const showPicker = () => {
-            const list = pickKind === 'poster' ? posters : backgrounds;
-            const current = picked[`${pickKind}Own`] ? null : pickKind === 'poster'
-              ? (posters.find((x) => x.id === picked.poster) || posters.find((x) => x.main) || newest(posters))?.id
-              : (backgrounds.find((x) => x.id === picked.background) || newest(backgrounds))?.id;
-            $('pickPosters').setAttribute('aria-pressed', String(pickKind === 'poster'));
-            $('pickBackgrounds').setAttribute('aria-pressed', String(pickKind !== 'poster'));
-            $('pickerGrid').classList.toggle('wide', pickKind !== 'poster');
-            // First tile: your own picture (shrunk, kept on this device).
-            const own = document.createElement('label');
-            own.className = 'own';
-            own.innerHTML = '<span>Upload your own</span><input type="file" accept="image/*" hidden>'; // fixed markup
-            own.querySelector('input').onchange = async (ev) => {
-              const file = ev.target.files?.[0];
-              if (!file) return;
-              const bitmap = await createImageBitmap(file).catch(() => null);
-              if (!bitmap) return;
-              const w = pickKind === 'poster' ? 400 : 1600;
-              const c = document.createElement('canvas');
-              c.width = Math.min(w, bitmap.width);
-              c.height = Math.round((bitmap.height * c.width) / bitmap.width);
-              c.getContext('2d').drawImage(bitmap, 0, 0, c.width, c.height);
-              picked[`${pickKind}Own`] = c.toDataURL('image/jpeg', 0.82);
-              savePicked();
-              applyArt();
-              showPicker();
-            };
-            $('pickerGrid').replaceChildren(own, ...list.map((img) => {
-              const b = document.createElement('button');
-              b.type = 'button';
-              b.className = img.id === current ? 'on' : '';
-              const i = document.createElement('img');
-              i.src = src(img, pickKind === 'poster' ? 'medium' : 'original');
-              i.alt = '';
-              i.loading = 'lazy';
-              b.append(i);
-              b.onclick = () => {
-                delete picked[`${pickKind}Own`];
-                picked[pickKind] = img.id;
-                savePicked();
-                applyArt();
-                showPicker();
-              };
-              return b;
-            }));
-            $('picker').hidden = false;
-          };
-          $('artBtn').onclick = () => { pickKind = 'poster'; showPicker(); };
-          $('pickPosters').onclick = () => { pickKind = 'poster'; showPicker(); };
-          $('pickBackgrounds').onclick = () => { pickKind = 'background'; showPicker(); };
-          $('pickerClose').onclick = () => ($('picker').hidden = true);
-          $('pickerReset').onclick = () => {
-            picked = {};
-            savePicked();
-            applyArt();
-            showPicker();
-          };
-          document.addEventListener('keydown', (ev) => ev.key === 'Escape' && ($('picker').hidden = true));
+          setupArt(show);
           const about = String(show.summary || '').replace(/<[^>]+>/g, '').trim();
           if (about) {
             $('summary').textContent = about;
@@ -566,7 +605,9 @@
             });
           }
           render();
-        } catch {}
+        } catch {
+          if ($('posterWrap').hidden) setupArt(null);
+        }
       }
       async function filmDetails() {
         const list = episodes.filter((e) => e.kind).slice(0, 60);
@@ -677,10 +718,13 @@
               save();
               render();
             }
+          } else if (msg.type === 'guide-art' && msg.id === id) {
+            takeArt(msg);
           } else if (msg.type === 'guide-add' && msg.id === id) {
             if (insertEpisode({ key: msg.key, title: msg.title, kind: msg.kind })) render();
           } else if (msg.type === 'guide-sync' && msg.guide?.id === id) {
             for (const e of Array.isArray(msg.guide.episodes) ? msg.guide.episodes.slice(0, 200) : []) insertEpisode(e);
+            takeArt(msg.guide.art);
             for (const [k, t] of Object.entries(msg.guide.done || {})) {
               if (KEY.test(k) && t && (!done[k] || t.at > done[k].at)) done[k] = { v: !!t.v, at: t.at };
             }

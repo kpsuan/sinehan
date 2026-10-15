@@ -274,6 +274,7 @@ function cleanGuide(g) {
     show: str(g.show, 100),
     topic: str(g.topic, 100),
     room: str(g.room, 64), // the party it was saved in: it only syncs there
+    art: cleanArt(g.art),
     wiki: /^[a-z0-9-]+(\.[a-z0-9-]+)*\.fandom\.com$/.test(g.wiki || '') ? g.wiki : '',
     by: str(g.by, 30),
     at: Number(g.at) || Date.now(),
@@ -290,12 +291,19 @@ function cleanGuide(g) {
     done,
   };
 }
+// The artwork picked on a guide's page: TVmaze pictures or a small uploaded one; the newest pick wins.
+function cleanArt(a) {
+  if (!a || typeof a !== 'object') return null;
+  const ok = (x) => (typeof x === 'string' && x.length < 60000 && (x === '' || /^(https:\/\/static\.tvmaze\.com\/uploads\/images\/[\w/.-]+|data:image\/jpeg;base64,[A-Za-z0-9+/=]+)$/.test(x)) ? x : '');
+  return { poster: ok(a.poster), background: ok(a.background), at: Number(a.at) || 0 };
+}
 function mergeGuide(mine, theirs) {
   if (!mine) return theirs;
   const newer = theirs.at > mine.at ? theirs : mine;
   const done = { ...mine.done };
   for (const [k, t] of Object.entries(theirs.done)) if (!done[k] || t.at > done[k].at) done[k] = t;
-  return { ...newer, room: mine.room || theirs.room, done };
+  const art = (theirs.art?.at || 0) > (mine.art?.at || 0) ? theirs.art : mine.art;
+  return { ...newer, room: mine.room || theirs.room, art, done };
 }
 function guideSummary(g) {
   return { id: g.id, show: g.show, topic: g.topic, by: g.by, at: g.at, count: g.episodes.length,
@@ -587,6 +595,15 @@ function connect(server, room) {
       }
     }
     if (msg.type === 'guide-add') addFromPage(msg);
+    if (msg.type === 'guide-art') {
+      const art = cleanArt(msg);
+      guidesWrite = guidesWrite.then(readGuides).then(async (list) => {
+        const g = list.find((x) => x.id === msg.id && x.room === status.room);
+        if (!g || (g.art?.at || 0) >= art.at) return;
+        g.art = art;
+        await chrome.storage.local.set({ guides: list });
+      }).catch(console.error);
+    }
     if (msg.type === 'guide-tick') tickGuide({ id: str(msg.id, 200), key: str(msg.key, 104), v: !!msg.v, at: Number(msg.at) || Date.now() }, false);
     if (msg.type === 'chat') {
       remember({ ...msg, mine: false });

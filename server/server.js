@@ -223,8 +223,11 @@ wss.on('connection', (ws) => {
       return;
     }
     if (ws.channel) {
-      if (msg.type !== 'guide-tick' && msg.type !== 'guide-add') return;
-      const tick = msg.type === 'guide-add'
+      if (msg.type !== 'guide-tick' && msg.type !== 'guide-add' && msg.type !== 'guide-art') return;
+      const art = (x) => (typeof x === 'string' && (x === '' || /^(https:\/\/static\.tvmaze\.com\/|data:image\/jpeg;base64,)/.test(x)) ? x.slice(0, 60000) : '');
+      const tick = msg.type === 'guide-art'
+        ? { type: 'guide-art', id: String(msg.id || '').slice(0, 200), poster: art(msg.poster), background: art(msg.background), at: Number(msg.at) || Date.now() }
+        : msg.type === 'guide-add'
         ? { type: 'guide-add', id: String(msg.id || '').slice(0, 200), key: String(msg.key || '').slice(0, 104), title: String(msg.title || '').slice(0, 120), kind: String(msg.kind || '').slice(0, 20) }
         : { type: 'guide-tick', id: String(msg.id || '').slice(0, 200), key: String(msg.key || '').slice(0, 104), v: !!msg.v, at: Number(msg.at) || Date.now() };
       const partyRoom = channelRoom.get(ws.channel);
@@ -234,7 +237,7 @@ wss.on('connection', (ws) => {
     }
 
     // The party's own guide messages also reach any open pages of that guide.
-    if (room && (msg.type === 'guide-tick' || msg.type === 'guide-sync')) {
+    if (room && (msg.type === 'guide-tick' || msg.type === 'guide-sync' || msg.type === 'guide-art')) {
       const ch = learnChannel(room, msg.type === 'guide-tick' ? msg.id : msg.guide?.id);
       for (const page of channelSockets.get(ch) || []) send(page, msg);
     }

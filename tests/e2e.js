@@ -602,6 +602,18 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     await gp.click('#addForm button');
     check('you can add an episode on the page too', await until(async () => (await gp.$$eval('.ep', (r) => r.length)) === 4));
     check('…and it reaches their sidebar', await until(async () => (await pB2.$$eval('.g-ep', (r) => r.length)) === 4));
+    // Artwork picked on one page shows on another, and the party keeps it with the guide.
+    const gp2 = await B.ctx.newPage();
+    await gp2.goto(pageLink);
+    await until(() => gp2.$eval('#sync', (x) => x.classList.contains('live')));
+    await until(() => gp.$eval('#artBtn', (b) => !b.hidden));
+    await gp.click('#artBtn');
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAMCAIAAADQ/GvKAAAAEklEQVR4nGM4UWGDFTGMSqAjALmJjoFR1DfVAAAAAElFTkSuQmCC', 'base64');
+    await gp.setInputFiles('#pickerGrid .own input', { name: 'mine.png', mimeType: 'image/png', buffer: png });
+    check('a picture you upload becomes the poster', await until(() => gp.$eval('#poster', (i) => i.src.startsWith('data:image/jpeg'))));
+    check('…on their copy of the page too', await until(() => gp2.$eval('#poster', (i) => i.src.startsWith('data:image/jpeg') && !i.closest('[hidden]'))));
+    check('…and the party keeps it with the guide', await until(async () => (await pB2.evaluate(() => askP({ type: 'guide-get', id: openGuide?.id || '' })))?.art?.poster?.startsWith('data:image/jpeg')));
+    await gp2.close();
     await gp.reload();
     check('the page remembers ticks on that device', await until(() => gp.$$eval('.ep', (r) => r[1]?.classList.contains('done'))));
     check('…and the episode added there', await until(async () => (await gp.$$eval('.ep', (r) => r.length)) === 4));

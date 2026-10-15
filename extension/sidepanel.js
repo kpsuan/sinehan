@@ -1048,6 +1048,9 @@ async function guidePageLink(g) {
     d: g.episodes.map((e, i) => (isDone(g, e.key) ? i : -1)).filter((i) => i >= 0).join(' '),
     f: g.wiki || '', // the fan wiki, so the page can link each episode to its page
   };
+  // The artwork picked for it (TVmaze pictures only: an uploaded one is too big for a link).
+  const tvmaze = (x) => (/^https:\/\/static\.tvmaze\.com\/uploads\/images\//.test(x || '') ? x.replace('https://static.tvmaze.com/uploads/images/', '') : '');
+  if (g.art && (tvmaze(g.art.poster) || tvmaze(g.art.background))) data.a = { p: tvmaze(g.art.poster), b: tvmaze(g.art.background), at: g.art.at };
   const server = ($('server').value.trim() || DEFAULT_SERVER).replace(/\/+$/, '');
   // Live ticks with this party: a code made from the room and the guide (the relay matches it up). The
   // room itself never goes in the link, so the link can't be used to read your party.
