@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0c0a10" />
+  <title>sinehan · on your phone</title>
+  <link rel="icon" href="/static/logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root { color-scheme: dark; --bg: #0c0a10; --card: #16121c; --raised: #1f1927; --text: #efeaf6; --muted: #9a90aa; --faint: #6d6479;
+      --accent: #c9b6f2; --ink: #1b1325; --live: #9fd6b0; --danger: #e5868f; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; height: 100%; }
+    body { background: var(--bg); color: var(--text); font: 15px/1.45 'Inter', system-ui, sans-serif; }
+    svg text { font-family: 'Inter', system-ui, sans-serif; }
+    [hidden] { display: none !important; }
+    button { font: inherit; color: inherit; border: 0; cursor: pointer; background: var(--raised); border-radius: 12px; }
+    button:active { transform: scale(.97); }
+    input { width: 100%; padding: 12px 14px; border: 0; border-radius: 12px; background: var(--raised); color: inherit; font: inherit; outline: none; }
+    input:focus { box-shadow: 0 0 0 2px var(--accent); }
+    svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; display: block; }
+    .app { max-width: 480px; min-height: 100%; margin: 0 auto; padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
+      display: flex; flex-direction: column; gap: 10px; }
+    .card { background: var(--card); border-radius: 16px; padding: 14px; }
+    .label { margin: 0 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+
+    header { display: flex; align-items: center; gap: 10px; padding: 4px 4px 2px; }
+    header img.logo { width: 26px; height: 26px; }
+    header .who { flex: 1; min-width: 0; }
+    header b { display: block; font-size: 16px; font-weight: 600; }
+    #status { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+    #status::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #5a5066; }
+    #status.live::before { background: var(--live); }
+    #status.waiting::before { background: #d9c27a; }
+    .me-avatar { width: 34px; height: 34px; border-radius: 50%; overflow: hidden; }
+    .me-avatar img, .avatar img { width: 100%; height: 100%; display: block; }
+
+    /* First visit: who are you */
+    #setup h1 { margin: 6px 0 4px; font-size: 26px; letter-spacing: -0.02em; }
+    #setup p { margin: 0 0 16px; color: var(--muted); }
+    .avatars { display: flex; gap: 14px; margin: 14px 0 18px; }
+    .avatars button { width: 52px; height: 52px; padding: 0; border-radius: 50%; overflow: hidden; background: none; }
+    .avatars button.on { outline: 2px solid var(--accent); outline-offset: 3px; }
+    .avatars img { width: 100%; height: 100%; display: block; }
+    .primary { width: 100%; padding: 14px; background: var(--accent); color: var(--ink); font-weight: 600; }
+
+    /* Now watching */
+    #title { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+    #title.none { color: var(--muted); font-weight: 500; font-size: 15px; }
+    .playing { display: flex; align-items: center; gap: 8px; margin-top: 6px; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+    #note { margin-top: 10px; padding: 9px 12px; border-radius: 10px; background: var(--raised); font-size: 14px; }
+
+    /* Remote */
+    .transport { display: grid; grid-template-columns: 1fr 1.3fr 1fr; gap: 8px; }
+    .transport button { height: 64px; display: grid; place-items: center; }
+    .transport svg { width: 26px; height: 26px; }
+    #playBtn { background: var(--accent); color: var(--ink); }
+    #playBtn svg { width: 30px; height: 30px; }
+    .extras { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+    .extras button { display: flex; align-items: center; justify-content: center; gap: 8px; height: 48px; font-size: 14px; font-weight: 500; }
+    .extras svg { width: 18px; height: 18px; }
+    .extras button.on { background: var(--accent); color: var(--ink); }
+    .glow { animation: glow 2.4s ease-in-out; }
+    @keyframes glow { 25%, 70% { box-shadow: 0 0 0 2px var(--accent), 0 0 30px rgba(201, 182, 242, .35); } }
+
+    /* Chat */
+    .chat { flex: 1; display: flex; flex-direction: column; min-height: 260px; }
+    #log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 2px 0 8px; }
+    #log:empty::before { content: 'Messages show up here and on the laptop.'; color: var(--faint); font-size: 14px; }
+    .line { display: flex; align-items: flex-end; gap: 8px; }
+    .line.me { flex-direction: row-reverse; }
+    .avatar { display: block; width: 28px; height: 28px; border-radius: 50%; overflow: hidden; flex: none; }
+    .msg { max-width: 78%; padding: 8px 12px; border-radius: 14px 14px 14px 4px; background: var(--raised); overflow-wrap: anywhere; }
+    .line.me .msg { border-radius: 14px 14px 4px 14px; background: var(--accent); color: var(--ink); }
+    .msg .name { display: block; font-size: 11px; color: var(--muted); }
+    .line.me .msg .name { display: none; }
+    .msg.big { background: none !important; padding: 0 4px; font-size: 32px; line-height: 1.1; }
+    .line.system { justify-content: center; color: var(--muted); font-size: 13px; }
+    #typing { min-height: 18px; color: var(--muted); font-size: 13px; font-style: italic; }
+    .reacts { display: flex; gap: 6px; margin: 4px 0 8px; }
+    .reacts button { flex: 1; height: 42px; font-size: 22px; background: var(--raised); }
+    form { display: flex; gap: 8px; }
+    form button { flex: none; width: 48px; display: grid; place-items: center; background: var(--accent); color: var(--ink); }
+    .leave { align-self: center; padding: 8px 14px; background: none; color: var(--faint); font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <img class="logo" src="/static/logo.png" alt="" />
+      <div class="who"><b>sinehan</b><span id="status">Connecting…</span></div>
+      <div class="me-avatar" id="meAvatar" hidden></div>
+    </header>
+
+    <section class="card" id="setup" hidden>
+      <h1>Watch with your phone</h1>
+      <p>Chat and control the show playing on the laptop. Nothing to install.</p>
+      <input id="name" maxlength="30" placeholder="Your name" autocomplete="nickname" />
+      <div class="avatars" id="avatars" role="radiogroup" aria-label="Picture"></div>
+      <button class="primary" id="go">Join the party</button>
+    </section>
+
+    <div id="main" hidden>
+      <section class="card">
+        <p class="label">Watching</p>
+        <div id="title" class="none">Waiting for the show to start</div>
+        <div class="playing"><span id="stateIcon"></span><span id="clock">—</span></div>
+        <div id="note" hidden></div>
+      </section>
+
+      <section class="card" style="margin-top:10px">
+        <p class="label">Remote</p>
+        <div class="transport">
+          <button id="backBtn" aria-label="Back 10 seconds"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.4-5.7" /><path d="M4 4v4h4" /><text x="12.4" y="15.3" text-anchor="middle" font-size="7.5" font-weight="700" fill="currentColor" stroke="none">10</text></svg></button>
+          <button id="playBtn" aria-label="Play or pause"></button>
+          <button id="fwdBtn" aria-label="Forward 10 seconds"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7" /><path d="M20 4v4h-4" /><text x="11.6" y="15.3" text-anchor="middle" font-size="7.5" font-weight="700" fill="currentColor" stroke="none">10</text></svg></button>
+        </div>
+        <div class="extras">
+          <button id="countBtn" aria-label="3-2-1 and play together">3·2·1</button>
+          <button id="breakBtn"><svg viewBox="0 0 24 24"><path d="M14 4H6v16h8" /><path d="M14 4l5 2v14l-5-2z" /><path d="M11 12h.01" /></svg><span>CR break</span></button>
+          <button id="handBtn" aria-label="Hold their hand"><svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></svg></button>
+        </div>
+      </section>
+
+      <section class="card chat" style="margin-top:10px">
+        <p class="label">Chat</p>
+        <div id="log"></div>
+        <div id="typing"></div>
+        <div class="reacts" id="reacts"></div>
+        <form id="form"><input id="msg" maxlength="500" placeholder="Message" autocomplete="off" />
+          <button aria-label="Send"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></svg></button></form>
+      </section>
+      <button class="leave" id="leave">Leave</button>
+    </div>
+  </div>
+
+  <script>
+    // Phone companion: joins the room as a "companion" (doesn't count as a person watching),
+    // shows what's playing, and sends chat, reactions and remote commands to the laptops.
+    (() => {
+      const $ = (id) => document.getElementById(id);
+      const q = new URLSearchParams(location.search);
+      const room = (q.get('room') || '').slice(0, 64);
+      const COLORS = ['#c9b6f2', '#f1c9b0', '#bfe0d0', '#c6d4ec'];
+      const ICON_PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z" /></svg>';
+      const ICON_PAUSE = '<svg viewBox="0 0 24 24"><path d="M9 5v14M15 5v14" /></svg>';
+      const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+
+      if (!room) {
+        $('status').textContent = 'This link is missing its party. Open the invite link again.';
+        return;
+      }
+
+      let me = { name: store.get('sinehan-name') || '', avatar: Math.min(3, Math.max(0, parseInt(store.get('sinehan-avatar'), 10) || 0)) };
+      let ws = null;
+      let watchers = 0;
+      let show = { time: null, paused: true, at: 0 };
+      let onBreak = false;
+      const seen = new Set();
+
+      function avatarEl(i, size) {
+        const wrap = document.createElement('span');
+        wrap.className = 'avatar';
+        if (size) wrap.style.width = wrap.style.height = `${size}px`;
+        wrap.style.background = COLORS[i] || COLORS[0];
+        const img = document.createElement('img');
+        img.src = `/static/avatar${(i || 0) + 1}.png`;
+        img.alt = '';
+        wrap.append(img);
+        return wrap;
+      }
+
+      // ---- First visit ----
+      COLORS.forEach((c, i) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.style.background = c;
+        b.setAttribute('aria-label', `Picture ${i + 1}`);
+        const img = document.createElement('img');
+        img.src = `/static/avatar${i + 1}.png`;
+        img.alt = '';
+        b.append(img);
+        b.onclick = () => { me.avatar = i; renderAvatars(); };
+        $('avatars').append(b);
+      });
+      function renderAvatars() {
+        [...$('avatars').children].forEach((b, i) => b.classList.toggle('on', i === me.avatar));
+      }
+      $('name').value = me.name;
+      renderAvatars();
+      $('go').onclick = () => {
+        me.name = $('name').value.trim() || 'Guest';
+        store.set('sinehan-name', me.name);
+        store.set('sinehan-avatar', String(me.avatar));
+        start();
+      };
+      if (me.name) start();
+      else { $('setup').hidden = false; $('status').textContent = 'Not joined yet'; }
+
+      function start() {
+        $('setup').hidden = true;
+        $('main').hidden = false;
+        $('meAvatar').hidden = false;
+        $('meAvatar').replaceChildren(avatarEl(me.avatar, 34));
+        connect();
+      }
+
+      // ---- Connection ----
+      function connect() {
+        ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`);
+        ws.onopen = () => {
+          send({ type: 'join', room, companion: true });
+          send({ type: 'sync-request' }); // where is the show?
+          send({ type: 'companion-hello' }); // and what is it?
+        };
+        ws.onmessage = (e) => { let m; try { m = JSON.parse(e.data); } catch { return; } onMessage(m); };
+        ws.onclose = () => { renderStatus(false); setTimeout(connect, 3000); };
+      }
+      setInterval(() => send({ type: 'ping' }), 20000);
+      function send(m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); }
+
+      function onMessage(m) {
+        if (m.type === 'joined' || m.type === 'peer') { watchers = m.count; renderStatus(true); }
+        else if (['play', 'pause', 'seeked', 'state'].includes(m.type) && typeof m.time === 'number') {
+          show = { time: m.time, paused: !!m.paused, at: Date.now() }; renderShow();
+        } else if (m.type === 'countdown' && typeof m.time === 'number') {
+          note('Counting down 3·2·1…', 3200);
+          show = { time: m.time, paused: true, at: Date.now() };
+          setTimeout(() => { show = { time: m.time, paused: false, at: Date.now() }; renderShow(); }, 3000);
+          renderShow();
+        } else if (m.type === 'now-watching') {
+          $('title').textContent = m.title || 'Something new';
+          $('title').classList.remove('none');
+        } else if (m.type === 'chat') {
+          if (seen.has(m.id)) return;
+          seen.add(m.id);
+          addChat(m.name, m.text, false, m.avatar);
+          $('typing').textContent = '';
+        } else if (m.type === 'typing') {
+          $('typing').textContent = `${m.name || 'Someone'} is typing…`;
+          clearTimeout(onMessage.t); onMessage.t = setTimeout(() => ($('typing').textContent = ''), 3500);
+        } else if (m.type === 'hold') {
+          const why = m.reason === 'break' ? `${m.name || 'Someone'} is on a CR break` : m.reason === 'ad' ? 'An ad is playing on one side' : 'One side is loading';
+          if (m.active) note(why); else note(null);
+        } else if (m.type === 'hand') {
+          const c = $('handBtn'); c.classList.remove('glow'); void c.offsetWidth; c.classList.add('glow');
+          note(`${m.name || 'They'} is holding your hand`, 2600);
+        } else if (m.type === 'show-closed') {
+          note('The show was closed', 4000);
+        }
+      }
+
+      function renderStatus(connected) {
+        const s = $('status');
+        s.className = !connected ? '' : watchers >= 2 ? 'live' : 'waiting';
+        s.textContent = !connected ? 'Reconnecting…' : watchers >= 2 ? 'Both of you are watching' : watchers === 1 ? 'One person is watching' : 'No one is watching yet';
+      }
+
+      // ---- The show ----
+      const now = () => (show.time == null ? null : show.paused ? show.time : show.time + (Date.now() - show.at) / 1000);
+      function clock(sec) {
+        const s = Math.max(0, Math.round(sec)); const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); const ss = String(s % 60).padStart(2, '0');
+        return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+      }
+      function renderShow() {
+        const t = now();
+        $('clock').textContent = t == null ? '—' : `${show.paused ? 'Paused' : 'Playing'} · ${clock(t)}`;
+        $('playBtn').innerHTML = show.paused ? ICON_PLAY : ICON_PAUSE; // fixed icon markup from this page
+      }
+      setInterval(renderShow, 1000);
+      renderShow();
+      let noteTimer = null;
+      function note(text, ms) {
+        clearTimeout(noteTimer);
+        $('note').hidden = !text;
+        if (text) $('note').textContent = text;
+        if (text && ms) noteTimer = setTimeout(() => ($('note').hidden = true), ms);
+      }
+
+      // ---- Remote ----
+      $('playBtn').onclick = () => send({ type: 'remote', action: show.paused ? 'play' : 'pause' });
+      $('backBtn').onclick = () => send({ type: 'remote', action: 'back' });
+      $('fwdBtn').onclick = () => send({ type: 'remote', action: 'forward' });
+      $('countBtn').onclick = () => send({ type: 'countdown', time: now() ?? 0 });
+      $('handBtn').onclick = () => { send({ type: 'hand', name: me.name }); note('Holding their hand', 1800); };
+      $('breakBtn').onclick = () => {
+        onBreak = !onBreak;
+        if (onBreak) send({ type: 'hold', reason: 'break', active: true, name: me.name, time: now() ?? undefined });
+        else {
+          send({ type: 'countdown', time: now() ?? 0 }); // both laptops count back in from the same spot
+          send({ type: 'hold', reason: 'break', active: false, name: me.name });
+        }
+        $('breakBtn').classList.toggle('on', onBreak);
+        $('breakBtn').querySelector('span').textContent = onBreak ? 'I’m back' : 'CR break';
+      };
+
+      // ---- Chat ----
+      for (const e of ['😂', '❤️', '😭', '🔥']) {
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = e;
+        b.onclick = () => sendChat(e);
+        $('reacts').append(b);
+      }
+      $('form').onsubmit = (e) => { e.preventDefault(); const t = $('msg').value.trim(); if (t) { sendChat(t); $('msg').value = ''; } };
+      let lastTyping = 0;
+      $('msg').oninput = () => { if ($('msg').value.trim() && Date.now() - lastTyping > 2000) { lastTyping = Date.now(); send({ type: 'typing', name: me.name }); } };
+      function sendChat(text) {
+        const id = (crypto.randomUUID && crypto.randomUUID()) || String(Math.random());
+        seen.add(id);
+        const vt = now();
+        send({ type: 'chat', id, name: me.name, avatar: me.avatar, text, ...(vt == null ? {} : { vt }) });
+        addChat(me.name, text, true, me.avatar);
+      }
+      const emojiOnly = (t) => /\p{Extended_Pictographic}/u.test(t) && /^(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\p{Emoji_Component}|‍|️|\s)+$/u.test(t) && !/[0-9#*]/.test(t) && [...t.replace(/\s/g, '')].length <= 8;
+      function addChat(name, text, mine, avatar) {
+        const line = document.createElement('div');
+        line.className = `line${mine ? ' me' : ''}`;
+        const bubble = document.createElement('div');
+        bubble.className = `msg${emojiOnly(String(text || '')) ? ' big' : ''}`;
+        const who = document.createElement('span'); who.className = 'name'; who.textContent = name || '';
+        bubble.append(who, document.createTextNode(String(text || '')));
+        line.append(avatarEl(Number(avatar) || 0), bubble);
+        $('log').append(line);
+        $('log').scrollTop = $('log').scrollHeight;
+      }
+
+      $('leave').onclick = () => { ws.onclose = null; ws.close(); location.href = '/'; };
+    })();
+  </script>
+</body>
+</html>

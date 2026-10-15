@@ -52,6 +52,7 @@
       background: var(--accent); color: var(--accent-ink); font: inherit; font-size: 16px; font-weight: 600; transition: background .15s, transform .1s; }
     .join:hover { background: #d8c9f7; }
     .join:active { transform: scale(.98); }
+    a.join { display: block; text-align: center; text-decoration: none; }
     .note { margin: 14px 0 0; color: var(--faint); font-size: 14px; text-align: center; }
     .done { margin-top: 24px; padding: 14px 16px; border-radius: 10px; background: rgba(159, 214, 176, .08); color: #cde9d6; text-align: center; }
 
@@ -114,6 +115,8 @@
         <p class="done" id="wp-done" hidden>You're in. Open the show you're watching together.</p>
       </div>
       <div class="needs-ext">
+        <a class="join phone" id="phoneLink" href="/party">Join from this phone</a>
+        <p class="note">Chat and control the show on the laptop. Nothing to install.</p>
         <ol class="steps">
           <li><span>Get the Sinehan extension for Chrome from <span id="askWho">the person who invited you</span>, or at <a href="/" style="color:inherit">sinehan.live</a>.</span></li>
           <li><span>Come back and refresh this page.</span></li>
@@ -162,6 +165,8 @@
         probe.onerror = () => show(img);
         probe.src = full;
       }
+      // Same party, from a phone: keep the invite's details.
+      document.getElementById('phoneLink').href = `/party${location.search}`;
       try {
         const to = new URL(q.get('to'));
         if (/^https?:$/.test(to.protocol)) {

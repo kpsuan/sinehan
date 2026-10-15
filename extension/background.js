@@ -296,6 +296,7 @@ function connect(server, room) {
     if (msg.type === 'joined' || msg.type === 'peer') status.peers = msg.count;
     if (msg.type === 'joined' && msg.count > 1) setTimeout(announceShow, 500); // let a returning partner know
     if (msg.type === 'peer' && msg.joined) setTimeout(announceShow, 500);
+    if (msg.type === 'companion-hello') setTimeout(announceShow, 300); // a phone joined: tell it what's on
     if (msg.type === 'chat') {
       remember({ ...msg, mine: false });
       // Lets the show's tab know whether to flash the message on the video (sidebar closed or hidden by fullscreen).

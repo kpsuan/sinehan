@@ -8,6 +8,7 @@ const PORT = process.env.PORT || 8080;
 const rooms = new Map(); // room -> Set<ws>
 const JOIN_PAGE = fs.readFileSync(path.join(__dirname, 'join.html'));
 const LANDING_PAGE = fs.readFileSync(path.join(__dirname, 'landing.html'));
+const PARTY_PAGE = fs.readFileSync(path.join(__dirname, 'party.html'));
 // Only these exact files are served from public/.
 const STATIC_FILES = new Map([
   ['logo.png', 'image/png'],
@@ -52,6 +53,11 @@ const server = http.createServer((req, res) => {
     return fs.createReadStream(path.join(__dirname, 'public', 'sinehan-extension.zip')).pipe(res);
   }
   if (url.pathname === '/health') return res.end('watch-party relay ok');
+  // The phone companion: chat, reactions and a remote for the show playing on a laptop.
+  if (url.pathname === '/party') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    return res.end(PARTY_PAGE);
+  }
   if (url.pathname === '/' || url.pathname === '/index.html') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     return res.end(LANDING_PAGE);
@@ -130,11 +136,13 @@ wss.on('connection', (ws) => {
     if (msg.type === 'join') {
       leave();
       room = String(msg.room).slice(0, 64);
+      // A phone companion (chat + remote) doesn't count as a person watching, and comes and goes quietly.
+      ws.companion = msg.companion === true;
       if (!rooms.has(room)) rooms.set(room, new Set());
       rooms.get(room).add(ws);
-      const count = rooms.get(room).size;
+      const count = watchers(room);
       send(ws, { type: 'joined', count });
-      broadcast(room, ws, { type: 'peer', count, joined: true });
+      if (!ws.companion) broadcast(room, ws, { type: 'peer', count, joined: true });
       return;
     }
 
@@ -147,11 +155,18 @@ wss.on('connection', (ws) => {
     if (!room) return;
     const members = rooms.get(room);
     members.delete(ws);
-    if (members.size) broadcast(room, null, { type: 'peer', count: members.size, joined: false });
-    else rooms.delete(room);
+    if (!members.size) rooms.delete(room);
+    else if (!ws.companion) broadcast(room, null, { type: 'peer', count: watchers(room), joined: false });
     room = null;
   }
 });
+
+// People watching = everyone in the room except phone companions.
+function watchers(room) {
+  let n = 0;
+  for (const c of rooms.get(room) || []) if (!c.companion) n++;
+  return n;
+}
 
 function send(ws, msg) {
   if (ws.readyState === 1) ws.send(JSON.stringify(msg));

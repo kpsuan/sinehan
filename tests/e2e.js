@@ -571,6 +571,42 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     await until(async () => (await vstate(vB)).paused);
 
     // ---------------------------------------------------------------
+    section('Phone companion');
+    const phone = await A.ctx.newPage();
+    await phone.setViewportSize({ width: 390, height: 844 });
+    await phone.goto(`http://localhost:${RELAY_PORT}/party?room=r1`);
+    check('phone: asks who you are first', await phone.locator('#setup').isVisible());
+    await phone.fill('#name', 'Phone');
+    await phone.click('#go');
+    check('phone: joins and sees both of you watching', await until(async () => (await phone.textContent('#status')) === 'Both of you are watching'));
+    check('phone: doesn’t count as a person on the laptops', (await text(pA, '#status')) === 'Together' && !(await logLines(pA)).slice(-3).some((l) => /joined|left/.test(l.text) && l.cls.includes('system') && l.text.includes('Phone')));
+    check('phone: shows what’s on', await until(async () => !(await phone.$eval('#title', (t) => t.classList.contains('none')))));
+
+    await phone.fill('#msg', 'hi from my phone');
+    await phone.press('#msg', 'Enter');
+    check('phone: chat reaches the laptops', await until(async () => (await logLines(pB2)).some((l) => l.text.includes('hi from my phone'))));
+    await chat(pB2, 'hello phone');
+    check('phone: chat from the laptops arrives', await until(async () => (await phone.textContent('#log')).includes('hello phone')));
+
+    await vA2.evaluate(() => document.getElementById('v').play());
+    await until(async () => !(await vstate(vB)).paused);
+    check('phone: sees the show playing', await until(async () => (await phone.textContent('#clock')).startsWith('Playing')));
+    await phone.click('#playBtn');
+    check('phone remote: pause stops both laptops', await until(async () => (await vstate(vA2)).paused && (await vstate(vB)).paused, 5000), await both());
+    const tBefore = (await vstate(vA2)).t;
+    await phone.click('#fwdBtn');
+    check('phone remote: +10s moves both', await until(async () => (await vstate(vA2)).t > tBefore + 8 && Math.abs((await vstate(vB)).t - (await vstate(vA2)).t) < 1.5, 5000), await both());
+    await phone.click('#countBtn');
+    check('phone remote: 3·2·1 starts both together', await until(async () => { const a = await vstate(vA2); const b = await vstate(vB); return !a.paused && !b.paused && Math.abs(a.t - b.t) < 1; }, 7000), await both());
+
+    await phone.click('#leave');
+    await sleep(1500);
+    check('phone leaving doesn’t pause anyone', !(await vstate(vA2)).paused && !(await vstate(vB)).paused);
+    check('…or announce anything', !(await logLines(pA)).slice(-2).some((l) => l.cls.includes('system') && /left/.test(l.text)));
+    await vA2.evaluate(() => document.getElementById('v').pause());
+    await until(async () => (await vstate(vB)).paused);
+
+    // ---------------------------------------------------------------
     section('Invite link');
     await vA2.bringToFront(); // invite from the show's tab
     await pA.click('#invite');

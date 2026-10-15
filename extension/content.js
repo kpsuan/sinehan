@@ -213,6 +213,7 @@ function onRemote(msg) {
     return;
   }
   if (msg.type === 'sync-request') return sendState('state');
+  if (msg.type === 'remote') return remote(msg.action);
   if (msg.type === 'hold') return onTheirHold(msg.reason, !!msg.active, msg.time, msg.name);
   if (msg.type === 'hand') return holdHand(msg.name);
   if (msg.type === 'countdown') return startCountdown(msg.time);
@@ -252,6 +253,16 @@ function onRemote(msg) {
   // Big jumps (skipping the intro, rewinding a scene) get called out so they're not a surprise.
   if (msg.type === 'seeked' && Math.abs(delta) > 10) toast(`They ${delta > 0 ? 'skipped ahead' : 'went back'} ${clock(Math.abs(delta))}`);
   else if (msg.type === 'play' || msg.type === 'pause') toast(msg.paused ? 'Paused' : 'Playing');
+}
+
+// From the phone companion. Done like a local action, so it then syncs to the other person as usual.
+function remote(action) {
+  if (!video || myAd) return;
+  applied = null;
+  if (action === 'play') video.play().catch(() => toast('Click the video once so the browser lets it autoplay'));
+  else if (action === 'pause') video.pause();
+  else if (action === 'back') seek(Math.max(0, video.currentTime - 10));
+  else if (action === 'forward') seek(video.currentTime + 10);
 }
 
 function seek(seconds) {
