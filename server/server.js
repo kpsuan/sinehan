@@ -29,6 +29,11 @@ const STATIC_FILES = new Map([
   ['bantay.js', 'text/javascript; charset=utf-8'],
 ]);
 const KLIPY_API_KEY = process.env.KLIPY_API_KEY;
+// Calls: a TURN relay for networks that can't connect directly (shared mobile/ISP addresses). Cloudflare's
+// (CF_TURN_KEY_ID + CF_TURN_API_TOKEN, short-lived logins) or any other (TURN_URLS, TURN_USERNAME, TURN_CREDENTIAL).
+const CF_TURN_KEY_ID = (process.env.CF_TURN_KEY_ID || '').trim();
+const CF_TURN_API_TOKEN = (process.env.CF_TURN_API_TOKEN || '').trim();
+const TURN_URLS = (process.env.TURN_URLS || '').split(',').map((u) => u.trim()).filter(Boolean);
 // TMDB (themoviedb.org): either the v3 "API Key" or the v4 "API Read Access Token" works.
 const TMDB_KEY = (process.env.TMDB_KEY || '').trim();
 
@@ -42,6 +47,7 @@ const server = http.createServer((req, res) => {
   }
   if (url.pathname === '/gifs') return gifs(url, res);
   if (url.pathname === '/deck') return deck(url, req, res);
+  if (url.pathname === '/ice') return ice(res);
 
   // Assets for the web pages.
   if (url.pathname.startsWith('/static/')) {
@@ -239,6 +245,35 @@ async function deck(url, req, res) {
     console.error('tmdb request failed', e.message);
     json(res, 502, { error: 'tmdb' });
   }
+}
+
+// ---- Call relay (TURN) ----
+// Logins last a day; one set is shared for an hour, so this is at most one Cloudflare call an hour.
+const STUN = { urls: 'stun:stun.l.google.com:19302' };
+let iceCache = null; // { at, servers }
+async function ice(res) {
+  if (iceCache && Date.now() - iceCache.at < 3600 * 1000) return json(res, 200, { iceServers: iceCache.servers });
+  let servers = [STUN];
+  try {
+    if (CF_TURN_KEY_ID && CF_TURN_API_TOKEN) {
+      const r = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(CF_TURN_KEY_ID)}/credentials/generate-ice-servers`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${CF_TURN_API_TOKEN}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ ttl: 86400 }),
+      });
+      if (!r.ok) throw new Error(`cloudflare turn ${r.status}`);
+      const body = await r.json();
+      const list = Array.isArray(body.iceServers) ? body.iceServers : [body.iceServers].filter(Boolean);
+      if (list.length) servers = [STUN, ...list];
+    } else if (TURN_URLS.length) {
+      servers = [STUN, { urls: TURN_URLS, username: process.env.TURN_USERNAME || '', credential: process.env.TURN_CREDENTIAL || '' }];
+    }
+  } catch (e) {
+    console.error('turn credentials failed', e.message);
+    return json(res, 200, { iceServers: servers }); // calls still try directly; not cached, so the next one retries
+  }
+  iceCache = { at: Date.now(), servers };
+  json(res, 200, { iceServers: servers });
 }
 
 function json(res, status, data) {

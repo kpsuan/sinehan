@@ -466,6 +466,7 @@ function showStatus(s) {
         : 'In a party, waiting for them.';
   if (!leaving) $('disconnect').disabled = !s.room;
   if (!wasConnected && s.connected) $('settings').open = false;
+  if (!wasConnected && s.connected) setTimeout(() => loadIce());
   if (s.connected && s.peers > 1 && !peer && !askedPeer) {
     askedPeer = true;
     sendProfile(true);
@@ -732,7 +733,12 @@ $('handBtn').onclick = () => {
   void $('handBtn').offsetWidth;
   $('handBtn').classList.add('sent');
 };
-$('countdownBtn').onclick = () => send({ local: true, type: 'countdown-start' }); // the show's tab runs it
+$('countdownBtn').onclick = () => {
+  // It needs a playing (or paused) episode: a show's info page has no player to count in.
+  if (!status.pos || Date.now() - status.pos.at > 15000)
+    return addChat('', 'Start the episode first (the player, not the show’s page), then count in.', 'system');
+  send({ local: true, type: 'countdown-start' }); // the show's tab runs it
+};
 
 // CR break: the show's tab pauses both of you; "I'm back" counts you both back in.
 let onBreak = false;
@@ -2478,12 +2484,37 @@ function stopRinging() {
 // Video goes browser-to-browser over WebRTC; the relay only carries the setup messages.
 // Uses the "perfect negotiation" pattern so it doesn't matter who starts or turns on their camera first.
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+// The relay may add a TURN server: it relays the call when your networks can't connect directly (common
+// on mobile data and on ISPs that share one address between many homes).
+let iceServers = ICE_SERVERS;
+let iceAt = 0;
+async function loadIce() {
+  if (Date.now() - iceAt < 3600 * 1000) return;
+  const server = $('server').value.trim().replace(/^ws/, 'http').replace(/\/+$/, '');
+  if (!server) return;
+  try {
+    const r = await fetch(`${server}/ice`, { signal: AbortSignal.timeout(2500) });
+    const { iceServers: list } = r.ok ? await r.json() : {};
+    if (Array.isArray(list) && list.length) {
+      iceServers = list;
+      iceAt = Date.now();
+    }
+  } catch {}
+}
 let pc = null;
 let localStream = null;
 let remoteStream = null;
 let makingOffer = false;
 let ignoreOffer = false;
 let awaitingOffer = false;
+let myOffer = ''; // the id of the offer we're waiting on an answer to
+let attachOnOffer = null; // picking up: adds our camera and mic once their offer arrives
+let restartedIce = false;
+let failTimer = null;
+const offerOut = () => {
+  myOffer = crypto.randomUUID().slice(0, 8);
+  signal({ description: pc.localDescription.toJSON(), oid: myOffer });
+};
 let audioTx = null; // the transceiver our mic goes out on (track swapped without renegotiating)
 let theirMicOn = null; // what they told us (null = not in a call / unknown)
 
@@ -2651,12 +2682,16 @@ function stopVoiceMeter() {
   setDucked(false);
 }
 
+// A call is between two sidebars. Once one has answered, setup goes only to it (`to`), and messages from any
+// other sidebar of theirs (a second window) are ignored, so two answers can't collide.
+let callPeer = null;
 function signal(data) {
-  send({ type: 'rtc', from: myId, name: myName(), ...data });
+  send({ type: 'rtc', from: myId, name: myName(), ...(callPeer ? { to: callPeer } : {}), ...data });
 }
 
 function createPeer() {
-  pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  pc = new RTCPeerConnection({ iceServers });
+  restartedIce = false;
   remoteStream = new MediaStream();
 
   pc.onnegotiationneeded = async () => {
@@ -2664,7 +2699,8 @@ function createPeer() {
     try {
       makingOffer = true;
       await pc.setLocalDescription();
-      signal({ description: pc.localDescription.toJSON() });
+      if (pc.localDescription.type === 'offer') offerOut();
+      else signal({ description: pc.localDescription.toJSON() });
     } catch (e) {
       console.error('[watch-party] offer failed', e);
     } finally {
@@ -2687,20 +2723,42 @@ function createPeer() {
     if (track.kind === 'video') send({ local: true, type: 'cam-available' }); // a fullscreen tab may want it
   };
   pc.onconnectionstatechange = () => {
-    if (pc?.connectionState === 'failed') endCall('Call dropped — the connection failed');
+    const state = pc?.connectionState;
+    if (state === 'connected') clearTimeout(failTimer);
+    if (state === 'failed') {
+      // Try once more on a fresh route before giving up.
+      if (!restartedIce) {
+        restartedIce = true;
+        addChat('', 'The call’s connection dropped. Reconnecting…', 'system');
+        pc.restartIce();
+        clearTimeout(failTimer);
+        failTimer = setTimeout(() => {
+          if (pc && pc.connectionState !== 'connected') endCall('Call dropped. Your networks couldn’t connect.', true);
+        }, 15000);
+      } else {
+        endCall('Call dropped. Your networks couldn’t connect.', true);
+      }
+    }
     render();
   };
 }
 
-async function onSignal({ description, candidate, bye, declined, want, from, name }) {
-  // They picked up late and want a fresh offer from us (our first one went unanswered).
+async function onSignal({ description, candidate, bye, declined, want, from, name, oid, re, to }) {
+  if (to && to !== myId) return; // for another of their sidebars
+  if (callPeer && from !== callPeer && from !== 'tab') return; // a second sidebar of theirs joining in
+  if (description && pc && !callPeer) callPeer = from;
+  // They picked up and want our offer: resend the one still waiting (nobody answered it; it carries our
+  // network candidates). Undoing it and making a new one raced with the browser's own renegotiation.
   if (want === 'offer') {
     if (!pc || !localStream) return;
+    if (pc.signalingState === 'have-local-offer' && pc.localDescription) return offerOut();
+    if (pc.signalingState !== 'stable' || makingOffer) return;
     try {
       makingOffer = true;
-      if (pc.signalingState === 'have-local-offer') await pc.setLocalDescription({ type: 'rollback' });
       await pc.setLocalDescription(await pc.createOffer({ iceRestart: true }));
-      signal({ description: pc.localDescription.toJSON() });
+      offerOut();
+    } catch (e) {
+      console.warn('[watch-party] fresh offer', e);
     } finally {
       makingOffer = false;
     }
@@ -2718,26 +2776,44 @@ async function onSignal({ description, candidate, bye, declined, want, from, nam
   }
   if (description) {
     if (!pc) {
-      if (description.type !== 'offer') return;
-      createPeer();
-      addChat('', `${name || 'They'} started a video call`, 'system');
-      if (!localStream) startRinging(name);
+      // A new call: just ring. Picking up asks them for a fresh offer, so only the sidebar you answer in
+      // takes part (not every window you have open).
+      if (description.type !== 'offer' || incoming) return;
+      addChat('', `${name || 'They'} started a call`, 'system');
+      startRinging(name);
+      return;
     }
     const polite = myId < from;
     const collision = description.type === 'offer' && (makingOffer || pc.signalingState !== 'stable');
     ignoreOffer = !polite && collision;
     if (ignoreOffer) {
-      if (pc.localDescription?.type === 'offer') signal({ description: pc.localDescription.toJSON() });
+      if (pc.localDescription?.type === 'offer') signal({ description: pc.localDescription.toJSON(), oid: myOffer });
       return;
     }
 
-    // An answer that arrives after we've already settled (a duplicate from a resent offer) has nothing to answer.
-    if (description.type === 'answer' && pc.signalingState !== 'have-local-offer') return;
-    await pc.setRemoteDescription(description);
+    // An answer to an older offer (we've sent a newer one since), or after we've settled: nothing to answer.
+    if (description.type === 'answer' && (pc.signalingState !== 'have-local-offer' || (re && re !== myOffer))) return;
+    try {
+      await pc.setRemoteDescription(description);
+    } catch (e) {
+      // A mismatched answer: start over with a fresh offer rather than leaving the call stuck.
+      console.warn('[watch-party] call setup', e);
+      if (description.type === 'answer' && pc?.signalingState === 'have-local-offer') {
+        await pc.setLocalDescription({ type: 'rollback' }).catch(() => {});
+        pc.onnegotiationneeded?.();
+      }
+      return;
+    }
     if (description.type === 'offer') awaitingOffer = false;
     if (description.type === 'offer') {
+      if (attachOnOffer) {
+        const attach = attachOnOffer;
+        attachOnOffer = null;
+        await attach(); // our camera and mic join their offer's slots, in this answer
+        if (!pc) return;
+      }
       await pc.setLocalDescription();
-      signal({ description: pc.localDescription.toJSON() });
+      signal({ description: pc.localDescription.toJSON(), re: oid });
     }
     render();
   } else if (candidate && pc) {
@@ -2752,6 +2828,7 @@ async function onSignal({ description, candidate, bye, declined, want, from, nam
 // voice = start (or answer) with just the mic; the camera can still be turned on later.
 async function turnOnCamera(voice = false) {
   let voiceTrack = null;
+  await loadIce();
   try {
     if (voice) {
       [voiceTrack] = (await getMedia('audio')).getAudioTracks();
@@ -2771,34 +2848,45 @@ async function turnOnCamera(voice = false) {
   }
   $('local').srcObject = localStream;
 
-  // Answering a call that started while our sidebar was closed: ask for a fresh offer rather than both
-  // sides offering at once; offer ourselves if none comes within 5s.
-  const late = !pc;
-  if (late) awaitingOffer = true;
-  if (!pc) createPeer();
-  for (const track of localStream.getTracks()) pc.addTrack(track, localStream);
-  micTransceiver(); // ready for the mic, even if it starts off
-  if (late) {
+  // Our camera and mic go into the call.
+  const attach = async () => {
+    if (!pc || !localStream) return;
+    for (const track of localStream.getTracks()) pc.addTrack(track, localStream);
+    micTransceiver(); // ready for the mic, even if it starts off
+    if (voiceTrack) {
+      // A voice call is for talking: the mic starts on.
+      localStream.addTrack(voiceTrack);
+      await micTransceiver().sender.replaceTrack(voiceTrack);
+      micOn = true;
+      chrome.storage.local.set({ micOn });
+    } else if (micOn) {
+      await setMic(true);
+    }
+    if (!localStream) return;
+    send({ type: 'mic', on: !!localStream.getAudioTracks().length });
+    if (!localStream.getAudioTracks().length) addChat('', 'Your mic is off. Click the mic button to talk.', 'system');
+    render();
+  };
+
+  // Picking up a ringing call: ask them for a fresh offer and answer it with our camera and mic, so only
+  // one side sets the call up (both doing it at once is what used to break calls). If no offer comes
+  // within 5s, we offer instead.
+  if (!pc) {
+    awaitingOffer = true;
+    createPeer();
+    attachOnOffer = attach;
     signal({ want: 'offer' });
-    setTimeout(() => {
-      if (!awaitingOffer || !pc) return;
+    setTimeout(async () => {
+      if (!awaitingOffer || !pc || attachOnOffer !== attach) return;
       awaitingOffer = false;
-      pc.onnegotiationneeded?.();
+      attachOnOffer = null;
+      await attach(); // adding our tracks starts the offer
     }, 5000);
-  }
-  if (voiceTrack) {
-    // A voice call is for talking: the mic starts on.
-    localStream.addTrack(voiceTrack);
-    await micTransceiver().sender.replaceTrack(voiceTrack);
-    micOn = true;
-    chrome.storage.local.set({ micOn });
-  } else if (micOn) {
-    await setMic(true);
+  } else {
+    await attach();
   }
   listDevices(); // names are visible now that we have permission
   if (!localStream) return false; // the call ended while it was starting
-  send({ type: 'mic', on: !!localStream.getAudioTracks().length });
-  if (!localStream.getAudioTracks().length) addChat('', 'Your mic is off. Click the mic button to talk.', 'system');
   render();
   return true;
 }
@@ -2849,7 +2937,11 @@ function endCall(reason, notify = false) {
   if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
   pc?.close();
   pc = null;
+  clearTimeout(failTimer);
   awaitingOffer = false;
+  attachOnOffer = null;
+  myOffer = '';
+  callPeer = null;
   audioTx = null;
   theirMicOn = null;
   localStream?.getTracks().forEach((t) => t.stop());
@@ -3011,7 +3103,7 @@ function render() {
   sendCallState();
   $('mic').title = localStream?.getAudioTracks().length ? 'Mic on: click to turn it off' : 'Mic off: click to talk';
   $('pip').hidden = !seeingThem;
-  $('hangup').hidden = !inCall;
+  $('hangup').hidden = !inCall || !!incoming;
   $('local').hidden = !localStream?.getVideoTracks().length;
   $('remoteMic').hidden = !(inCall && seeingThem && theirMicOn === false);
 

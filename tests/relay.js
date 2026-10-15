@@ -31,7 +31,7 @@ const closed = (ws) =>
 
 (async () => {
   const relay = spawn('node', [path.join(__dirname, '../server/server.js')], {
-    env: { ...process.env, PORT: String(PORT), TMDB_KEY: '' },
+    env: { ...process.env, PORT: String(PORT), TMDB_KEY: '', CF_TURN_KEY_ID: '', TURN_URLS: '' },
   });
   await sleep(800);
   try {
@@ -124,6 +124,9 @@ const closed = (ws) =>
       a.got.some((m) => m.type === 'pong'),
     );
 
+    // Calls: with no TURN configured, the relay hands out just the STUN server.
+    const iceRes = await (await fetch(`http://localhost:${PORT}/ice`)).json();
+    check('/ice gives call servers (STUN only without TURN)', iceRes.iceServers.length === 1 && /^stun:/.test(iceRes.iceServers[0].urls));
     // Tonight's deck: with no TMDB key the relay says so (the extension then uses TVmaze).
     const deckRes = await fetch(`http://localhost:${PORT}/deck?country=PH&platform=Netflix`);
     check('the deck needs a TMDB key (and says so)', deckRes.status === 503 && (await deckRes.json()).error === 'no-key');

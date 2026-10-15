@@ -573,9 +573,12 @@ const vstate = (p) =>
 
     section('Video call');
     await until(() => pB2.$eval('#start', (b) => !b.disabled));
+    const firstLogs = [];
+    for (const [tag, pg] of [['A', pA], ['B', pB2]]) pg.on('console', (m) => /watch-party/.test(m.text()) && firstLogs.push(`${tag} ${m.text().slice(0, 200)}`));
     await pA.click('#start');
     check('caller sees own camera', await until(() => pA.$eval('#local', (v) => !v.hidden && v.videoWidth > 0), 8000));
     check('callee gets "Join with camera"', await until(() => pB2.$eval('#join', (b) => !b.hidden), 8000));
+    check('…while ringing: Video, Voice and Decline, no Hang up', await pB2.evaluate(() => ['join', 'joinVoice', 'decline'].every((id) => !$(id).hidden) && $('hangup').hidden));
     check(
       'incoming call rings: "is calling" with Decline',
       await until(
@@ -583,9 +586,9 @@ const vstate = (p) =>
           (await text(pB2, '#phText')).includes('is calling') && (await pB2.$eval('#decline', (b) => !b.hidden)),
       ),
     );
-    check('callee already sees caller', await until(() => pB2.$eval('#remote', (v) => v.videoWidth > 0), 10000));
+    check('…and nothing connects until they pick up', await pB2.evaluate(() => !pc));
     await pB2.click('#join');
-    check('caller sees callee', await until(() => pA.$eval('#remote', (v) => v.videoWidth > 0), 10000));
+    check('caller sees callee', await until(() => pA.$eval('#remote', (v) => v.videoWidth > 0), 10000), '\n' + firstLogs.filter((l) => !/addIceCandidate/.test(l)).slice(-40).join('\n'));
     check(
       'call controls visible',
       (await pA.$eval('#mic', (b) => !b.hidden)) && (await pA.$eval('#hangup', (b) => !b.hidden)),
@@ -842,6 +845,8 @@ const vstate = (p) =>
     await pB2.click('#start');
     check('sidebar closed: the call shows on the video', await until(() => shown(vA, /is calling/), 20000));
     pA = await openPanel(A);
+    const callLogs = [];
+    for (const [tag, pg] of [['A', pA], ['B', pB2]]) pg.on('console', (m) => callLogs.push(`${tag} ${m.text().slice(0, 140)}`));
     check(
       'opening the sidebar picks up the ringing call',
       await until(() => pA.$eval('#decline', (b) => !b.hidden), 8000),
@@ -854,6 +859,7 @@ const vstate = (p) =>
           (await pA.$eval('#remote', (v) => v.videoWidth > 0)) && (await pB2.$eval('#remote', (v) => v.videoWidth > 0)),
         25000,
       ),
+      '\n' + callLogs.filter((l) => !/addIceCandidate/.test(l)).slice(-40).join('\n') + '\n' + JSON.stringify(await Promise.all([pA, pB2].map((p) => p.evaluate(() => ({ pc: pc?.connectionState, sig: pc?.signalingState, peer: callPeer, incoming: !!incoming, cam: !!localStream, log: [...document.querySelectorAll('#log .line')].slice(-4).map((l) => l.textContent) }))))),
     );
     check('the banner goes away once answered', await until(async () => !(await showingIn(vA))));
     await pA.click('#hangup');
