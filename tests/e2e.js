@@ -746,6 +746,7 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     // Leave ends the party: chat clears, and it's saved under Past parties.
     check('leaving clears the chat', await until(() => pB2.$$eval('#log .line', (l) => l.length === 0)));
     check('Watching bar hides when not in a party', await until(() => pB2.$eval('#watchBar', (b) => b.hidden)));
+    check('leaving forgets the other person in your header', await until(async () => (await text(pB2, '#names')) === 'Bob'), await text(pB2, '#names'));
     check('…the welcome screen offers to pick up where you left off', await until(() => pB2.$eval('#wlResume', (w) => !w.hidden)));
     check('Leave closes Settings and shows the welcome screen', await until(async () => !(await pB2.$eval('#settings', (d) => d.open)) && await pB2.$eval('#welcome', (w) => !w.hidden)));
     await pB2.click('#historyBtn');

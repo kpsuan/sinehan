@@ -182,6 +182,10 @@ $('disconnect').onclick = async () => {
   $('log').replaceChildren();
   seenChat.clear();
   theirShow = null;
+  // We left, so no "they left" message comes: forget them here (header back to just you).
+  peer = null;
+  askedPeer = false;
+  renderProfiles();
   document.body.classList.add('just-left');
   setTimeout(() => document.body.classList.remove('just-left'), 700);
   $('settings').open = false; // back to the welcome screen
