@@ -68,8 +68,6 @@ function onMessage(msg) {
   } else if (msg.type === 'now-watching') {
     theirShow = { url: msg.url, title: msg.title };
     renderWatch();
-  } else if (msg.type === 'watchlist-changed') {
-    if (!$('listView').hidden) listItems();
   } else if (msg.type === 'show-closed') {
     addChat('', `${peer?.name || 'They'} closed the show`, 'system');
   } else if (msg.type === 'profile') {
@@ -157,6 +155,7 @@ $('disconnect').onclick = () => {
   $('log').replaceChildren();
   seenChat.clear();
   theirShow = null;
+  $('settings').open = false; // back to the welcome screen
 };
 
 // Gear icon in the header shows/hides the settings section.
@@ -165,7 +164,7 @@ $('settings').addEventListener('toggle', () => $('settingsBtn').setAttribute('ar
 
 // ---- Welcome (not in a party yet) ----
 function renderWelcome() {
-  const show = !status.room && !$('settings').open && $('historyView').hidden && $('listView').hidden;
+  const show = !status.room && !$('settings').open && $('historyView').hidden && $('bestView').hidden;
   $('welcome').hidden = !show;
   document.body.classList.toggle('welcome', show);
 }
@@ -543,7 +542,7 @@ function addChat(name, text, kind, avatar, vt, into = $('log')) {
 // ---- Past parties ----
 let openSession = null;
 function showHistory(on) {
-  if (on) showList(false);
+  if (on) showBest(false);
   document.body.classList.toggle('show-history', on);
   $('historyView').hidden = !on;
   renderWelcome();
@@ -604,81 +603,140 @@ $('historyClear').onclick = () => {
   if (confirm('Delete all past parties? This can’t be undone.')) ask({ type: 'clear-sessions' }, listSessions);
 };
 
-// ---- Watchlist ----
-// Shared: what either of you saves shows up for both (the background keeps and syncs it).
-function showList(on) {
+// ---- Best episodes (from Reddit) ----
+// Reads what Reddit says about the show (reddit.js) and ranks the episodes people name most.
+function showBest(on) {
   if (on) showHistory(false);
-  document.body.classList.toggle('show-list', on);
-  $('listView').hidden = !on;
-  $('listBtn').setAttribute('aria-pressed', String(on));
+  document.body.classList.toggle('show-best', on);
+  $('bestView').hidden = !on;
   renderWelcome();
-  if (on) listItems();
-}
-$('listBtn').onclick = () => showList($('listView').hidden);
-$('listBack').onclick = () => showList(false);
-
-$('listSave').onclick = async () => {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }).catch(() => []);
-  if (!tab?.url?.startsWith('http')) return flashSave('Open a show first');
-  $('listSave').disabled = true;
-  ask({ type: 'watchlist-save', tabId: tab.id, by: myName() }, (r) => {
-    $('listSave').disabled = false;
-    flashSave(r?.ok ? 'Saved' : 'Couldn’t save');
-    listItems();
-  });
-};
-let saveTimer = null;
-function flashSave(text) {
-  $('listSave').textContent = text;
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => ($('listSave').textContent = 'Save this tab'), 1600);
-}
-
-function siteName(url) {
-  try {
-    return new URL(url).hostname.replace(/^(www|m)\./, '');
-  } catch {
-    return '';
+  if (!on) return;
+  const w = status.watch;
+  const name = w ? w.showTitle || tidyTitle(w.title) : '';
+  if (name && name !== $('bestQuery').dataset.for) {
+    $('bestQuery').value = name;
+    $('bestQuery').dataset.for = name;
+    askReddit();
+  } else if (!name) {
+    $('bestQuery').focus();
   }
 }
+$('bestBtn').onclick = () => showBest($('bestView').hidden);
+$('bestBack').onclick = () => showBest(false);
+$('bestForm').onsubmit = (e) => {
+  e.preventDefault();
+  askReddit();
+};
 
-function listItems() {
-  ask({ type: 'watchlist' }, (items = []) => {
-    $('items').replaceChildren(...items.map((x) => {
+// Tab titles carry the site's name and notification counts; keep just the show's name.
+function tidyTitle(title) {
+  return String(title || '')
+    .replace(/^\(\d+\)\s*/, '')
+    .replace(/\s*[|\-–—]\s*(YouTube|Netflix|Prime Video|Amazon\.com|Max|HBO Max|Crunchyroll|Disney\+|Hulu|Facebook)\b.*$/i, '')
+    .replace(/:?\s*\b(Season|S)\s*\d+.*$/i, '') // "Show: Season 2 Episode 3" → "Show"
+    .trim();
+}
+
+function note(text, button) {
+  const el = document.createElement('div');
+  el.className = 'b-note';
+  el.textContent = text;
+  if (button) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = button.label;
+    b.onclick = button.onClick;
+    el.append(document.createElement('br'), b);
+  }
+  return el;
+}
+const openTab = (url) => chrome.tabs.create({ url });
+
+let bestRun = 0;
+async function askReddit() {
+  const show = $('bestQuery').value.trim();
+  if (!show) return;
+  const run = ++bestRun;
+  $('bestResults').replaceChildren(note('Reading Reddit…'));
+  let r;
+  try {
+    r = await Reddit.bestEpisodes(show);
+  } catch {
+    if (run !== bestRun) return;
+    $('bestResults').replaceChildren(note('Reddit didn’t answer. It sometimes turns away requests unless you’re signed in to reddit.com in this browser.',
+      { label: 'Open the search on Reddit', onClick: () => openTab(Reddit.searchUrl(show)) }));
+    return;
+  }
+  if (run !== bestRun) return;
+  const out = [];
+  if (r.episodes.length) {
+    r.episodes.forEach((ep, i) => {
       const row = document.createElement('div');
-      row.className = 'item';
-      const thumb = document.createElement('span');
-      thumb.className = 'thumb';
-      if (/^https:\/\//.test(x.image || '')) thumb.style.backgroundImage = `url("${encodeURI(x.image)}")`;
-      else thumb.textContent = siteName(x.url).split('.')[0].slice(0, 10);
-      const text = document.createElement('span');
-      text.className = 'i-text';
-      const title = document.createElement('span');
-      title.className = 'i-title';
-      title.textContent = x.title || siteName(x.url);
-      title.title = x.title || x.url;
-      const meta = document.createElement('span');
-      meta.className = 'i-meta';
-      meta.textContent = `${siteName(x.url)} · saved by ${x.by === myName() ? 'you' : x.by || 'them'}`;
-      text.append(title, meta);
-      const watchBtn = document.createElement('button');
-      watchBtn.className = 'primary';
-      watchBtn.textContent = 'Watch';
-      watchBtn.title = status.connected ? 'Open it and bring them along' : 'Open it';
-      watchBtn.onclick = () => {
-        ask({ type: 'follow', url: x.url }, showStatus); // the show's tab goes there; they get "watching …"
-        showList(false);
+      row.className = 'ep';
+      const rankEl = document.createElement('span');
+      rankEl.className = 'e-rank';
+      rankEl.textContent = i + 1;
+      const body = document.createElement('div');
+      body.className = 'e-body';
+      const head = document.createElement('div');
+      head.className = 'e-head';
+      const labelEl = document.createElement('span');
+      labelEl.className = 'e-label';
+      labelEl.textContent = ep.label;
+      const count = document.createElement('span');
+      count.className = 'e-count';
+      count.textContent = `${ep.mentions} mention${ep.mentions === 1 ? '' : 's'}`;
+      head.append(labelEl, count);
+      const quote = document.createElement('span');
+      quote.className = 'e-quote';
+      quote.textContent = ep.quote;
+      const actions = document.createElement('div');
+      actions.className = 'e-actions';
+      const read = document.createElement('button');
+      read.type = 'button';
+      read.textContent = 'Read on Reddit';
+      read.onclick = () => openTab(ep.url);
+      const share = document.createElement('button');
+      share.type = 'button';
+      share.textContent = 'Share in chat';
+      share.disabled = !status.connected;
+      share.onclick = () => {
+        sendChat(`Reddit’s pick for ${r.show}: ${ep.label} (${ep.mentions} mention${ep.mentions === 1 ? '' : 's'})`);
+        share.textContent = 'Shared';
+        share.disabled = true;
       };
-      const remove = document.createElement('button');
-      remove.className = 'i-remove';
-      remove.title = 'Remove from the watchlist (for both of you)';
-      remove.setAttribute('aria-label', 'Remove');
-      remove.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>'; // fixed markup
-      remove.onclick = () => ask({ type: 'watchlist-delete', id: x.id }, listItems);
-      row.append(thumb, text, watchBtn, remove);
-      return row;
-    }));
-  });
+      actions.append(read, share);
+      body.append(head, quote, actions);
+      row.append(rankEl, body);
+      out.push(row);
+    });
+  } else {
+    out.push(note(r.threads.length ? 'Nobody named specific episodes. These threads talk about it:' : 'Reddit didn’t have threads about this. Try the show’s exact name.',
+      r.threads.length ? null : { label: 'Open the search on Reddit', onClick: () => openTab(r.searchUrl) }));
+  }
+  if (r.threads.length) {
+    const box = document.createElement('div');
+    box.className = 'b-threads';
+    const h = document.createElement('h2');
+    h.textContent = 'From these threads';
+    box.append(h);
+    for (const t of r.threads) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'thread';
+      const title = document.createElement('span');
+      title.className = 't-title';
+      title.textContent = t.title;
+      const meta = document.createElement('span');
+      meta.className = 't-meta';
+      meta.textContent = `${t.sub} · ${t.comments} comments`;
+      b.append(title, meta);
+      b.onclick = () => openTab(t.url);
+      box.append(b);
+    }
+    out.push(box);
+  }
+  $('bestResults').replaceChildren(...out);
 }
 
 // ---- Emoji tray ----

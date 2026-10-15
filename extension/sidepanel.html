@@ -156,7 +156,8 @@
     #watchTitle.none { color: var(--muted); }
     #watchHere { font-size: 12px; padding: 5px 9px; flex: none; }
     #handBtn, #countdownBtn, #breakBtn { flex: none; font-size: 12px; padding: 5px 8px; }
-    #handBtn svg, #breakBtn svg { width: 16px; height: 16px; }
+    #handBtn svg, #breakBtn svg, #bestBtn svg { width: 16px; height: 16px; }
+    #bestBtn { flex: none; padding: 5px 8px; }
     #remoteMic svg { width: 14px; height: 14px; }
     #countdownBtn { font-weight: 600; letter-spacing: .02em; }
     #handBtn.sent { animation: pulse .6s ease-out; }
@@ -173,7 +174,7 @@
     #settings .body { padding: 14px 12px; }
     .group + .group { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
     .field { display: block; color: var(--muted); font-size: 12px; }
-    .field + .field { margin-top: 10px; }
+    .field + .field, .field + [hidden] + .field { margin-top: 10px; }
     .field input, .field select { margin-top: 4px; }
     .profile { display: flex; align-items: flex-end; gap: 12px; }
     .profile .field { flex: 1; min-width: 0; }
@@ -279,22 +280,29 @@
     .session .s-meta { font-size: 12px; color: var(--muted); }
     #sessionLog { display: flex; flex-direction: column; gap: 6px; }
 
-    /* Watchlist (shared: both of you see the same list) */
-    body.show-list #watchBar, body.show-list #followBar, body.show-list #settings,
-    body.show-list .call, body.show-list .chat { display: none !important; }
-    #listView { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-    #items { flex: 1; overflow-y: auto; padding: 8px; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
-    #items:empty::before { content: 'Nothing saved yet. Open a show and click Save this tab, or right-click any page and pick Save to Sinehan watchlist. You both see this list.';
-      display: block; padding: 12px 6px; color: var(--faint); }
-    .item { display: flex; align-items: center; gap: 10px; padding: 8px; margin-bottom: 6px; border-radius: 7px; background: var(--soft); }
-    .item .thumb { flex: none; width: 72px; aspect-ratio: 16 / 9; border-radius: 5px; background: var(--field) center / cover no-repeat;
-      display: grid; place-items: center; color: var(--muted); font-size: 11px; font-weight: 600; }
-    .item .i-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-    .item .i-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .item .i-meta { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .item button { flex: none; font-size: 12px; padding: 5px 9px; }
-    .item .i-remove { border: 0; background: none; color: var(--muted); padding: 5px 6px; }
-    .item .i-remove:hover:not(:disabled) { color: var(--danger); background: none; }
+    /* Best episodes (from Reddit) */
+    body.show-best #watchBar, body.show-best #followBar, body.show-best #settings,
+    body.show-best .call, body.show-best .chat { display: none !important; }
+    #bestView { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+    #bestForm { display: flex; gap: 6px; padding: 8px; }
+    #bestForm input { flex: 1; min-width: 0; }
+    #bestForm button { flex: none; font-size: 12px; }
+    #bestResults { flex: 1; overflow-y: auto; padding: 0 8px 8px; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+    .b-note { padding: 10px 6px; color: var(--muted); font-size: 12px; }
+    .b-note button { margin-top: 8px; font-size: 12px; padding: 5px 9px; }
+    .ep { display: flex; gap: 10px; padding: 10px; margin-bottom: 6px; border-radius: 7px; background: var(--soft); }
+    .ep .e-rank { flex: none; width: 18px; color: var(--faint); font-weight: 600; font-variant-numeric: tabular-nums; }
+    .ep .e-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+    .ep .e-head { display: flex; align-items: baseline; gap: 8px; }
+    .ep .e-label { font-weight: 600; }
+    .ep .e-count { font-size: 12px; color: var(--muted); }
+    .ep .e-quote { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+    .ep .e-actions { display: flex; gap: 6px; margin-top: 4px; }
+    .ep .e-actions button { font-size: 11px; padding: 4px 8px; }
+    .b-threads h2 { margin: 14px 6px 8px; }
+    .thread { display: block; width: 100%; text-align: left; padding: 8px 10px; margin-bottom: 4px; border: 0; border-radius: 7px; background: none; }
+    .thread .t-title { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .thread .t-meta { display: block; font-size: 12px; color: var(--muted); }
     .field input[type='range'] { padding: 0; border: 0; background: none; box-shadow: none; accent-color: var(--accent); }
   </style>
 </head>
@@ -313,9 +321,6 @@
     <button id="historyBtn" class="icon" title="Past parties" aria-label="Past parties" aria-pressed="false">
       <svg viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6" /><path d="M3 4v4h4" /><path d="M12 8v4.5l3 1.8" /></svg>
     </button>
-    <button id="listBtn" class="icon" title="Watchlist" aria-label="Watchlist" aria-pressed="false">
-      <svg viewBox="0 0 24 24"><path d="M7 4h10a1 1 0 0 1 1 1v15l-6-4-6 4V5a1 1 0 0 1 1-1z" /></svg>
-    </button>
     <button id="settingsBtn" class="icon" title="Settings" aria-label="Settings" aria-pressed="true">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></svg>
     </button>
@@ -329,6 +334,7 @@
       <span id="watchTitle">Nothing yet</span>
     </div>
     <button id="watchHere" hidden title="Make the tab you're on the show you're watching together">Watch here</button>
+    <button id="bestBtn" class="icon" title="Best episodes, according to Reddit"><svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-.9z" /></svg></button>
     <button id="handBtn" class="icon" title="Hold their hand"><svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></svg></button>
     <button id="countdownBtn" class="icon" title="Count down 3-2-1 and play together">3·2·1</button>
     <button id="breakBtn" class="icon" title="CR break: pause for both of you"><svg viewBox="0 0 24 24"><path d="M14 4H6v16h8" /><path d="M14 4l5 2v14l-5-2z" /><path d="M11 12h.01" /></svg></button>
@@ -470,15 +476,19 @@
     <div id="sessionLog" hidden></div>
   </section>
 
-  <section id="listView" class="card" hidden>
+  <section id="bestView" class="card" hidden>
     <div class="hv-head">
-      <button id="listBack" class="icon" title="Back" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6" /></svg></button>
-      <h2>Watchlist</h2>
-      <button id="listSave" class="primary" title="Save the tab you're on">Save this tab</button>
+      <button id="bestBack" class="icon" title="Back" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6" /></svg></button>
+      <h2>Best episodes</h2>
     </div>
-    <div id="items"></div>
+    <form id="bestForm">
+      <input id="bestQuery" maxlength="100" placeholder="Show name" autocomplete="off" />
+      <button class="primary">Ask Reddit</button>
+    </form>
+    <div id="bestResults"></div>
   </section>
 
+  <script src="reddit.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>

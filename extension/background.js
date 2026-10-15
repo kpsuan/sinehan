@@ -148,15 +148,6 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       .then(({ sessions = [] }) => chrome.storage.local.set({ sessions: msg.type === 'clear-sessions' ? [] : sessions.filter((x) => x.id !== msg.id) }));
     historyWrite.then(() => reply({ ok: true }));
     return true;
-  } else if (msg.type === 'watchlist') {
-    watchlistWrite.then(readWatchlist).then(({ items }) => reply(items));
-    return true;
-  } else if (msg.type === 'watchlist-save') {
-    saveTab(msg.tabId, msg.by).then(reply);
-    return true;
-  } else if (msg.type === 'watchlist-delete') {
-    changeWatchlist({ removed: { [msg.id]: Date.now() } }, true).then(() => reply({ ok: true }));
-    return true;
   } else if (msg.type === 'set-watch') {
     setWatchTab(msg.tabId, true).then(() => reply(statusView()));
     return true;
@@ -298,110 +289,6 @@ function remember(msg) {
     .catch(console.error);
 }
 
-// ---- Shared watchlist ----
-// Both of you keep a copy; additions and removals go to the other side, and the two lists are merged
-// whenever you're both connected. An item's id is its show (so the same show saved twice is one item);
-// a removal is remembered with its time, so it wins over older copies but not over saving it again.
-const WATCHLIST_MAX = 100;
-let watchlistWrite = Promise.resolve();
-async function readWatchlist() {
-  const { watchlist } = await chrome.storage.local.get('watchlist');
-  return { items: watchlist?.items || [], removed: watchlist?.removed || {} };
-}
-function mergeWatchlist(list, { items = [], removed = {} }) {
-  const gone = { ...list.removed };
-  for (const [id, at] of Object.entries(removed)) if (typeof at === 'number' && !(gone[id] >= at)) gone[id] = at;
-  const byId = new Map();
-  for (const item of [...list.items, ...items]) {
-    if (!item?.id || !/^https?:\/\//.test(item.url || '') || gone[item.id] >= item.at) continue;
-    if (!(byId.get(item.id)?.at >= item.at)) byId.set(item.id, item);
-  }
-  // Removals only need remembering while an older copy might still turn up; keep the newest 300.
-  const removedKept = Object.fromEntries(Object.entries(gone).sort((a, b) => b[1] - a[1]).slice(0, 300));
-  return { items: [...byId.values()].sort((a, b) => b.at - a.at).slice(0, WATCHLIST_MAX), removed: removedKept };
-}
-// Apply a change (ours or theirs); `share` sends it to the other side too.
-function changeWatchlist(change, share) {
-  watchlistWrite = watchlistWrite
-    .then(readWatchlist)
-    .then((list) => chrome.storage.local.set({ watchlist: mergeWatchlist(list, change) }))
-    .then(() => {
-      for (const p of ports) if (p.name === 'panel') postTo(p, { type: 'watchlist-changed' });
-      if (share) send({ type: 'watchlist-sync', items: change.items || [], removed: change.removed || {} });
-    })
-    .catch(console.error);
-  return watchlistWrite;
-}
-function onTheirWatchlist(msg) {
-  const clean = (item) => item && {
-    id: String(item.id || '').slice(0, 600),
-    url: String(item.url || '').slice(0, 1000),
-    title: String(item.title || '').slice(0, 120),
-    image: /^https:\/\//.test(item.image || '') && item.image.length < 600 ? item.image : '',
-    by: String(item.by || '').slice(0, 30),
-    at: Number(item.at) || 0,
-  };
-  const items = (Array.isArray(msg.items) ? msg.items.slice(0, WATCHLIST_MAX) : []).map(clean);
-  changeWatchlist({ items, removed: msg.removed && typeof msg.removed === 'object' ? msg.removed : {} }, false);
-}
-function shareWatchlist() {
-  watchlistWrite.then(readWatchlist).then((list) => send({ type: 'watchlist-sync', ...list }));
-}
-
-// Tab titles carry the site's name and notification counts; keep just the show's name.
-function cleanTitle(title) {
-  return String(title || '')
-    .replace(/^\(\d+\)\s*/, '')
-    .replace(/\s*[|\-–—]\s*(YouTube|Netflix|Prime Video|Amazon\.com|Max|HBO Max|Crunchyroll|Disney\+|Hulu|Facebook)\b.*$/i, '')
-    .trim()
-    .slice(0, 120);
-}
-
-// Save a tab to the watchlist. The page itself is asked for its name and picture (Netflix's are looked up).
-async function saveTab(tabId, by) {
-  const tab = await chrome.tabs.get(tabId).catch(() => null);
-  if (!tab || !/^https?:\/\//.test(tab.url || '')) return { ok: false };
-  const info = await chrome.tabs.sendMessage(tabId, { type: 'page-info' }, { frameId: 0 }).catch(() => null);
-  const isWatch = watch?.tabId === tabId;
-  const name = by || (await chrome.storage.local.get('name')).name || 'Guest';
-  const item = {
-    id: showKey(tab.url),
-    url: tab.url,
-    title: info?.title || (isWatch && watch.showTitle) || cleanTitle(tab.title) || new URL(tab.url).hostname,
-    image: info?.image || (isWatch && watch.image) || youtubePicture(tab.url) || '',
-    by: String(name).slice(0, 30),
-    at: Date.now(),
-  };
-  await changeWatchlist({ items: [item] }, true);
-  return { ok: true, item };
-}
-function youtubePicture(url) {
-  try {
-    const u = new URL(url);
-    const v = u.searchParams.get('v');
-    return /(^|\.)youtube\.com$/.test(u.hostname) && /^[\w-]{6,20}$/.test(v || '') ? `https://i.ytimg.com/vi/${v}/hqdefault.jpg` : '';
-  } catch {
-    return '';
-  }
-}
-
-// Right-click any page: "Save to Sinehan watchlist".
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus?.create({
-    id: 'sinehan-save',
-    title: 'Save to Sinehan watchlist',
-    contexts: ['page', 'video'],
-    documentUrlPatterns: ['http://*/*', 'https://*/*'],
-  }, () => void chrome.runtime.lastError);
-});
-chrome.contextMenus?.onClicked.addListener((info, tab) => {
-  if (info.menuItemId !== 'sinehan-save' || tab?.id == null) return;
-  saveTab(tab.id).then((r) => {
-    const text = r.ok ? `Saved “${r.item.title}” to your watchlist` : 'Couldn’t save this page';
-    chrome.tabs.sendMessage(tab.id, { type: 'toast', text }, { frameId: 0 }).catch(() => {});
-  });
-});
-
 // ---- Incoming calls while the sidebar is closed ----
 // The call itself lives in the sidebar. If it's closed when they call, ring on the show's tab and with
 // a notification; opening the sidebar picks the call up.
@@ -485,8 +372,6 @@ function connect(server, room) {
     if (msg.type === 'joined' || msg.type === 'peer') status.peers = msg.count;
     if (msg.type === 'joined' && msg.count > 1) setTimeout(announceShow, 500); // let a returning partner know
     if (msg.type === 'peer' && msg.joined) setTimeout(announceShow, 500);
-    if ((msg.type === 'joined' && msg.count > 1) || (msg.type === 'peer' && msg.joined)) shareWatchlist();
-    if (msg.type === 'watchlist-add' || msg.type === 'watchlist-remove' || msg.type === 'watchlist-sync') onTheirWatchlist(msg);
     if (msg.type === 'companion-hello') setTimeout(announceShow, 300); // a phone joined: tell it what's on
     if (msg.type === 'rtc') onCallSignal(msg);
     if (msg.type === 'chat') {

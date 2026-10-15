@@ -741,26 +741,6 @@ function showInfo() {
   }
   return { image: pagePicture(), title: '' };
 }
-// Saving this page to the watchlist: its show name and picture (Netflix's looked up from the title page).
-if (window.top === window) {
-  chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
-    if (msg.type === 'toast') {
-      toast(msg.text);
-      return;
-    }
-    if (msg.type !== 'page-info') return;
-    const id = isNetflix && location.pathname.match(/^\/(?:watch|title)\/(\d+)/)?.[1];
-    const jbv = isNetflix && new URLSearchParams(location.search).get('jbv'); // a title opened over the browse page
-    const netflixId = id || (/^\d+$/.test(jbv || '') ? jbv : '');
-    if (!netflixId) {
-      reply({ title: '', image: pagePicture() });
-      return;
-    }
-    netflixLookup(netflixId).then((r) => reply({ title: r.title, image: r.image }), () => reply(null));
-    return true;
-  });
-}
-
 let reported = null;
 every(2000, () => {
   if (!isWatchTab || window.top !== window) return;

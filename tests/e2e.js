@@ -679,6 +679,7 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     // Leave ends the party: chat clears, and it's saved under Past parties.
     check('leaving clears the chat', await until(() => pB2.$$eval('#log .line', (l) => l.length === 0)));
     check('Watching bar hides when not in a party', await until(() => pB2.$eval('#watchBar', (b) => b.hidden)));
+    check('Leave closes Settings and shows the welcome screen', await until(async () => !(await pB2.$eval('#settings', (d) => d.open)) && await pB2.$eval('#welcome', (w) => !w.hidden)));
     await pB2.click('#historyBtn');
     const parties = await until(async () => { const t = await pB2.$$eval('#sessions .session', (s) => s.map((x) => x.textContent)); return t.length ? t : false; });
     check('the party is saved in Past parties', parties && /\d+ messages?/.test(parties[0]), JSON.stringify(parties));
@@ -688,10 +689,8 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     await pB2.click('#sessionDelete');
     check('a past party can be deleted', await until(async () => (await pB2.$$eval('#sessions .session', (x) => x.length)) === parties.length - 1));
     await pB2.click('#historyBtn');
-    check('closing Past parties returns to where you were', await pB2.evaluate(() => document.getElementById('historyView').hidden && !document.body.classList.contains('show-history')
-      && getComputedStyle(document.getElementById('settings')).display !== 'none'));
-    await pB2.click('#settingsBtn');
-    check('…and closing Settings shows the welcome screen (not in a party)', await pB2.$eval('#welcome', (w) => !w.hidden) && await pB2.$eval('.chat', (c) => getComputedStyle(c).display === 'none'));
+    check('closing Past parties returns to the welcome screen (not in a party)', await pB2.evaluate(() => document.getElementById('historyView').hidden && !document.body.classList.contains('show-history')
+      && !document.getElementById('welcome').hidden && getComputedStyle(document.querySelector('.chat')).display === 'none'));
 
     await connect(pB2, 'Bob', 'r2');
     await until(async () => (await text(pB2, '#status')) === 'Waiting for them to join');

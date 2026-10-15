@@ -153,8 +153,12 @@
     .step .n { display: block; margin-bottom: 18px; color: var(--accent); font-weight: 600; }
     .step b { color: var(--text); font-weight: 500; }
     code { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--panel-2); color: var(--text); padding: 2px 6px; border-radius: 5px; }
-    .end { padding: 140px 0 120px; text-align: center; }
-    .end h2 { margin: 0 0 10px; font-size: clamp(34px, 4vw, 48px); }
+    .end { position: relative; isolation: isolate; overflow: hidden; margin: 120px 0 0; padding: 88px 24px 92px; border-radius: 16px; text-align: center; background: var(--panel); }
+    .end::before { content: ''; position: absolute; inset: -40px; z-index: -2; background: url(/static/film-sintel.webp) center / cover; filter: blur(28px) saturate(1.35) brightness(.45); }
+    .end::after { content: ''; position: absolute; inset: 0; z-index: -1;
+      background: radial-gradient(70% 90% at 50% 110%, rgba(180, 156, 255, .2), transparent 70%), linear-gradient(rgba(16, 14, 14, .25), rgba(16, 14, 14, .55)); }
+    .end-logo { display: block; width: 44px; height: 44px; margin: 0 auto 22px; }
+    .end h2 { margin: 0 0 10px; font-size: clamp(34px, 4vw, 48px); line-height: 1.12; }
     .end p { margin: 0 0 30px; color: var(--muted); font-size: 18px; }
     footer { margin-top: 20px; padding: 56px 0 40px; color: var(--muted); font-size: 14px; }
     footer a:not(.pill):hover { color: var(--text); }
@@ -424,6 +428,7 @@
     </section>
 
     <section class="end">
+      <img class="end-logo" src="/static/logo.png" alt="" />
       <h2 class="display">Tonight's showing is for two.</h2>
       <p>Free, for Chrome and Edge.</p>
       <a class="pill light big" href="/download">Download Sinehan</a>
