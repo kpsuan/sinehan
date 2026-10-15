@@ -2274,7 +2274,7 @@ function drawGuessCard(card) {
   top.append(label);
   card.append(top);
   if (!g) return;
-  const whoName = g.mine ? 'You' : g.by || 'They';
+  const whoName = g.mine ? 'You' : g.by && g.by === myName() ? 'You (phone)' : g.by || 'They';
   if (!g.revealed) {
     const sealed = document.createElement('div');
     sealed.className = 'gq-sealed';

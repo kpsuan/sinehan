@@ -1388,6 +1388,19 @@ const vstate = (p) =>
       'phone: sees the show playing',
       await until(async () => (await phone.textContent('#clock')).startsWith('Playing')),
     );
+    // Who did it? from the phone: sealed on the laptops, opened when both laptops reveal.
+    await phone.evaluate(() => document.activeElement?.blur());
+    await phone.click('#guessBtn');
+    await phone.fill('#guessName', 'The gardener');
+    await phone.click('#guessLock');
+    const lastCard = (p) => p.locator('#log .guess-card').last();
+    check('phone: a guess locked on the phone shows sealed on the laptops', await until(async () => /locked a guess/i.test(await lastCard(pB2).innerText()) && !/gardener/i.test(await lastCard(pB2).innerText())));
+    await until(() => pA.evaluate(() => !$('sealedBar').hidden));
+    await pA.click('#sealedBar button.primary');
+    await until(() => pB2.evaluate(() => !$('sealedBar').hidden));
+    await pB2.click('#sealedBar button.primary');
+    check('…and opens on the laptops when both reveal, checked unchanged', await until(async () => /The gardener/.test(await lastCard(pB2).innerText()) && /unchanged/.test(await lastCard(pB2).innerText())),
+      await lastCard(pB2).innerText());
     await phone.evaluate(() => document.activeElement?.blur()); // keyboard down: the remote is back
     check('phone: the remote comes back when the keyboard closes', await until(() => phone.locator('#playBtn').isVisible()));
     await phone.click('#playBtn');

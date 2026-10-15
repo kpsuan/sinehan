@@ -86,6 +86,22 @@
     .reacts button { flex: 1; height: 42px; font-size: 22px; background: var(--raised); }
     form { display: flex; gap: 8px; }
     form button { flex: none; width: 48px; display: grid; place-items: center; background: var(--accent); color: var(--ink); }
+    /* Who did it? */
+    .guess-row { display: flex; gap: 6px; margin: 4px 0 8px; }
+    .guess-row button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; height: 40px; font-size: 14px; font-weight: 500; background: var(--raised); }
+    .guess-row svg { width: 17px; height: 17px; }
+    .guess { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; padding: 12px; border-radius: 12px; background: var(--raised); }
+    .guess[hidden] { display: none; }
+    .guess b { font-size: 15px; }
+    .guess small { color: var(--muted); font-size: 12px; }
+    .cast { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+    .cast button { flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 64px; padding: 0; background: none; font-size: 11px; color: var(--muted); }
+    .cast img, .cast i { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; background: var(--card); }
+    .cast button.on { color: var(--text); }
+    .cast button.on img, .cast button.on i { box-shadow: 0 0 0 2px var(--accent); }
+    .sealed { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+    .sealed svg { width: 15px; height: 15px; flex: none; }
+
     /* Typing: the keyboard takes the bottom of the screen, so the chat gets all of what's left */
     body.typing .app { height: var(--vvh, 100dvh); min-height: 0; overflow: hidden; }
     body.typing #main { display: flex; flex-direction: column; flex: 1; min-height: 0; }
@@ -137,6 +153,16 @@
         <p class="label">Chat</p>
         <div id="log"></div>
         <div id="typing"></div>
+        <div class="guess-row"><button type="button" id="guessBtn"><svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2" /><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" /></svg>Who did it?</button></div>
+        <div class="guess" id="guess" hidden>
+          <b>Who did it?</b>
+          <small id="guessFor">Lock in a guess. They only see that you locked one, until you both tap Reveal on the laptops.</small>
+          <div class="cast" id="guessCast"></div>
+          <input id="guessName" maxlength="80" placeholder="Pick someone above, or type a name" autocomplete="off" />
+          <input id="guessNote" maxlength="200" placeholder="Why? (optional)" autocomplete="off" />
+          <button type="button" class="primary" id="guessLock">Lock it in</button>
+          <div id="sealedList"></div>
+        </div>
         <div class="reacts" id="reacts"></div>
         <form id="form"><input id="msg" maxlength="500" placeholder="Message" autocomplete="off" />
           <button aria-label="Send"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></svg></button></form>
@@ -269,6 +295,7 @@
           setTimeout(() => { show = { time: m.time, paused: false, at: Date.now() }; renderShow(); }, 3000);
           renderShow();
         } else if (m.type === 'now-watching') {
+          showTitle = m.title || '';
           $('title').textContent = m.title || 'Something new';
           $('title').classList.remove('none');
         } else if (m.type === 'chat') {
@@ -285,6 +312,8 @@
         } else if (m.type === 'hand') {
           const c = $('handBtn'); c.classList.remove('glow'); void c.offsetWidth; c.classList.add('glow');
           note(`${m.name || 'They'} is holding your hand`, 2600);
+        } else if (m.type === 'guess-reveal-ask') {
+          revealAsked(String(m.show || ''));
         } else if (m.type === 'show-closed') {
           note('The show was closed', 4000);
         }
@@ -388,6 +417,102 @@
         line.append(avatarEl(Number(avatar) || 0), bubble);
         $('log').append(line);
         $('log').scrollTop = $('log').scrollHeight;
+      }
+
+      // ---- Who did it? ----
+      // Like the laptops: the guess is sealed with a fingerprint (sha256 of salt|name|note) and only the
+      // fingerprint is sent. The answer stays on this phone until both laptops tap Reveal; then it's opened,
+      // and the laptops check it matches. The show is keyed the same way the laptops key it.
+      let showTitle = '';
+      const tidy = (t) => String(t || '').replace(/^\(\d+\)\s*/, '')
+        .replace(/\s*[|\-–—]\s*(YouTube|Netflix|Prime Video|Amazon\.com|Max|HBO Max|Crunchyroll|Disney\+|Hulu|Facebook)\b.*$/i, '')
+        .replace(/:?\s*\b(Season|S)\s*\d+.*$/i, '').trim();
+      const showName = () => tidy(String(showTitle).replace(/^(Prime Video|Amazon\.com|Watch)\s*:\s*/i, '')).replace(/[\s\-–—:|·]+$/, '');
+      const norm = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+      const myGuesses = () => { try { return JSON.parse(store.get('sinehan-guesses') || '[]'); } catch { return []; } };
+      const saveGuesses = (list) => store.set('sinehan-guesses', JSON.stringify(list.slice(-50)));
+      const uid = () => (crypto.randomUUID && crypto.randomUUID()) || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      async function fingerprint(salt, text, note) {
+        const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${salt}|${text}|${note}`));
+        return [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('');
+      }
+      let castFor = '';
+      async function loadCast(name) {
+        if (!name || castFor === name) return;
+        castFor = name;
+        $('guessCast').replaceChildren();
+        try {
+          const r = await fetch(`https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(name)}&embed=cast`);
+          const cast = r.ok ? (await r.json())._embedded?.cast || [] : [];
+          if (castFor !== name) return;
+          $('guessCast').replaceChildren(...cast.slice(0, 20).map((c) => {
+            const who = c.character?.name || c.person?.name || '';
+            const img = String(c.character?.image?.medium || c.person?.image?.medium || '').replace(/^http:/, 'https:');
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.append(img ? Object.assign(document.createElement('img'), { src: img, alt: '', loading: 'lazy' }) : document.createElement('i'), who);
+            b.onclick = () => {
+              $('guessName').value = who;
+              $('guessCast').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+            };
+            return b;
+          }));
+        } catch {}
+      }
+      function drawSealed() {
+        const sealed = myGuesses().filter((g) => !g.revealed && Date.now() - g.at < 24 * 3600 * 1000);
+        $('sealedList').replaceChildren(...sealed.map((g) => {
+          const row = document.createElement('div');
+          row.className = 'sealed';
+          row.innerHTML = '<svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2" /><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" /></svg>'; // fixed icon
+          row.append(`Sealed: ${g.text} (${g.showName}). Reveal it from the laptops.`);
+          return row;
+        }));
+      }
+      $('guessBtn').onclick = () => {
+        $('guess').hidden = !$('guess').hidden;
+        if ($('guess').hidden) return;
+        const name = showName();
+        $('guessFor').textContent = name
+          ? `${name}: lock in a guess. They only see that you locked one, until you both tap Reveal on the laptops.`
+          : 'Start the show on a laptop first.';
+        loadCast(name);
+        drawSealed();
+      };
+      $('guessLock').onclick = async () => {
+        const name = showName();
+        const text = $('guessName').value.trim().slice(0, 80);
+        if (!name || !text) return note(!name ? 'Start the show on a laptop first.' : 'Pick or type a name first.', 2500);
+        const noteText = $('guessNote').value.trim().slice(0, 200);
+        const salt = uid();
+        const g = { id: uid(), show: norm(name), showName: name, text, note: noteText, salt, at: Date.now(), revealed: false };
+        g.hash = await fingerprint(salt, text, noteText);
+        saveGuesses([...myGuesses(), g]);
+        const vt = now();
+        send({ type: 'guess-lock', id: g.id, show: g.show, showName: name, ep: '', vt, by: me.name, at: g.at, hash: g.hash });
+        const chatId = uid();
+        seen.add(chatId);
+        send({ type: 'chat', id: chatId, name: me.name, avatar: me.avatar, text: 'locked a guess', guess: { id: g.id }, ...(vt == null ? {} : { vt }) });
+        addChat(me.name, `Locked a guess: ${text} (sealed)`, true, me.avatar);
+        $('guessName').value = $('guessNote').value = '';
+        $('guessCast').querySelectorAll('button').forEach((x) => x.classList.remove('on'));
+        $('guess').hidden = true;
+      };
+      // Each laptop sends "reveal" when its person taps it; once both have, open ours for that show.
+      const asks = {};
+      function revealAsked(show) {
+        if (!show) return;
+        asks[show] = (asks[show] || 0) + 1;
+        if (asks[show] < 2) return;
+        delete asks[show];
+        const list = myGuesses();
+        for (const g of list) {
+          if (g.show !== show || g.revealed) continue;
+          g.revealed = true;
+          send({ type: 'guess-open', id: g.id, text: g.text, note: g.note, image: '', salt: g.salt });
+        }
+        saveGuesses(list);
+        drawSealed();
       }
 
       $('leave').onclick = () => { ws.onclose = null; ws.close(); location.href = '/'; };
