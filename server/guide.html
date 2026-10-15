@@ -41,8 +41,34 @@
     .brand { display: inline-flex; align-items: center; gap: 8px; color: var(--text); font-size: 15px; font-weight: 600; }
     .brand img { width: 24px; height: 24px; }
     /* The poster is as tall as the text beside it: its top meets the kicker, its bottom the button */
-    .head { display: flex; align-items: stretch; gap: 28px; margin-top: auto; padding-top: 48px; }
-    .poster { flex: none; align-self: stretch; height: auto; width: auto; max-height: 360px; aspect-ratio: 2 / 3; border-radius: 12px; object-fit: cover; background: var(--raised); box-shadow: 0 24px 60px rgba(0, 0, 0, .55); }
+    /* The poster sits at the top of the row, level with the kicker */
+    .head { display: flex; align-items: flex-start; gap: 28px; margin-top: auto; padding-top: 48px; }
+    .poster-wrap { position: relative; flex: none; width: 200px; }
+    .poster { display: block; width: 100%; aspect-ratio: 2 / 3; border-radius: 10px; object-fit: cover; object-position: top; background: var(--raised); }
+    .art-btn { position: absolute; left: 8px; bottom: 8px; padding: 6px 10px; border-radius: 7px; background: rgba(12, 10, 16, .78); color: var(--text);
+      font-size: 12px; font-weight: 600; opacity: 0; transition: opacity .15s; }
+    .poster-wrap:hover .art-btn, .art-btn:focus-visible { opacity: 1; }
+    @media (hover: none) { .art-btn { opacity: 1; } }
+    /* Picking another poster or background */
+    .picker-panel { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; background: rgba(8, 6, 10, .92); backdrop-filter: blur(10px); }
+    .picker-head { display: flex; align-items: center; gap: 12px; padding: max(16px, env(safe-area-inset-top)) 20px 12px; }
+    .picker-head h2 { flex: 1; margin: 0; font-size: 18px; }
+    .picker-head button { padding: 8px 14px; border-radius: 8px; background: var(--raised); color: var(--text); font-weight: 600; }
+    .picker-tabs { display: flex; gap: 6px; padding: 0 20px 12px; }
+    .picker-tabs button { padding: 7px 14px; border-radius: 8px; color: var(--muted); font-weight: 600; font-size: 14px; }
+    .picker-tabs button[aria-pressed='true'] { background: var(--raised); color: var(--text); }
+    .picker-grid { flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; padding: 4px 20px 24px; align-content: start; }
+    .picker-grid.wide { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+    .picker-grid button { padding: 0; border-radius: 8px; overflow: hidden; background: var(--raised); }
+    .picker-grid img { display: block; width: 100%; aspect-ratio: 2 / 3; object-fit: cover; }
+    .picker-grid.wide img { aspect-ratio: 16 / 9; }
+    .picker-grid button.on { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .picker-grid .own { display: grid; place-items: center; aspect-ratio: 2 / 3; border-radius: 8px; background: var(--raised); color: var(--muted);
+      font-size: 13px; font-weight: 600; text-align: center; padding: 10px; cursor: pointer; }
+    .picker-grid.wide .own { aspect-ratio: 16 / 9; }
+    .picker-grid .own:hover { color: var(--text); background: #2a2334; }
+    .picker-reset { padding: 0 20px 20px; }
+    .picker-reset button { color: var(--muted); font-size: 13px; text-decoration: underline; }
     .kicker { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
     h1 { margin: 6px 0 4px; font-size: clamp(36px, 7vw, 68px); line-height: 1.02; letter-spacing: -0.035em; overflow-wrap: anywhere; text-shadow: 0 2px 24px rgba(0, 0, 0, .45); }
     .topic { margin: 0; font-size: clamp(18px, 2.4vw, 24px); font-weight: 500; color: var(--text); opacity: .92; }
@@ -117,7 +143,7 @@
     @media (max-width: 560px) {
       .hero { min-height: 0; }
       .head { gap: 16px; padding-top: 28px; align-items: flex-end; }
-      .poster { align-self: flex-end; width: 92px; height: auto; }
+      .poster-wrap { width: 96px; align-self: flex-end; }
       .summary { display: none; }
       /* Phones: the key art as a banner on top, the name and button below it */
       .backdrop { inset: 0 0 auto 0; width: 100%; height: 230px; -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); }
@@ -140,7 +166,10 @@
     <div class="wrap">
       <a class="brand" href="/"><img src="/static/logo.png" alt="" />sinehan</a>
       <div class="head">
-        <img class="poster" id="poster" alt="" hidden />
+        <div class="poster-wrap" id="posterWrap" hidden>
+          <img class="poster" id="poster" alt="" />
+          <button class="art-btn" id="artBtn" type="button" hidden>Change picture</button>
+        </div>
         <div class="head-text">
           <p class="kicker">Watch guide</p>
           <h1 id="show"></h1>
@@ -154,6 +183,16 @@
       <div class="bar"><i id="bar"></i></div>
     </div>
   </header>
+
+  <div class="picker-panel" id="picker" hidden role="dialog" aria-label="Choose artwork">
+    <div class="picker-head"><h2>Choose artwork</h2><button type="button" id="pickerClose">Done</button></div>
+    <div class="picker-tabs">
+      <button type="button" id="pickPosters" aria-pressed="true">Poster</button>
+      <button type="button" id="pickBackgrounds" aria-pressed="false">Background</button>
+    </div>
+    <div class="picker-grid" id="pickerGrid"></div>
+    <div class="picker-reset"><button type="button" id="pickerReset">Use the newest again</button></div>
+  </div>
 
   <main id="main" hidden>
     <div class="wrap">
@@ -416,17 +455,98 @@
           if (flat(show.name) !== flat(g.s)) return; // not sure it's the same show: no pictures rather than wrong ones
           $('show').textContent = officialName = show.name; // its official name ("911" -> "9-1-1")
           const art = (x) => String(x || '').replace(/^http:/, 'https:');
-          if (show.image?.medium) {
-            $('poster').src = art(show.image.medium);
-            $('poster').hidden = false;
-          }
-          // The wide key art for the header (or the poster, blurred, if there's none).
+          // Artwork: the newest by default, or what you picked for this show (kept on this device).
+          const artKey = `sinehan-art:${show.id}`;
+          let picked = {};
+          try { picked = JSON.parse(localStorage.getItem(artKey) || '{}'); } catch {}
+          const savePicked = () => { try { localStorage.setItem(artKey, JSON.stringify(picked)); } catch {} };
+          let posters = [];
+          let backgrounds = [];
+          const newest = (list) => [...list].sort((a, b) => b.id - a.id)[0];
+          const src = (img, size) => art(img?.resolutions?.[size]?.url || img?.resolutions?.original?.url);
+          const applyArt = () => {
+            const poster = posters.find((x) => x.id === picked.poster) || posters.find((x) => x.main) || newest(posters);
+            const posterUrl = picked.posterOwn || (poster ? src(poster, 'medium') : art(show.image?.medium));
+            if (posterUrl) {
+              $('poster').src = posterUrl;
+              $('posterWrap').hidden = false;
+            }
+            const bg = backgrounds.find((x) => x.id === picked.background) || newest(backgrounds);
+            if (picked.backgroundOwn) setBackdrop(picked.backgroundOwn, false);
+            else setBackdrop(bg ? src(bg, 'original') : art(show.image?.original), !bg);
+          };
+          applyArt();
           fetch(`https://api.tvmaze.com/shows/${show.id}/images`).then((x) => x.json()).then((images) => {
-            // The newest key art (TVmaze lists images oldest first; a newer one has a higher id).
-            const wide = images.filter((x) => x.type === 'background').sort((a, b) => b.id - a.id)[0];
-            const url = wide?.resolutions?.original?.url;
-            setBackdrop(url ? art(url) : art(show.image?.original), !url);
-          }).catch(() => setBackdrop(art(show.image?.original), true));
+            posters = images.filter((x) => x.type === 'poster').sort((a, b) => b.id - a.id);
+            backgrounds = images.filter((x) => x.type === 'background').sort((a, b) => b.id - a.id);
+            applyArt();
+          }).catch(() => {}).then(() => fetch(`https://api.tvmaze.com/shows/${show.id}/seasons`)).then((x) => x.json()).then((seasons) => {
+            // Each season's own poster too, newest season first.
+            for (const se of [...seasons].reverse()) {
+              if (se.image?.medium) posters.push({ id: `season-${se.number}`, type: 'poster', resolutions: { medium: { url: se.image.medium }, original: { url: se.image.original } } });
+            }
+          }).catch(() => {}).finally(() => ($('artBtn').hidden = false));
+
+          // The picker: every poster or background TVmaze has, newest first.
+          let pickKind = 'poster';
+          const showPicker = () => {
+            const list = pickKind === 'poster' ? posters : backgrounds;
+            const current = picked[`${pickKind}Own`] ? null : pickKind === 'poster'
+              ? (posters.find((x) => x.id === picked.poster) || posters.find((x) => x.main) || newest(posters))?.id
+              : (backgrounds.find((x) => x.id === picked.background) || newest(backgrounds))?.id;
+            $('pickPosters').setAttribute('aria-pressed', String(pickKind === 'poster'));
+            $('pickBackgrounds').setAttribute('aria-pressed', String(pickKind !== 'poster'));
+            $('pickerGrid').classList.toggle('wide', pickKind !== 'poster');
+            // First tile: your own picture (shrunk, kept on this device).
+            const own = document.createElement('label');
+            own.className = 'own';
+            own.innerHTML = '<span>Upload your own</span><input type="file" accept="image/*" hidden>'; // fixed markup
+            own.querySelector('input').onchange = async (ev) => {
+              const file = ev.target.files?.[0];
+              if (!file) return;
+              const bitmap = await createImageBitmap(file).catch(() => null);
+              if (!bitmap) return;
+              const w = pickKind === 'poster' ? 400 : 1600;
+              const c = document.createElement('canvas');
+              c.width = Math.min(w, bitmap.width);
+              c.height = Math.round((bitmap.height * c.width) / bitmap.width);
+              c.getContext('2d').drawImage(bitmap, 0, 0, c.width, c.height);
+              picked[`${pickKind}Own`] = c.toDataURL('image/jpeg', 0.82);
+              savePicked();
+              applyArt();
+              showPicker();
+            };
+            $('pickerGrid').replaceChildren(own, ...list.map((img) => {
+              const b = document.createElement('button');
+              b.type = 'button';
+              b.className = img.id === current ? 'on' : '';
+              const i = document.createElement('img');
+              i.src = src(img, pickKind === 'poster' ? 'medium' : 'original');
+              i.alt = '';
+              i.loading = 'lazy';
+              b.append(i);
+              b.onclick = () => {
+                delete picked[`${pickKind}Own`];
+                picked[pickKind] = img.id;
+                savePicked();
+                applyArt();
+                showPicker();
+              };
+              return b;
+            }));
+            $('picker').hidden = false;
+          };
+          $('artBtn').onclick = () => { pickKind = 'poster'; showPicker(); };
+          $('pickPosters').onclick = () => { pickKind = 'poster'; showPicker(); };
+          $('pickBackgrounds').onclick = () => { pickKind = 'background'; showPicker(); };
+          $('pickerClose').onclick = () => ($('picker').hidden = true);
+          $('pickerReset').onclick = () => {
+            picked = {};
+            savePicked();
+            applyArt();
+            showPicker();
+          };
+          document.addEventListener('keydown', (ev) => ev.key === 'Escape' && ($('picker').hidden = true));
           const about = String(show.summary || '').replace(/<[^>]+>/g, '').trim();
           if (about) {
             $('summary').textContent = about;
