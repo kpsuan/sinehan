@@ -1104,7 +1104,7 @@ const vstate = (p) =>
       { id: 'tv:2', kind: 'show', title: 'Bravo', sub: '2021', summary: '', image: '', url: 'https://example.com/bravo', where: '' },
       { id: 'tv:3', kind: 'show', title: 'Charlie', sub: '2022', summary: '', image: '', url: 'https://example.com/charlie', where: '' },
     ]; showBest(true); setEpisodesMode('tonight'); });
-    await pA.locator('.tn-row button.primary').click();
+    await pA.locator('.tn button.primary.wide').click();
     check('dealing a deck reaches them', await until(() => pB2.locator('.tn-card').count().then((n) => n > 0)));
     check('…with a note in their chat', (await logLines(pB2)).some((l) => /dealt a deck/.test(l.text)));
     const swipe = async (pg, yes) => { await pg.locator(`.tn-votes .${yes ? 'yes' : 'no'}`).click(); await sleep(450); };
@@ -1466,6 +1466,9 @@ const vstate = (p) =>
       return t.length ? t : false;
     });
     check('the party is saved in Past parties', parties && /\d+ messages?/.test(parties[0]), JSON.stringify(parties));
+    check('…without one-message parties', await pB2.$$eval('#sessions .s-meta', (m) => m.every((x) => !/· 1 message$/.test(x.textContent))));
+    check('…named after the show, not the tab', await pB2.$$eval('#sessions .s-title', (t) => t.every((x) => !/ - YouTube|Prime Video:/.test(x.textContent))));
+    check('Tonight has a platform filter', await pA.evaluate(() => typeof PLATFORMS !== 'undefined' && PLATFORMS.some(([v]) => v === 'Netflix')));
     await pB2.click('#sessions .session');
     check(
       'a past party can be read back',

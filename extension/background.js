@@ -54,6 +54,11 @@ chrome.runtime.onConnect.addListener((port) => {
     }
     if (msg.type === 'position') {
       if (fromWatchTab) lastPos = { time: msg.time, paused: msg.paused, at: Date.now() };
+      // Past parties are named after what actually played, not every tab that was picked.
+      if (fromWatchTab && watch && !msg.paused && !watch.played) {
+        watch.played = true;
+        noteShow(showName(watch.showTitle || watch.title));
+      }
       return;
     }
     if (msg.type === 'meta') {
@@ -293,8 +298,9 @@ async function archiveNow() {
     sessions = [],
   } = await chrome.storage.local.get(['history', 'room', 'partyShows', 'sessions']);
   const update = { history: [], partyShows: [] };
-  if (history.length) {
-    const shows = [...new Set([...partyShows, watch?.title].filter(Boolean))];
+  if (history.length > 1) {
+    // (a party with a single line, like the invite note, isn't worth keeping)
+    const shows = [...new Set(partyShows.filter(Boolean))];
     update.sessions = [
       { id: crypto.randomUUID(), room, startedAt: history[0].at, endedAt: Date.now(), shows, messages: history },
       ...sessions,
@@ -304,6 +310,18 @@ async function archiveNow() {
 }
 function archiveParty() {
   historyWrite = historyWrite.then(archiveNow).catch(console.error);
+}
+
+// A show's name from its tab title: "Prime Video: The Mentalist - Season 3" → "The Mentalist".
+function showName(title) {
+  return String(title || '')
+    .replace(/^\(\d+\)\s*/, '')
+    .replace(/^(Prime Video|Amazon\.com|Watch)\s*:\s*/i, '')
+    .replace(/\s*[|\-–—]\s*(YouTube|Netflix|Prime Video|Amazon\.com|Max|HBO Max|Crunchyroll|Disney\+|Hulu|Facebook).*$/i, '')
+    .replace(/:?\s*(Season|S)\s*\d+.*$/i, '')
+    .replace(/[\s\-–—:|·]+$/, '')
+    .trim()
+    .slice(0, 120);
 }
 
 // Remember what this party watched, for its title in "Past parties".
@@ -696,7 +714,6 @@ function clearWatch() {
 function announceShow(from) {
   if (!watch || !/^https?:/.test(watch.url)) return;
   const title = watch.showTitle || watch.title;
-  noteShow(title);
   send({ type: 'now-watching', url: watch.url, title, from });
 }
 

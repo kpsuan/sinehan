@@ -987,15 +987,16 @@ function listSessions() {
   $('sessions').hidden = false;
   $('sessionDelete').hidden = true;
   ask({ type: 'sessions' }, (sessions = []) => {
-    $('historyClear').hidden = !sessions.length;
+    $('historyClear').hidden = !sessions.some((x) => x.count > 1);
     $('sessions').replaceChildren(
-      ...sessions.map((x) => {
+      ...sessions.filter((x) => x.count > 1).map((x) => {
         const b = document.createElement('button');
         b.className = 'session';
         b.type = 'button';
         const title = document.createElement('span');
         title.className = 's-title';
-        title.textContent = x.shows?.length ? x.shows.join(' · ') : 'Watch party';
+        const shows = [...new Set((x.shows || []).map(inviteTitle).filter(Boolean))];
+        title.textContent = shows.length ? shows.join(' · ') : 'Watch party';
         const meta = document.createElement('span');
         meta.className = 's-meta';
         meta.textContent = `${partyDate(x.endedAt)} · ${x.count} message${x.count === 1 ? '' : 's'}`;
@@ -1087,6 +1088,19 @@ $('modeTonight').onclick = () => setEpisodesMode('tonight');
 const X_ICON = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>';
 const HEART_ICON = '<svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></svg>';
 const GENRES = ['Any', 'Crime', 'Drama', 'Comedy', 'Thriller', 'Mystery', 'Romance', 'Science-Fiction', 'Fantasy', 'Action', 'Horror', 'Anime', 'Family'];
+// Where it streams: TVmaze's web channel (or network, for HBO) names.
+const PLATFORMS = [
+  ['Any', 'Any platform', null],
+  ['Netflix', 'Netflix', /netflix/i],
+  ['Prime Video', 'Prime Video', /prime video|amazon/i],
+  ['Disney+', 'Disney+', /disney\+/i],
+  ['Max', 'Max / HBO', /^(max|hbo|hbo max)$/i],
+  ['Hulu', 'Hulu', /hulu/i],
+  ['Apple TV+', 'Apple TV+', /apple tv/i],
+  ['Paramount+', 'Paramount+', /paramount\+/i],
+  ['Peacock', 'Peacock', /peacock/i],
+  ['Crunchyroll', 'Crunchyroll', /crunchyroll/i],
+];
 let tonight = null; // the deck from the background
 let tonightSeenMatches = new Set();
 let dealing = false;
@@ -1126,11 +1140,12 @@ const tvCard = (s) => {
     image: String(s.image?.medium || '').replace(/^http:/, 'https:'), url, where,
   };
 };
-async function dealDeck(genre) {
+async function dealDeck(genre, platform = 'Any') {
+  const onPlatform = PLATFORMS.find(([v]) => v === platform)?.[2];
   const cards = [];
   // 1. Carry on with what you're watching: each saved guide's next episode.
   const saved = (await askP({ type: 'guides' })) || [];
-  for (const x of saved.slice(0, 4)) {
+  for (const x of platform === 'Any' ? saved.slice(0, 4) : []) {
     const g = await askP({ type: 'guide-get', id: x.id });
     const next = g?.episodes.find((e) => !isDone(g, e.key));
     if (!next) continue;
@@ -1148,11 +1163,13 @@ async function dealDeck(genre) {
       sub: `Up next: ${next.kind ? next.title : `${next.label}${next.title ? ` · ${next.title}` : ''}`}`, summary: '', image, url: url || (await guidePageLink({ ...g, saved: true })), where: '' });
   }
   // 2. Well-liked shows from TVmaze in that genre (a few pages of its catalogue, the most-watched first).
+  // One platform is a smaller slice of the catalogue, so it looks through more pages.
   const pages = new Set();
-  while (pages.size < 4) pages.add(Math.floor(Math.random() * 300));
+  while (pages.size < (onPlatform ? 12 : 4)) pages.add(Math.floor(Math.random() * 300));
   const shows = (await Promise.all([...pages].map((n) => fetch(`https://api.tvmaze.com/shows?page=${n}`).then((r) => (r.ok ? r.json() : [])).catch(() => [])))).flat();
   const picks = shows
-    .filter((s) => s.image?.medium && (s.rating?.average || 0) >= 7 && (s.weight || 0) >= 70 && (genre === 'Any' || (s.genres || []).includes(genre)))
+    .filter((s) => s.image?.medium && (s.rating?.average || 0) >= 7 && (s.weight || 0) >= (onPlatform ? 60 : 70) && (genre === 'Any' || (s.genres || []).includes(genre)))
+    .filter((s) => !onPlatform || onPlatform.test(s.webChannel?.name || s.network?.name || ''))
     .sort((a, b) => (b.weight || 0) - (a.weight || 0) || (b.rating?.average || 0) - (a.rating?.average || 0))
     .slice(0, 30);
   for (let i = picks.length - 1; i > 0; i--) {
@@ -1180,15 +1197,17 @@ function renderTonight() {
       : 'Start a party first. Then deal a deck and you each swipe; a show you both like is a match.'));
     const genre = el('select', { id: 'tnGenre' });
     genre.append(...GENRES.map((g) => new Option(g === 'Any' ? 'Any genre' : g.replace('Science-Fiction', 'Sci-fi'), g)));
-    const deal = el('button', { type: 'button', className: 'primary', textContent: dealing ? 'Dealing…' : 'Deal a deck', disabled: !together || dealing });
+    const platform = el('select', { id: 'tnPlatform' });
+    platform.append(...PLATFORMS.map(([v, label]) => new Option(label, v)));
+    const deal = el('button', { type: 'button', className: 'primary wide', textContent: dealing ? 'Dealing…' : 'Deal a deck', disabled: !together || dealing });
     deal.onclick = async () => {
       dealing = true;
       renderTonight();
-      const cards = await dealDeck(genre.value).catch(() => []);
+      const cards = await dealDeck(genre.value, platform.value).catch(() => []);
       dealing = false;
       if (!cards.length) {
         renderTonight();
-        $('bestResults').append(note('Couldn’t find shows just now. Try another genre.'));
+        $('bestResults').append(note('Couldn’t find shows just now. Try another genre or platform.'));
         return;
       }
       ask({ type: 'match-start', cards, by: myName() }, (deck) => {
@@ -1196,7 +1215,7 @@ function renderTonight() {
         renderTonight();
       });
     };
-    out.push(el('div', { className: 'tn-row' }, genre, deal));
+    out.push(el('div', { className: 'tn-row' }, genre, platform), deal);
     $('bestResults').replaceChildren(el('div', { className: 'tn' }, ...out));
     return;
   }
