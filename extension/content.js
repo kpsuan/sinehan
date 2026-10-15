@@ -139,6 +139,7 @@ function attach(v) {
   // Just opened the show (e.g. from an invite link)? Ask the other side where they are
   // (unless this is an ad's own player taking over; we re-sync when the ad ends).
   if (isWatchTab && !detectAd()) post({ type: 'sync-request' });
+  if (isWatchTab) checkResume();
 }
 
 // ---- Invite page (served by the relay at /join) ----
@@ -187,6 +188,7 @@ function onRemote(msg) {
     isWatchTab = !!msg.watching;
     hasWatch = !!msg.hasWatch;
     if (isWatchTab && !was && video && !detectAd()) post({ type: 'sync-request' });
+    if (isWatchTab && !was && video) checkResume();
     if (!isWatchTab && overlay) {
       overlay.destroy();
       overlay = null;
@@ -219,6 +221,7 @@ function onRemote(msg) {
   if (msg.type === 'countdown') return startCountdown(msg.time);
   if (msg.type === 'now-watching') return showFollowBanner(msg.url, msg.title, msg.from);
   if (msg.type === 'show-closed') return pauseFor('They closed the show. Paused.');
+  if (msg.type === 'goodnight') return goodnight(msg.time, msg.name);
   if (msg.type === 'rtc') {
     if (msg.bye) callBannerOff();
     return;
@@ -563,6 +566,36 @@ function callBannerOff() {
   callEl = null;
 }
 
+// ---- Stop for tonight ----
+// Pause both of you where you are; the spot is saved (by the background) for next time.
+function goodnight(time, name) {
+  if (!video) return;
+  if (myBreak) {
+    myBreak = false;
+    breakBanner(null);
+    post({ local: true, type: 'break-state', active: false });
+  }
+  clearTheirHolds();
+  applied = { paused: true, time: typeof time === 'number' ? time : video.currentTime, until: Date.now() + 1500 };
+  video.pause();
+  if (typeof time === 'number' && Math.abs(video.currentTime - time) > 1) seek(time);
+  toast(`${name ? `${name} stopped for tonight. ` : 'Goodnight. '}Saved at ${clock(typeof time === 'number' ? time : video.currentTime)}.`);
+}
+// Opened from "Pick up where you left off": go to the saved spot, paused, once the player is ready.
+function checkResume() {
+  setTimeout(() => {
+    if (!isWatchTab || !video) return;
+    ask({ type: 'resume-check', url: location.href }, (r) => {
+      if (typeof r?.time !== 'number' || !video) return;
+      applied = { paused: true, time: r.time, until: Date.now() + 2000 };
+      video.pause();
+      seek(r.time);
+      toast(`Back where you left off, ${clock(r.time)}. Press play when you’re ready.`);
+      setTimeout(() => sendState('state'), 1200); // line them up with this spot
+    });
+  }, 1500);
+}
+
 // ---- CR break ----
 // You pause both of you; they see who's away and for how long. "I'm back" counts you both back in.
 let myBreak = false;
@@ -825,6 +858,12 @@ async function onLocal(msg) {
     callBannerOff();
   } else if (msg.type === 'ringing') {
     if (isWatchTab && document.fullscreenElement) callBanner(msg.name, false); // the sidebar is ringing
+  } else if (msg.type === 'goodnight-start') {
+    if (isWatchTab && video) {
+      const time = video.currentTime;
+      post({ type: 'goodnight', time, name: me.name, url: location.href });
+      goodnight(time, null);
+    }
   } else if (msg.type === 'break-toggle') {
     if (isWatchTab && video) toggleBreak();
   } else if (msg.type === 'countdown-start') {

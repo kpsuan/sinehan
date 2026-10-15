@@ -145,6 +145,7 @@ async function connect(panel, name, room, server = RELAY) {
 async function leave(panel) {
   if (!(await panel.$eval('#settings', (d) => d.open))) await panel.click('#settingsBtn');
   await panel.click('#disconnect');
+  await until(async () => (await panel.$eval('#disconnect', (b) => b.textContent)) === 'Leave', 4000); // past the "Leaving…" moment
 }
 const text = (p, sel) => p.$eval(sel, (el) => el.textContent.trim());
 const logLines = (p) => p.$$eval('#log .line', (ls) => ls.map((l) => ({ cls: l.className, text: l.textContent.trim() })));
@@ -577,6 +578,8 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     check('…then both play together', await until(async () => { const a = await vstate(vA2); const b = await vstate(vB); return !a.paused && !b.paused && Math.abs(a.t - b.t) < 1; }, 6000), await both());
 
     await pA.click('#breakBtn');
+    check('Break offers CR break or Stop for tonight', await pA.$eval('#breakMenu', (m) => !m.hidden));
+    await pA.click('#crBreak');
     check('CR break pauses both', await until(async () => (await vstate(vA2)).paused && (await vstate(vB)).paused, 5000), await both());
     check('…they see who is away, with a timer', await until(() => shown(vB, /fran is on a CR break\s*\d+:\d\d/)));
     check('…and you get an "I’m back" button', await until(async () => (await text(pA, '#breakBtn')) === 'I’m back') && await shown(vA2, /I’m back/));
@@ -591,8 +594,13 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     check('…and is told why', await until(() => shown(vB, /loading/i)));
     await vA2.evaluate(() => { const v = document.getElementById('v'); v.playbackRate = 1; v.dispatchEvent(new Event('playing')); });
     check('…then both continue', await until(async () => !(await vstate(vB)).paused && !(await vstate(vA2)).paused, 5000), await both());
-    await vA2.evaluate(() => document.getElementById('v').pause());
-    await until(async () => (await vstate(vB)).paused);
+    // Stop for tonight: both pause, and both save the spot for next time.
+    const savedSpot = (p) => p.evaluate(() => new Promise((r) => chrome.runtime.sendMessage({ type: 'resume' }, r)));
+    await pA.click('#breakBtn');
+    await pA.click('#goodnightBtn');
+    check('Stop for tonight pauses both', await until(async () => (await vstate(vA2)).paused && (await vstate(vB)).paused, 5000), await both());
+    check('…they are told', await until(() => shown(vB, /stopped for tonight/)));
+    check('…and both save the spot', await until(async () => typeof (await savedSpot(pA))?.time === 'number' && typeof (await savedSpot(pB2))?.time === 'number'), JSON.stringify(await savedSpot(pB2)));
 
     // ---------------------------------------------------------------
     section('Phone companion');
@@ -679,6 +687,7 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     // Leave ends the party: chat clears, and it's saved under Past parties.
     check('leaving clears the chat', await until(() => pB2.$$eval('#log .line', (l) => l.length === 0)));
     check('Watching bar hides when not in a party', await until(() => pB2.$eval('#watchBar', (b) => b.hidden)));
+    check('…the welcome screen offers to pick up where you left off', await until(() => pB2.$eval('#wlResume', (w) => !w.hidden)));
     check('Leave closes Settings and shows the welcome screen', await until(async () => !(await pB2.$eval('#settings', (d) => d.open)) && await pB2.$eval('#welcome', (w) => !w.hidden)));
     await pB2.click('#historyBtn');
     const parties = await until(async () => { const t = await pB2.$$eval('#sessions .session', (s) => s.map((x) => x.textContent)); return t.length ? t : false; });

@@ -185,6 +185,7 @@
     const eps = (data?._embedded?.episodes || [])
       .filter((e) => e.season && e.number)
       .map((e) => ({ key: `S${e.season}E${e.number}`, season: e.season, number: e.number, name: String(e.name || '').trim(),
+        text: `${String(e.summary || '').replace(/<[^>]+>/g, ' ')} ${wiki.get(`S${e.season}E${e.number}`) || ''}`.replace(/\s+/g, ' ').trim(),
         words: stems(`${e.name} ${e.summary || ''} ${wiki.get(`S${e.season}E${e.number}`) || ''}`) }));
     if (!eps.length) return null;
     // How rare each word is across the show: "bomb" says a lot, the main characters' names don't.
@@ -374,7 +375,176 @@
     return result;
   }
 
-  const api = { bestEpisodes, episodesIn, rank, label, snippet, makeGuide, wikiSummaries, describedIn, titleIn, stems, searchUrl: (show) => `https://www.reddit.com/search/?q=${encodeURIComponent(`${show} best episodes`)}` };
+  // ---- Watch guide ----
+  // "Which episodes do we actually need?" (optionally for one story: "Red John"). Built from a guide
+  // thread you trust, Reddit's own guide threads, and episode summaries that mention the topic.
+
+  // Episodes listed in a guide's text, in order: "S1E2", "1x02", "Season 2" headings with "Ep 4"
+  // under them, or a line that starts with an episode's title.
+  function listedIn(text, guide) {
+    const out = [];
+    let season = null;
+    for (const raw of String(text || '').split(/\n+/)) {
+      const line = raw.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').trim();
+      if (!line) continue;
+      let keys = [...episodesIn(line).keys()];
+      const heading = line.match(/^[#*_\s]*season\s+(\d{1,2})\b/i);
+      if (heading && !keys.some((k) => k.startsWith('S'))) season = Number(heading[1]);
+      if (season) keys = keys.map((k) => (k.startsWith('E') ? `S${season}${k}` : k));
+      // "4. Red John's Friends – where it starts" under a season heading, or a bare title line
+      const bare = line.replace(/^[\s>*\-+#|•·]*(\d{1,3}[.)]\s+)?/, '');
+      if (!keys.length && season && /^(\d{1,3})[.)]\s/.test(line.replace(/^[\s>*\-+•·]*/, ''))) {
+        const n = Number(line.replace(/^[\s>*\-+•·]*/, '').match(/^(\d{1,3})/)[1]);
+        if (guide?.byKey.has(`S${season}E${n}`)) keys = [`S${season}E${n}`];
+      }
+      if (!keys.length && guide) {
+        const b = ` ${norm(bare)} `;
+        let match = null;
+        for (const e of guide.eps) {
+          const t = norm(e.name);
+          if (t.length < 4 || !b.startsWith(` ${t} `) || (match && t.length <= norm(match.name).length)) continue;
+          // The title has to stand alone ("Red John – the finale"), not open a sentence ("Red John watch guide").
+          const after = bare.slice(e.name.length).trim();
+          if (!after || /^[-–—:|(,.]/.test(after)) match = e;
+        }
+        if (match) keys = [match.key];
+      }
+      for (const key of keys) {
+        if (!/^S\d+E\d+$/.test(key)) continue;
+        // Why it's on the list: the line minus its numbering and the episode's title.
+        let reason = bare.replace(/^season\s*\d+\s*[:\-–—]?\s*/i, '').replace(/^(s\d+\s*e\d+|\d+x\d+|ep(isode)?\.?\s*\d+)\s*[-–—:|.]*\s*/i, '');
+        const title = guide?.byKey.get(key)?.name || '';
+        if (title && norm(reason).startsWith(norm(title))) reason = reason.slice(title.length);
+        reason = reason.replace(/^\s*[-–—:|,.]+\s*/, '').trim();
+        out.push({ key, reason: reason.length > 150 ? `${reason.slice(0, 150).replace(/\s\S*$/, '')}…` : reason });
+      }
+    }
+    return out;
+  }
+
+  // A Reddit thread from any of its link forms: reddit.com/r/x/comments/id/…, old.reddit, redd.it/id.
+  function threadPath(link) {
+    try {
+      const u = new URL(String(link || '').trim());
+      if (/(^|\.)redd\.it$/.test(u.hostname)) return `/comments/${u.pathname.split('/')[1]}`;
+      if (!/(^|\.)reddit\.com$/.test(u.hostname)) return null;
+      const m = u.pathname.match(/^(\/r\/[^/]+)?\/comments\/([a-z0-9]+)/i);
+      return m ? `${m[1] || ''}/comments/${m[2]}` : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function readThread(path) {
+    const [post, list] = await getJson(`${path}.json?sort=top&limit=200&depth=1&raw_json=1`);
+    const d = post?.data?.children?.[0]?.data || {};
+    const comments = (list?.data?.children || []).filter((c) => c.kind === 't1' && c.data?.body)
+      .map((c) => ({ body: c.data.body, score: c.data.score || 0, url: `https://www.reddit.com${c.data.permalink}` }));
+    return { title: d.title || '', body: `${d.title || ''}\n${d.selftext || ''}`, sub: d.subreddit_name_prefixed || '', upvotes: d.score || 0,
+      comments, url: `https://www.reddit.com${d.permalink || path}` };
+  }
+
+  async function watchGuide(show, topic = '', link = '') {
+    const name = String(show || '').trim().slice(0, 100);
+    if (!name) throw new Error('no show');
+    topic = String(topic || '').trim().slice(0, 60);
+    const guide = await episodeGuide(name);
+    const entries = new Map(); // key -> { key, pasted, guides: Set, comments, summary, reason, url }
+    const entry = (key) => {
+      if (!entries.has(key)) entries.set(key, { key, pasted: false, guides: new Set(), comments: 0, summary: false, reason: '', url: '' });
+      return entries.get(key);
+    };
+    const threads = [];
+    const problems = [];
+
+    // A guide's post lists the episodes; its comments add ones people say it missed.
+    const useThread = (t, pasted) => {
+      threads.push({ title: t.title, sub: t.sub, upvotes: t.upvotes, comments: t.comments.length, url: t.url, pasted });
+      const listed = listedIn(t.body, guide);
+      for (const { key, reason } of listed) {
+        const e = entry(key);
+        if (pasted) e.pasted = true;
+        e.guides.add(t.url);
+        if (reason && (!e.reason || (pasted && !e.fromPasted))) {
+          e.reason = reason;
+          e.url = t.url;
+          e.fromPasted = pasted;
+        }
+      }
+      for (const c of t.comments.slice(0, 60)) {
+        for (const { key, reason } of listedIn(c.body, guide)) {
+          const e = entry(key);
+          e.comments += 1;
+          e.commentVotes = (e.commentVotes || 0) + Math.max(0, c.score);
+          if (!e.reason && reason) {
+            e.reason = reason;
+            e.url = c.url;
+          }
+        }
+      }
+      return listed.length;
+    };
+
+    // 1. The thread you pasted.
+    const path = link ? threadPath(link) : null;
+    if (link && !path) problems.push('That link isn’t a Reddit thread.');
+    if (path) {
+      try {
+        if (!useThread(await readThread(path), true)) problems.push('Your thread didn’t list episodes we could read, so other guides were used too.');
+      } catch {
+        problems.push('Reddit didn’t open your thread.');
+      }
+    }
+
+    // 2. Reddit's own guide threads.
+    try {
+      const q = `${name} ${topic || 'essential'} episodes guide`;
+      const search = await getJson(`/search.json?q=${encodeURIComponent(q)}&sort=relevance&t=all&type=link&limit=25&raw_json=1`);
+      const want = norm(name);
+      const pastedId = path?.match(/comments\/([a-z0-9]+)/i)?.[1];
+      const found = (search?.data?.children || []).map((c) => c.data)
+        .filter((d) => d && !d.over_18 && d.id !== pastedId && /guide|essential|must|important|skip|list|order|arc|episodes|watch/i.test(d.title))
+        .filter((d) => norm(d.title).includes(want) || norm(d.subreddit).includes(want.replace(/ /g, '')))
+        .filter((d) => !topic || norm(`${d.title} ${d.selftext}`).includes(norm(topic)))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 3);
+      await Promise.all(found.map(async (d) => {
+        try {
+          useThread(await readThread(d.permalink.replace(/\/$/, '')), false);
+        } catch {}
+      }));
+    } catch {
+      if (!path) problems.push('Reddit didn’t answer, so this is from episode summaries only.');
+    }
+
+    // 3. Episodes whose summary mentions the topic.
+    if (topic && guide) {
+      const t = norm(topic);
+      for (const ep of guide.eps) {
+        if (!` ${norm(ep.text)} `.includes(` ${t} `)) continue;
+        const e = entry(ep.key);
+        e.summary = true;
+        if (!e.reason) {
+          const sentence = ep.text.split(/(?<=[.!?])\s+/).find((x) => norm(x).includes(t)) || '';
+          e.reason = sentence.length > 150 ? `${sentence.slice(0, 150).replace(/\s\S*$/, '')}…` : sentence;
+        }
+      }
+    }
+
+    // In: listed by your thread or a guide, said by 2+ comments, or (for a topic) in a summary.
+    const episodes = [...entries.values()]
+      .filter((e) => e.pasted || e.guides.size || e.comments >= 2 || e.summary)
+      .filter((e) => !guide || guide.byKey.has(e.key))
+      .map((e) => {
+        const [, s, n] = e.key.match(/^S(\d+)E(\d+)$/);
+        return { key: e.key, season: Number(s), number: Number(n), label: label(e.key), title: guide?.byKey.get(e.key)?.name || '',
+          pasted: e.pasted, guides: e.guides.size, comments: e.comments, summary: e.summary, reason: e.reason, url: e.url };
+      })
+      .sort((a, b) => a.season - b.season || a.number - b.number);
+    return { show: name, topic, episodes, threads, problems, hasGuide: !!guide };
+  }
+
+  const api = { bestEpisodes, watchGuide, listedIn, threadPath, episodesIn, rank, label, snippet, makeGuide, wikiSummaries, describedIn, titleIn, stems, searchUrl: (show) => `https://www.reddit.com/search/?q=${encodeURIComponent(`${show} best episodes`)}` };
   if (typeof module !== 'undefined') module.exports = api;
   else self.Reddit = api;
 })();

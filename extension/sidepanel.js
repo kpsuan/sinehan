@@ -68,6 +68,9 @@ function onMessage(msg) {
   } else if (msg.type === 'now-watching') {
     theirShow = { url: msg.url, title: msg.title };
     renderWatch();
+  } else if (msg.type === 'goodnight') {
+    addChat('', `${msg.name || peer?.name || 'They'} stopped for tonight${typeof msg.time === 'number' ? ` at ${clock(msg.time)}` : ''}`, 'system');
+    setTimeout(loadResume, 400);
   } else if (msg.type === 'show-closed') {
     addChat('', `${peer?.name || 'They'} closed the show`, 'system');
   } else if (msg.type === 'profile') {
@@ -147,15 +150,28 @@ $('connect').onclick = () => {
   const room = $('room').value.trim();
   if (server && room) ask({ type: 'connect', server, room }, showStatus);
 };
-$('disconnect').onclick = () => {
+// Leaving takes a moment on screen ("Leaving…") so it doesn't feel like the sidebar just snapped shut.
+let leaving = false;
+$('disconnect').onclick = async () => {
+  if (leaving) return;
+  leaving = true;
+  const button = $('disconnect');
+  button.disabled = $('connect').disabled = true;
+  button.innerHTML = 'Leaving<span class="dots"><i>.</i><i>.</i><i>.</i></span>'; // fixed markup
   if (pc) endCall('You left');
+  await new Promise((r) => setTimeout(r, 900));
   $('inviteBox').hidden = true;
   ask({ type: 'disconnect' }, showStatus);
   // Leaving ends the party: the chat is saved under "Past parties" and this one starts fresh.
   $('log').replaceChildren();
   seenChat.clear();
   theirShow = null;
+  document.body.classList.add('just-left');
+  setTimeout(() => document.body.classList.remove('just-left'), 700);
   $('settings').open = false; // back to the welcome screen
+  button.textContent = 'Leave';
+  button.disabled = $('connect').disabled = false;
+  leaving = false;
 };
 
 // Gear icon in the header shows/hides the settings section.
@@ -394,7 +410,8 @@ async function renderWatch() {
   $('watchHere').hidden = !(activeTab?.url?.startsWith('http') && activeTab.id !== w?.tabId);
   $('watchHere').textContent = w ? 'Watch this tab instead' : 'Watch this tab';
   $('countdownBtn').disabled = !w || !(status.connected && status.peers > 1);
-  $('breakBtn').disabled = !onBreak && !(status.connected && status.peers > 1);
+  $('breakBtn').disabled = !onBreak && !status.connected;
+  renderResume();
   $('handBtn').disabled = !(status.connected && status.peers > 1);
   // Their prompt goes away once we're on the same thing.
   $('watchBar').hidden = !status.connected;
@@ -423,10 +440,71 @@ $('countdownBtn').onclick = () => send({ local: true, type: 'countdown-start' })
 
 // CR break: the show's tab pauses both of you; "I'm back" counts you both back in.
 let onBreak = false;
+// The break button: "I'm back" while on a break; otherwise a choice of CR break or stopping for tonight.
 $('breakBtn').onclick = () => {
-  if (!status.watch) return addChat('', 'Open your show first (or click Watch here), then take a break.', 'system');
+  if (onBreak) return send({ local: true, type: 'break-toggle' });
+  showBreakMenu($('breakMenu').hidden);
+};
+function showBreakMenu(on) {
+  $('breakMenu').hidden = !on;
+  $('breakBtn').setAttribute('aria-expanded', String(on));
+  $('crBreak').disabled = !(status.connected && status.peers > 1);
+}
+$('crBreak').onclick = () => {
+  showBreakMenu(false);
+  if (!status.watch) return addChat('', 'Open your show first (or click Watch this tab), then take a break.', 'system');
   send({ local: true, type: 'break-toggle' });
 };
+$('goodnightBtn').onclick = () => {
+  showBreakMenu(false);
+  if (!status.watch) return addChat('', 'Open your show first, then stop for tonight.', 'system');
+  send({ local: true, type: 'goodnight-start' }); // the show's tab pauses both of you and reports the spot
+  const at = showTime();
+  addChat('', `You stopped for tonight${typeof at === 'number' ? ` at ${clock(at)}` : ''}. Next time, pick up right there.`, 'system');
+  setTimeout(loadResume, 600);
+};
+
+// ---- Pick up where you left off ----
+let resume = null; // { url, title, time, at, by }
+function loadResume() {
+  ask({ type: 'resume' }, (r) => {
+    resume = r || null;
+    renderResume();
+  });
+}
+function renderResume() {
+  const here = resume && status.watch && showKey(status.watch.url) === showKey(resume.url);
+  const name = resume ? resume.title || siteOf(resume.url) : '';
+  const when = resume ? `${clock(resume.time)} · ${partyDate(resume.at)}` : '';
+  $('resumeBar').hidden = !resume || !status.connected || here;
+  if (resume) $('resumeTitle').textContent = `${name} · at ${when}`;
+  $('wlResume').hidden = !resume;
+  if (resume) {
+    const title = document.createElement('b');
+    title.textContent = name;
+    $('wlResumeText').replaceChildren(title, document.createTextNode(`Stopped at ${when}`));
+  }
+}
+function siteOf(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}
+const resumeGo = () => ask({ type: 'resume-go' }, (s) => {
+  showStatus(s);
+  resume = null;
+  renderResume();
+  ask({ type: 'resume-dismiss' });
+});
+$('resumeGo').onclick = resumeGo;
+$('wlResumeGo').onclick = resumeGo;
+$('resumeClose').onclick = () => ask({ type: 'resume-dismiss' }, () => {
+  resume = null;
+  renderResume();
+});
+loadResume();
 function renderBreak() {
   $('breakBtn').classList.toggle('on', onBreak);
   $('breakLabel').textContent = onBreak ? 'I’m back' : 'Break';
@@ -615,7 +693,7 @@ function showBest(on) {
   if (name && name !== $('bestQuery').dataset.for) {
     $('bestQuery').value = name;
     $('bestQuery').dataset.for = name;
-    askReddit();
+    if (episodesMode === 'best') askReddit();
   } else if (!name) {
     $('bestQuery').focus();
   }
@@ -624,8 +702,188 @@ $('bestBtn').onclick = () => showBest($('bestView').hidden);
 $('bestBack').onclick = () => showBest(false);
 $('bestForm').onsubmit = (e) => {
   e.preventDefault();
-  askReddit();
+  if (episodesMode === 'guide') makeGuide();
+  else askReddit();
 };
+
+// Best (Reddit's favorites) or Watch guide (the episodes you need, maybe for one story).
+let episodesMode = 'best';
+function setEpisodesMode(mode) {
+  if (mode === episodesMode) return;
+  episodesMode = mode;
+  $('modeBest').setAttribute('aria-selected', String(mode === 'best'));
+  $('modeGuide').setAttribute('aria-selected', String(mode === 'guide'));
+  $('guideFields').hidden = mode !== 'guide';
+  $('bestSubmit').textContent = mode === 'guide' ? 'Make guide' : 'Ask Reddit';
+  bestRun += 1; // drop whatever the other tab was loading
+  $('bestResults').replaceChildren();
+  if (mode === 'guide') {
+    if (lastGuide && norm(lastGuide.show) === norm($('bestQuery').value)) renderGuide(lastGuide);
+    else $('guideTopic').focus();
+  } else if ($('bestQuery').value.trim()) {
+    askReddit();
+  }
+}
+$('modeBest').onclick = () => setEpisodesMode('best');
+$('modeGuide').onclick = () => setEpisodesMode('guide');
+const norm = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+
+// ---- Watch guide ----
+// Ticked episodes are remembered per show (in this browser).
+let lastGuide = null;
+async function guideDone(show) {
+  const { guideDone: all = {} } = await chrome.storage.local.get('guideDone');
+  return all[norm(show)] || {};
+}
+async function setGuideDone(show, key, done) {
+  const { guideDone: all = {} } = await chrome.storage.local.get('guideDone');
+  const mine = { ...(all[norm(show)] || {}) };
+  if (done) mine[key] = true;
+  else delete mine[key];
+  await chrome.storage.local.set({ guideDone: { ...all, [norm(show)]: mine } });
+}
+
+async function makeGuide() {
+  const show = $('bestQuery').value.trim();
+  if (!show) return $('bestQuery').focus();
+  const run = ++bestRun;
+  $('bestResults').replaceChildren(note('Reading guides…'));
+  let g;
+  try {
+    g = await Reddit.watchGuide(show, $('guideTopic').value, $('guideLink').value);
+  } catch {
+    if (run === bestRun) $('bestResults').replaceChildren(note('Couldn’t make a guide just now. Try again in a moment.'));
+    return;
+  }
+  if (run !== bestRun) return;
+  lastGuide = g;
+  renderGuide(g);
+}
+
+const CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>';
+async function renderGuide(g) {
+  const done = await guideDone(g.show);
+  const out = g.problems.map((p) => note(p));
+  if (!g.episodes.length) {
+    out.push(note(g.topic ? `No guide or summary mentions “${g.topic}”. Try another name for it, or paste a guide thread.` : 'No guides found for this show. Paste a guide thread you trust.',
+      { label: 'Search Reddit for a guide', onClick: () => openTab(`https://www.reddit.com/search/?q=${encodeURIComponent(`${g.show} ${g.topic || 'essential'} episodes guide`)}`) }));
+    $('bestResults').replaceChildren(...out);
+    return;
+  }
+  const total = g.episodes.length;
+  const watched = g.episodes.filter((e) => done[e.key]).length;
+  const head = document.createElement('div');
+  head.className = 'g-head';
+  const count = document.createElement('span');
+  count.className = 'g-count';
+  count.textContent = `${g.topic ? `${g.topic} · ` : ''}${total} episode${total === 1 ? '' : 's'} · ${watched} watched`;
+  const share = document.createElement('button');
+  share.type = 'button';
+  share.textContent = 'Share in chat';
+  share.disabled = !status.connected;
+  share.onclick = () => {
+    const list = g.episodes.map((e) => e.label.replace(' ', '')).join(', ');
+    sendChat(`${g.show}${g.topic ? ` · ${g.topic}` : ''} watch guide (${total}): ${list.length > 380 ? `${list.slice(0, 380).replace(/,[^,]*$/, '')}, …` : list}`);
+    share.textContent = 'Shared';
+    share.disabled = true;
+  };
+  head.append(count, share);
+  const bar = document.createElement('div');
+  bar.className = 'g-bar';
+  const fill = document.createElement('i');
+  fill.style.width = `${Math.round((watched / total) * 100)}%`;
+  bar.append(fill);
+  out.push(head, bar);
+
+  const next = g.episodes.find((e) => !done[e.key]);
+  let season = null;
+  let nextRow = null;
+  for (const e of g.episodes) {
+    if (e.season !== season) {
+      season = e.season;
+      const h = document.createElement('div');
+      h.className = 'g-season';
+      h.textContent = `Season ${season}`;
+      out.push(h);
+    }
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = `g-ep${done[e.key] ? ' done' : ''}${e === next ? ' next' : ''}`;
+    row.setAttribute('aria-pressed', String(!!done[e.key]));
+    const box = document.createElement('span');
+    box.className = 'g-check';
+    box.innerHTML = CHECK; // fixed markup
+    const body = document.createElement('span');
+    body.className = 'g-body';
+    const title = document.createElement('span');
+    title.className = 'g-title';
+    title.textContent = e.title ? `${e.label} · ${e.title}` : e.label;
+    if (e === next) {
+      const n = document.createElement('span');
+      n.className = 'g-next';
+      n.textContent = 'Up next';
+      title.append(n);
+    }
+    body.append(title);
+    if (e.reason) {
+      const why = document.createElement('span');
+      why.className = 'g-why';
+      why.textContent = e.reason;
+      body.append(why);
+    }
+    const src = document.createElement('span');
+    src.className = 'g-src';
+    const chip = (text, mine) => {
+      const c = document.createElement('span');
+      c.textContent = text;
+      if (mine) c.className = 'mine';
+      src.append(c);
+    };
+    if (e.pasted) chip('Your thread', true);
+    const others = e.guides - (e.pasted ? 1 : 0);
+    if (others > 0) chip(`In ${others} guide${others === 1 ? '' : 's'}`);
+    if (!e.guides && e.comments) chip(`Suggested in ${e.comments} comments`);
+    if (e.summary) chip(`Summary mentions ${g.topic}`);
+    body.append(src);
+    row.append(box, body);
+    // Tick it off as you watch; the list remembers.
+    row.onclick = async () => {
+      await setGuideDone(g.show, e.key, !done[e.key]);
+      renderGuide(g);
+    };
+    out.push(row);
+    if (e === next) nextRow = row;
+  }
+
+  if (g.threads.length) {
+    const box = document.createElement('div');
+    box.className = 'b-threads';
+    const h = document.createElement('h2');
+    h.textContent = 'Guides used';
+    box.append(h);
+    for (const t of g.threads) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'thread';
+      const title = document.createElement('span');
+      title.className = 't-title';
+      title.textContent = t.title;
+      const meta = document.createElement('span');
+      meta.className = 't-meta';
+      meta.textContent = `${t.pasted ? 'Your thread · ' : ''}${t.sub} · ${shortNum(t.upvotes)} upvotes`;
+      b.append(title, meta);
+      b.onclick = () => openTab(t.url);
+      box.append(b);
+    }
+    out.push(box);
+  }
+  const scroll = $('bestResults').scrollTop;
+  $('bestResults').replaceChildren(...out);
+  // First time showing this guide: jump to what's next. Re-renders (ticking) keep your place.
+  if (g.shown) $('bestResults').scrollTop = scroll;
+  else nextRow?.scrollIntoView({ block: 'center' });
+  g.shown = true;
+}
 
 // Tab titles carry the site's name and notification counts; keep just the show's name.
 function tidyTitle(title) {

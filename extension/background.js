@@ -66,6 +66,7 @@ chrome.runtime.onConnect.addListener((port) => {
     // Playback messages only count from the show's tab; stray videos elsewhere can't control anything.
     if (fromTab && !fromWatchTab && msg.type !== 'chat') return;
 
+    if (msg.type === 'goodnight' && fromWatchTab) saveSpot(msg);
     if (msg.type === 'chat') {
       remember({ ...msg, mine: true });
       // Keep this browser's other chat views in step (sidebar ↔ fullscreen chat).
@@ -148,6 +149,28 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       .then(({ sessions = [] }) => chrome.storage.local.set({ sessions: msg.type === 'clear-sessions' ? [] : sessions.filter((x) => x.id !== msg.id) }));
     historyWrite.then(() => reply({ ok: true }));
     return true;
+  } else if (msg.type === 'resume') {
+    chrome.storage.local.get('resume').then(({ resume }) => reply(resume || null));
+    return true;
+  } else if (msg.type === 'resume-go') {
+    // Open the saved show; its tab asks for the spot once the player is there (resume-check).
+    chrome.storage.local.get('resume').then(async ({ resume }) => {
+      if (!resume) return reply(null);
+      await chrome.storage.local.set({ resume: { ...resume, pending: true } });
+      await follow(resume.url);
+      reply(statusView());
+    });
+    return true;
+  } else if (msg.type === 'resume-check') {
+    chrome.storage.local.get('resume').then(({ resume }) => {
+      if (!resume?.pending || showKey(resume.url) !== showKey(msg.url || '')) return reply(null);
+      chrome.storage.local.set({ resume: { ...resume, pending: false } });
+      reply({ time: resume.time });
+    });
+    return true;
+  } else if (msg.type === 'resume-dismiss') {
+    chrome.storage.local.remove('resume').then(() => reply(true));
+    return true;
   } else if (msg.type === 'set-watch') {
     setWatchTab(msg.tabId, true).then(() => reply(statusView()));
     return true;
@@ -194,6 +217,18 @@ function noteShow(title) {
     .then(() => chrome.storage.local.get('partyShows'))
     .then(({ partyShows = [] }) => (partyShows.includes(title) ? null : chrome.storage.local.set({ partyShows: [...partyShows, title].slice(-5) })))
     .catch(console.error);
+}
+
+// ---- Stop for tonight ----
+// Either of you (or the phone) stops for the night: both shows pause and the spot is saved, so next
+// time the sidebar offers to pick up right there.
+function saveSpot(msg) {
+  const url = /^https?:\/\//.test(msg.url || '') ? msg.url : watch?.url;
+  if (!url) return;
+  const time = typeof msg.time === 'number' ? msg.time : lastPos?.time;
+  if (typeof time !== 'number' || !Number.isFinite(time)) return;
+  const title = String(msg.title || watch?.showTitle || watch?.title || '').slice(0, 120);
+  chrome.storage.local.set({ resume: { url, title, time, at: Date.now(), by: String(msg.name || '').slice(0, 30) } });
 }
 
 // ---- Watch tab ----
@@ -374,6 +409,7 @@ function connect(server, room) {
     if (msg.type === 'peer' && msg.joined) setTimeout(announceShow, 500);
     if (msg.type === 'companion-hello') setTimeout(announceShow, 300); // a phone joined: tell it what's on
     if (msg.type === 'rtc') onCallSignal(msg);
+    if (msg.type === 'goodnight') saveSpot(msg);
     if (msg.type === 'chat') {
       remember({ ...msg, mine: false });
       // Lets the show's tab know whether to flash the message on the video (sidebar closed or hidden by fullscreen).
