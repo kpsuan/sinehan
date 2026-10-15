@@ -241,10 +241,8 @@
     .controls { display: flex; align-items: center; gap: 6px; padding-top: 8px; }
     .controls .wide { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
     .controls .wide svg { width: 16px; height: 16px; }
-    #start, #start:hover:not(:disabled) { background: #e5868f; color: #2a1216; }
-    #start:hover:not(:disabled) { background: #eb9aa2; }
-    :root[data-theme='light'] #start { background: #e5484d; color: #fff; }
-    :root[data-theme='light'] #start:hover:not(:disabled) { background: #d93d42; }
+    #start, :root[data-theme='light'] #start { background: #b42a36; color: #fff; }
+    #start:hover:not(:disabled), :root[data-theme='light'] #start:hover:not(:disabled) { background: #c43541; }
     /* Not in a call: just the call buttons. A voice call gets a short stage with your faces. */
     .call.compact .stage { display: none; }
     .call.compact .controls { padding-top: 0; }
