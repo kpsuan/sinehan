@@ -169,6 +169,27 @@
       const CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>';
       const norm = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
       const flat = (s) => norm(s).replace(/^the /, '').replace(/ /g, '');
+      // Text from a guide post, readable (same as the sidebar's).
+      function cleanReason(text, title = '') {
+        let t = String(text || '')
+          .replace(/>!(.*?)!</g, '$1').replace(/>!|!</g, '') // spoiler tags (and unclosed ones)
+          .replace(/\\([\\`*_{}\[\]()#+\-.!>~|])/g, '$1') // markdown escapes like \-
+          .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1') // links
+          .replace(/(\*\*|__|~~|`)/g, '') // bold, underline, strike, code
+          .replace(/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}️‍]/gu, '') // emoji markers
+          .replace(/^\s*(#{1,6}|>+)\s*/gm, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        // The card already shows the episode and its title: drop them from the front.
+        t = t.replace(/^[\s*>•·\-–—]*(s\d+\s*e\d+|\d{1,2}\s*[x×]\s*\d{1,3}|ep(isode)?\.?\s*\d+)\s*[-–—:|.]*\s*/i, '');
+        const flat = (x) => String(x || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+        if (title && flat(t).startsWith(flat(title))) {
+          let i = 0;
+          for (let n = 0; i < t.length && n < flat(title).length; i++) if (/[\p{L}\p{N}]/u.test(t[i])) n++;
+          t = t.slice(i);
+        }
+        return t.replace(/^[\s\-–—:|,.*!]+/, '').trim();
+      }
 
       async function decode(text) {
         const b64 = text.replace(/-/g, '+').replace(/_/g, '/');
@@ -312,7 +333,7 @@
           title.textContent = `${n ? `${n}. ` : ''}${e.title || e.key}`;
           card.append(shot, tick, title);
 
-          const about = (e.reason && !/^\d{4}$/.test(e.reason) && e.reason) || extra.summary;
+          const about = (e.reason && !/^\d{4}$/.test(e.reason) && cleanReason(e.reason, e.title)) || extra.summary;
           if (about) {
             const desc = document.createElement('p');
             desc.className = 'desc';

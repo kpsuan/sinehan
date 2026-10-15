@@ -29,7 +29,7 @@
     };
     take(new RegExp(`\\b(?:episode|ep)\\.?\\s*#?0*${NUM}\\s+(?:of|in|from)\\s+(?:the\\s+)?season\\s+${NUM}\\b`, 'gi'), (g, at) => add(toNum(g[1]), toNum(g[0]), at));
     take(new RegExp(`\\bs(?:eason)?\\s*0*${NUM}\\s*[,:.\\-]?\\s*e(?:p(?:isode)?)?\\.?\\s*#?0*${NUM}\\b`, 'gi'), (g, at) => add(toNum(g[0]), toNum(g[1]), at));
-    take(/\b(\d{1,2})x(\d{2})\b/g, (g, at) => add(Number(g[0]), Number(g[1]), at));
+    take(/\b(\d{1,2})\s?[x×]\s?(\d{2})\b/g, (g, at) => add(Number(g[0]), Number(g[1]), at));
     take(new RegExp(`\\b${NUM}(?:st|nd|rd|th)?\\s+season'?s?\\s+(?:ep(?:isode)?\\.?\\s*)?#?${NUM}\\b`, 'gi'), (g, at) => add(toNum(g[0]), toNum(g[1]), at));
     take(new RegExp(`\\b(?:episode|ep)\\.?\\s*#?0*${NUM}\\b`, 'gi'), (g, at) => add(null, toNum(g[0]), at));
     return found;
@@ -424,8 +424,7 @@
         let reason = bare.replace(/^season\s*\d+\s*[:\-–—]?\s*/i, '').replace(/^(s\d+\s*e\d+|\d+x\d+|ep(isode)?\.?\s*\d+)\s*[-–—:|.]*\s*/i, '');
         const title = guide?.byKey.get(key)?.name || '';
         if (title && norm(reason).startsWith(norm(title))) reason = reason.slice(title.length);
-        reason = reason.replace(/^\s*[-–—:|,.]+\s*/, '').trim();
-        reason = unmark(reason);
+        reason = cleanReason(reason, title);
         out.push({ key, reason: reason.length > 150 ? `${reason.slice(0, 150).replace(/\s\S*$/, '')}…` : reason });
       }
     }
@@ -884,7 +883,29 @@
     return { show: name, topic, episodes, threads, problems, hasGuide: !!guide, wiki: wikiHost };
   }
 
-  const api = { bestEpisodes, watchGuide, listedIn, threadPath, findWiki, fandomTopic, episodesNamed, listsIn, titlesIn, sameShow, episodesIn, rank, label, snippet, makeGuide, wikiSummaries, describedIn, titleIn, stems, searchUrl: (show) => `https://www.reddit.com/search/?q=${encodeURIComponent(`${show} best episodes`)}` };
+  // Text from a guide post, readable: no formatting marks, escapes, spoiler tags or emoji markers.
+  function cleanReason(text, title = '') {
+    let t = String(text || '')
+      .replace(/>!(.*?)!</g, '$1').replace(/>!|!</g, '') // spoiler tags (and unclosed ones)
+      .replace(/\\([\\`*_{}\[\]()#+\-.!>~|])/g, '$1') // markdown escapes like \-
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1') // links
+      .replace(/(\*\*|__|~~|`)/g, '') // bold, underline, strike, code
+      .replace(/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}️‍]/gu, '') // emoji markers
+      .replace(/^\s*(#{1,6}|>+)\s*/gm, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    // The card already shows the episode and its title: drop them from the front.
+    t = t.replace(/^[\s*>•·\-–—]*(s\d+\s*e\d+|\d{1,2}\s*[x×]\s*\d{1,3}|ep(isode)?\.?\s*\d+)\s*[-–—:|.]*\s*/i, '');
+    const flat = (x) => String(x || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+    if (title && flat(t).startsWith(flat(title))) {
+      let i = 0;
+      for (let n = 0; i < t.length && n < flat(title).length; i++) if (/[\p{L}\p{N}]/u.test(t[i])) n++;
+      t = t.slice(i);
+    }
+    return t.replace(/^[\s\-–—:|,.*!]+/, '').trim();
+  }
+
+  const api = { cleanReason, bestEpisodes, watchGuide, listedIn, threadPath, findWiki, fandomTopic, episodesNamed, listsIn, titlesIn, sameShow, episodesIn, rank, label, snippet, makeGuide, wikiSummaries, describedIn, titleIn, stems, searchUrl: (show) => `https://www.reddit.com/search/?q=${encodeURIComponent(`${show} best episodes`)}` };
   if (typeof module !== 'undefined') module.exports = api;
   else self.Reddit = api;
 })();

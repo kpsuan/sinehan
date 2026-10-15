@@ -1085,7 +1085,7 @@ async function renderGuide(g, fresh = false) {
     if (e.reason) {
       const why = document.createElement('span');
       why.className = 'g-why';
-      why.textContent = e.reason;
+      why.textContent = Reddit.cleanReason(e.reason, e.title); // (also tidies guides saved before the cleanup)
       body.append(why);
     }
     const src = document.createElement('span');
