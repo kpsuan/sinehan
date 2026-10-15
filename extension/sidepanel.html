@@ -6,156 +6,249 @@
   <style>
     @font-face { font-family: 'Inter'; src: url('fonts/inter.woff2') format('woff2'); font-weight: 100 900; font-display: swap; }
     :root {
-      --bg: #16111c;
-      --raised: #1f1827;
-      --line: #2c2337;
-      --text: #ece6f3;
-      --muted: #978ca6;
+      --bg: #0c0a10;
+      --card: rgba(18, 14, 24, .55);
+      --card-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 8px 24px rgba(0, 0, 0, .25);
+      --card-blur: blur(16px);
+      --btn: rgba(255, 255, 255, .05);
+      --menu: #1d1825;
+      --soft: rgba(255, 255, 255, .03);
+      --ring: #15111b;
+      --body-bg: radial-gradient(140% 60% at 50% -12%, #241c31 0%, #14101a 45%, #0c0a10 75%);
+      --card-edge: rgba(255, 255, 255, .075);
+      --field: rgba(255, 255, 255, .045);
+      --hover: rgba(255, 255, 255, .08);
+      --line: rgba(255, 255, 255, .07);
+      --text: #efeaf6;
+      --muted: #9a90aa;
+      --faint: #6d6479;
       --accent: #c9b6f2;
       --accent-ink: #1b1325;
-      --them: #251d2e;
+      --accent-glow: rgba(201, 182, 242, .28);
+      --them: rgba(255, 255, 255, .07);
       --live: #9fd6b0;
       --danger: #e5868f;
     }
+    /* Dark: solid surfaces, nothing shows through. */
+    :root[data-theme='dark'] {
+      --card: #16121c;
+      --card-blur: none;
+      --card-shadow: 0 1px 0 rgba(255, 255, 255, .03) inset;
+      --body-bg: #0c0a10;
+    }
+    /* Light: white surfaces, deeper purple accent for contrast. */
+    :root[data-theme='light'] {
+      --bg: #f3f1f7;
+      --body-bg: radial-gradient(140% 60% at 50% -12%, #e4dcf3 0%, #dcd7e6 50%, #d3cfdd 100%);
+      --card: rgba(255, 255, 255, .5);
+      --card-edge: rgba(255, 255, 255, .7);
+      --card-shadow: inset 0 1px 0 rgba(255, 255, 255, .8), 0 8px 24px rgba(28, 18, 48, .08);
+      --card-blur: blur(18px) saturate(140%);
+      --field: rgba(255, 255, 255, .55);
+      --hover: rgba(28, 18, 48, .06);
+      --line: rgba(28, 18, 48, .09);
+      --btn: rgba(28, 18, 48, .035);
+      --menu: rgba(255, 255, 255, .9);
+      --soft: rgba(255, 255, 255, .3);
+      --ring: rgba(255, 255, 255, .9);
+      --text: #1d1725;
+      --muted: #6b6279;
+      --faint: #9c95a8;
+      --accent: #7c5cd6;
+      --accent-ink: #ffffff;
+      --accent-glow: rgba(124, 92, 214, .25);
+      --them: rgba(255, 255, 255, .7);
+      --live: #2f9a5a;
+      --danger: #c94a57;
+    }
+    :root[data-theme='light'] select option { background: #fff; }
+    :root[data-theme='light'] button.primary:hover:not(:disabled) { background: #6b4bc6; }
+    :root[data-theme='light'] .stamp { background: rgba(28, 18, 48, .07); }
+    :root[data-theme='light'] .line.me .stamp { background: rgba(255, 255, 255, .2); }
+    :root[data-theme='light'] input:focus, :root[data-theme='light'] select:focus { border-color: rgba(124, 92, 214, .55); box-shadow: 0 0 0 3px rgba(124, 92, 214, .12); }
     * { box-sizing: border-box; }
     html, body { height: 100%; margin: 0; }
-    body { display: flex; flex-direction: column; background: var(--bg); color: var(--text); font: 13px/1.4 'Inter', system-ui, sans-serif; }
+    body { display: flex; flex-direction: column; gap: 8px; padding: 8px; color: var(--text); font: 13px/1.4 'Inter', system-ui, sans-serif;
+      background: var(--body-bg); }
     [hidden] { display: none !important; }
 
-    button { font: inherit; color: inherit; background: none; border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; cursor: pointer; }
-    button:hover:not(:disabled) { background: var(--raised); }
-    button:disabled { opacity: .4; cursor: default; }
-    button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
-    button.primary:hover:not(:disabled) { background: #d8c9f7; }
-    input { width: 100%; padding: 7px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--raised); color: inherit; font: inherit; outline: none; }
-    input::placeholder { color: #6f6580; }
-    select { width: 100%; padding: 7px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--raised); color: inherit; font: inherit; outline: none; }
-    select:focus { border-color: var(--accent); }
-    #devicePerm { margin-top: 10px; width: 100%; font-size: 12px; }
-    input:focus { border-color: var(--accent); }
-    svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; display: block; }
+    /* Behind the glass: a blurred, dimmed snapshot of the show (set by sidepanel.js), so the cards are see-through. */
+    #backdrop { position: fixed; inset: -60px; z-index: -1; background: center / cover no-repeat; opacity: 0;
+      filter: blur(40px) saturate(1.2) brightness(.38); transition: opacity 1.2s ease, background-image .8s ease; pointer-events: none; }
+    #backdrop.on { opacity: 1; }
+    :root[data-theme='dark'] #backdrop { display: none; }
+    :root[data-theme='light'] #backdrop { filter: blur(40px) saturate(.9) brightness(1.15); }
+    :root[data-theme='light'] #backdrop.on { opacity: .55; }
 
-    .avatar { flex: none; display: inline-block; border-radius: 50%; overflow: hidden; box-shadow: 0 0 0 2px var(--bg); }
+    /* Appearance picker */
+    .themes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .themes button { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 6px; font-size: 12px; }
+    .themes button[aria-pressed='true'] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .swatch { width: 100%; height: 34px; border-radius: 5px; border: 1px solid var(--line); }
+    .swatch.glass { background: linear-gradient(135deg, rgba(60, 120, 200, .55), rgba(220, 110, 70, .45)), #1a1522; }
+    .swatch.dark { background: #16121c; }
+    .swatch.light { background: linear-gradient(135deg, rgba(255, 255, 255, .85), rgba(220, 212, 236, .9)); }
+
+    /* Smoky glass cards */
+    .card { flex: none; border-radius: 10px; background: var(--card); border: 1px solid var(--card-edge);
+      box-shadow: var(--card-shadow); backdrop-filter: var(--card-blur); -webkit-backdrop-filter: var(--card-blur); }
+
+    button { font: inherit; color: inherit; background: var(--btn); border: 1px solid var(--line); border-radius: 7px;
+      padding: 7px 11px; cursor: pointer; transition: background .15s, box-shadow .15s, transform .1s; }
+    button:hover:not(:disabled) { background: var(--hover); }
+    button:active:not(:disabled) { transform: scale(.97); }
+    button:disabled { opacity: .35; cursor: default; }
+    button.primary { background: var(--accent); border-color: transparent; color: var(--accent-ink); font-weight: 600; box-shadow: 0 6px 20px var(--accent-glow); }
+    button.primary:hover:not(:disabled) { background: #d8c9f7; }
+    input, select { width: 100%; padding: 8px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--field); color: inherit; font: inherit; outline: none;
+      transition: border-color .15s, box-shadow .15s; }
+    select option { background: #17131d; }
+    input::placeholder { color: var(--faint); }
+    input:focus, select:focus { border-color: rgba(201, 182, 242, .55); box-shadow: 0 0 0 3px rgba(201, 182, 242, .12); }
+    #devicePerm { margin-top: 10px; width: 100%; font-size: 12px; }
+    svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; display: block; }
+    .icon { padding: 7px; }
+    .icon.off { color: var(--danger); border-color: rgba(229, 134, 143, .35); background: rgba(229, 134, 143, .08); }
+    h2 { margin: 0 0 10px; font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+
+    .avatar { flex: none; display: inline-block; border-radius: 50%; overflow: hidden; box-shadow: 0 0 0 2px var(--ring); }
     .avatar img { width: 100%; height: 100%; display: block; }
 
     /* Header */
-    .top { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+    .top { display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 12px; }
     #who { display: flex; }
     #who .avatar + .avatar { margin-left: -8px; }
     .meta { flex: 1; min-width: 0; }
     #names { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     #status { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
     #status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #5a5066; }
-    #status[data-state='waiting']::before { background: #d9c27a; }
-    #status[data-state='live']::before { background: var(--live); }
-    #invite { position: relative; color: var(--muted); }
-    #invite:hover { color: var(--text); }
+    #status[data-state='waiting']::before { background: #d9c27a; box-shadow: 0 0 6px rgba(217, 194, 122, .6); }
+    #status[data-state='live']::before { background: var(--live); box-shadow: 0 0 6px rgba(159, 214, 176, .7); }
+    .top .icon { color: var(--muted); }
+    .top .icon:hover, .top .icon[aria-pressed='true'] { color: var(--text); }
+    .top .icon[aria-pressed='true'] { border-color: rgba(201, 182, 242, .45); background: rgba(201, 182, 242, .1); }
+    #invite { position: relative; }
     #invite .i-check { display: none; }
-    #invite.copied { color: var(--live); border-color: var(--live); }
+    #invite.copied { color: var(--live); border-color: rgba(159, 214, 176, .5); }
     #invite.copied .i-link { display: none; }
     #invite.copied .i-check { display: block; }
-    #invite.copied::after { content: 'Copied'; position: absolute; top: calc(100% + 6px); right: 0; padding: 3px 7px; border-radius: 4px;
-      background: var(--raised); border: 1px solid var(--line); color: var(--text); font-size: 11px; white-space: nowrap; z-index: 2; }
-    #inviteBox { padding: 10px 14px; border-bottom: 1px solid var(--line); }
+    #invite.copied::after { content: 'Copied'; position: absolute; top: calc(100% + 6px); right: 0; padding: 3px 8px; border-radius: 6px;
+      background: var(--menu); border: 1px solid var(--card-edge); color: var(--text); font-size: 11px; white-space: nowrap; z-index: 2; }
+    #inviteBox { padding: 8px; }
     #inviteBox input { font-size: 12px; color: var(--accent); }
-
-    /* What we're watching + together actions */
-    #watchBar { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--line); }
-    #watchIcon { width: 16px; height: 16px; border-radius: 3px; flex: none; }
-    .wb-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-    .wb-label { font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-    #watchTitle { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    #watchTitle.none { color: var(--muted); }
-    #watchHere { font-size: 12px; padding: 5px 8px; flex: none; }
-    #handBtn, #countdownBtn { flex: none; font-size: 12px; padding: 5px 7px; }
-    #countdownBtn { font-weight: 600; letter-spacing: .02em; }
-    #handBtn.sent { animation: pulse .6s ease-out; }
-    #followBar { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--line);
-      background: var(--raised); border-left: 3px solid var(--accent); }
-    #followText { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    #followBar button { flex: none; padding: 5px 10px; font-size: 12px; }
-    #followClose { border: 0; color: var(--muted); }
     /* Their hand-hold: the header glows for a moment */
     .top.holding { animation: glow 2.6s ease-in-out; }
-    @keyframes glow { 0%, 100% { box-shadow: none; } 25%, 70% { box-shadow: inset 0 0 40px rgba(201, 182, 242, .45); } }
+    @keyframes glow { 0%, 100% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05); } 25%, 70% { box-shadow: inset 0 0 40px rgba(201, 182, 242, .4), 0 0 24px rgba(201, 182, 242, .25); } }
     @keyframes pulse { 0% { transform: scale(1); } 40% { transform: scale(1.25); } 100% { transform: scale(1); } }
 
-    /* Settings */
-    /* Opened from the gear icon in the header */
-    #settings[open] { border-bottom: 1px solid var(--line); background: var(--raised); }
-    #settings .body { padding: 14px; }
-    #settingsBtn { color: var(--muted); }
-    #settingsBtn:hover, #settingsBtn[aria-pressed='true'] { color: var(--text); }
-    #settingsBtn[aria-pressed='true'] { border-color: var(--accent); }
+    /* What we're watching + together actions */
+    #watchBar { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; }
+    #watchIcon { width: 16px; height: 16px; border-radius: 4px; flex: none; }
+    .wb-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .wb-label { font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+    #watchTitle { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #watchTitle.none { color: var(--muted); }
+    #watchHere { font-size: 12px; padding: 5px 9px; flex: none; }
+    #handBtn, #countdownBtn { flex: none; font-size: 12px; padding: 5px 8px; }
+    #countdownBtn { font-weight: 600; letter-spacing: .02em; }
+    #handBtn.sent { animation: pulse .6s ease-out; }
+    #followBar { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; border-color: rgba(201, 182, 242, .3); }
+    #followText { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #followBar button { flex: none; padding: 5px 11px; font-size: 12px; }
+    #followClose { border: 0; background: none; color: var(--muted); }
+
+    /* Settings (opened from the gear) */
+    #settings:not([open]) { display: none; }
+    /* While settings are open they get the whole sidebar (call and chat come back when closed). */
+    #settings[open] { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+    body:has(#settings[open]) .call, body:has(#settings[open]) .chat { display: none; }
+    #settings .body { padding: 14px 12px; }
     .group + .group { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
-    .group h2 { margin: 0 0 10px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
     .field { display: block; color: var(--muted); font-size: 12px; }
     .field + .field { margin-top: 10px; }
-    .field input { margin-top: 4px; }
+    .field input, .field select { margin-top: 4px; }
     .profile { display: flex; align-items: flex-end; gap: 12px; }
     .profile .field { flex: 1; min-width: 0; }
-    #myAvatar .avatar { box-shadow: none; }
+    #myAvatar .avatar { box-shadow: 0 0 0 1px var(--card-edge); }
     #avatars { display: flex; gap: 14px; margin-top: 14px; padding: 2px; }
-    #avatars button { width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: none; display: block; }
+    #avatars button { width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: none; display: block; box-shadow: none; }
     #avatars button .avatar { width: 100% !important; height: 100% !important; box-shadow: none; transition: transform .12s; }
     #avatars button:hover:not(:disabled) { background: none; }
     #avatars button:hover .avatar { transform: scale(1.06); }
-    #avatars button.selected { outline: 2px solid var(--accent); outline-offset: 2px; }
+    #avatars button.selected { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: 0 0 16px var(--accent-glow); }
     #avatars button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
     .row { display: flex; gap: 8px; margin-top: 14px; }
     .row button { flex: 1; }
 
     /* Video call */
-    .stage { position: relative; aspect-ratio: 4 / 3; background: #0d0a11; }
+    .call { padding: 8px; }
+    .stage { position: relative; aspect-ratio: 4 / 3; border-radius: 7px; overflow: hidden;
+      background: radial-gradient(120% 90% at 50% 20%, #1c1724, #0b090e); border: 1px solid var(--line); }
     #remote { width: 100%; height: 100%; object-fit: cover; display: block; }
-    #local { position: absolute; right: 10px; bottom: 10px; width: 28%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 4px;
-      transform: scaleX(-1); background: var(--raised); box-shadow: 0 2px 8px rgba(0, 0, 0, .5); }
-    #remoteMic { position: absolute; left: 10px; top: 10px; padding: 3px 8px; border-radius: 4px; font-size: 12px;
-      background: rgba(13, 10, 17, .75); color: var(--text); }
-    #placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 20px; text-align: center; color: var(--muted); }
+    #local { position: absolute; right: 8px; bottom: 8px; width: 28%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 5px;
+      transform: scaleX(-1); background: #1d1825; border: 1px solid rgba(255, 255, 255, .15); box-shadow: 0 4px 14px rgba(0, 0, 0, .5); }
+    #remoteMic { position: absolute; left: 8px; top: 8px; padding: 3px 8px; border-radius: 5px; font-size: 12px;
+      background: rgba(12, 10, 16, .55); border: 1px solid rgba(255, 255, 255, .1); backdrop-filter: blur(10px); }
+    #placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 20px; text-align: center; color: #a99fb8; } /* the video area is dark in every theme */
     #faces { display: flex; }
     #faces .avatar + .avatar { margin-left: -14px; }
-    .controls { display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+    .controls { display: flex; align-items: center; gap: 6px; padding-top: 8px; }
     .controls .wide { flex: 1; }
-    .icon { padding: 7px; }
-    .icon.off { color: var(--danger); border-color: #4a2a33; }
-    #hangup { margin-left: auto; color: var(--danger); border-color: #4a2a33; }
+    #hangup { margin-left: auto; color: var(--danger); border-color: rgba(229, 134, 143, .35); background: rgba(229, 134, 143, .08); }
 
     /* Chat */
-    .chat { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-    #log { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
-    #log:empty::before { content: 'No messages yet.'; color: #6f6580; }
+    .chat { flex: 1; display: flex; flex-direction: column; min-height: 140px; overflow: hidden; }
+    #log { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 6px; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+    #log:empty::before { content: 'No messages yet.'; color: var(--faint); }
     .line { display: flex; align-items: flex-end; gap: 6px; }
     .line.me { flex-direction: row-reverse; }
-    .msg { max-width: 80%; padding: 6px 10px; border-radius: 12px 12px 12px 3px; background: var(--them); overflow-wrap: anywhere; }
-    .line.me .msg { border-radius: 12px 12px 3px 12px; background: var(--accent); color: var(--accent-ink); }
+    .msg { max-width: 80%; padding: 7px 11px; border-radius: 10px 10px 10px 3px; background: var(--them); border: 1px solid var(--line); overflow-wrap: anywhere; }
+    .line.me .msg { border-radius: 10px 10px 3px 10px; background: var(--accent); border-color: transparent; color: var(--accent-ink); }
     .line.me .who { display: none; }
     .line.system { justify-content: center; color: var(--muted); font-size: 12px; text-align: center; padding: 2px 0; }
     .who { display: block; font-size: 11px; color: var(--muted); margin-bottom: 1px; }
-    .msg.big { background: none !important; padding: 0 2px; font-size: 30px; line-height: 1.15; }
+    .msg.big { background: none !important; border-color: transparent; padding: 0 2px; font-size: 30px; line-height: 1.15; }
     .line.me .msg.big .who { display: none; }
     .stamp { display: inline-block; margin-top: 3px; padding: 0 5px; border: 0; border-radius: 4px; font-size: 10px; font-variant-numeric: tabular-nums;
-      background: rgba(0, 0, 0, .18); color: inherit; opacity: .7; cursor: pointer; }
-    .stamp:hover { opacity: 1; background: rgba(0, 0, 0, .3); }
-    .msg.big .stamp { font-size: 10px; vertical-align: middle; margin-left: 4px; }
-    #typing { padding: 0 14px 6px; color: var(--muted); font-size: 12px; font-style: italic; }
-    #form { display: flex; gap: 6px; padding: 10px 14px; border-top: 1px solid var(--line); }
+      background: rgba(0, 0, 0, .18); color: inherit; opacity: .7; box-shadow: none; }
+    .stamp:hover:not(:disabled) { opacity: 1; background: rgba(0, 0, 0, .3); }
+    .msg.big .stamp { font-size: 10px; vertical-align: middle; margin-left: 4px; color: var(--muted); background: var(--soft); opacity: 1; }
+    .line.me .msg.big { color: var(--text); }
+    #typing { padding: 0 12px 6px; color: var(--muted); font-size: 12px; font-style: italic; }
+    #form { display: flex; gap: 6px; padding: 8px; border-top: 1px solid var(--line); }
+    #form input { border-radius: 7px; }
     #form button { padding: 7px 9px; }
     #form .icon { color: var(--muted); }
-    #form .icon[aria-pressed='true'] { color: var(--accent); border-color: var(--accent); }
+    #form .icon[aria-pressed='true'] { color: var(--accent); border-color: rgba(201, 182, 242, .45); }
 
     /* Emoji tray (opens above the message box) */
-    .tray { border-top: 1px solid var(--line); background: var(--raised); max-height: 280px; overflow-y: auto; padding: 10px 14px;
+    .tray { border-top: 1px solid var(--line); background: var(--soft); max-height: 280px; overflow-y: auto; padding: 10px 12px;
       scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
     .tray-label { color: var(--muted); font-size: 11px; font-weight: 500; margin: 8px 0 4px; }
     .tray-label:first-child { margin-top: 0; }
     .quick, .emoji-grid { display: grid; grid-template-columns: repeat(8, 1fr); }
-    .quick button, .emoji-grid button { border: 0; padding: 4px 0; font-size: 20px; line-height: 1.2; border-radius: 6px; }
-    .quick button:hover, .emoji-grid button:hover { background: var(--line); }
+    .quick button, .emoji-grid button { border: 0; background: none; padding: 4px 0; font-size: 20px; line-height: 1.2; border-radius: 6px; }
+    .quick button:hover, .emoji-grid button:hover { background: var(--hover); }
+
+    /* Past parties (history) */
+    body.show-history #watchBar, body.show-history #followBar, body.show-history #settings,
+    body.show-history .call, body.show-history .chat { display: none !important; }
+    #historyView { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+    .hv-head { display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 10px; border-bottom: 1px solid var(--line); }
+    .hv-head h2 { flex: 1; margin: 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .hv-head button { font-size: 12px; padding: 5px 9px; }
+    #sessions, #sessionLog { flex: 1; overflow-y: auto; padding: 8px; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+    #sessions:empty::before { content: 'No past parties yet. When you leave a party, its chat is saved here.'; display: block; padding: 12px 6px; color: var(--faint); }
+    .session { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 10px 12px;
+      margin-bottom: 6px; border-radius: 7px; background: var(--soft); }
+    .session .s-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+    .session .s-meta { font-size: 12px; color: var(--muted); }
+    #sessionLog { display: flex; flex-direction: column; gap: 6px; }
   </style>
 </head>
 <body>
-  <header class="top">
+  <div id="backdrop"></div>
+  <header class="top card">
     <div id="who"></div>
     <div class="meta">
       <div id="names">Sinehan</div>
@@ -165,13 +258,16 @@
       <svg class="i-link" viewBox="0 0 24 24"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3.2-3.2a4.5 4.5 0 0 0-6.4-6.4L11.6 6" /><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3.2 3.2a4.5 4.5 0 0 0 6.4 6.4l1.6-1.6" /></svg>
       <svg class="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
     </button>
+    <button id="historyBtn" class="icon" title="Past parties" aria-label="Past parties" aria-pressed="false">
+      <svg viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6" /><path d="M3 4v4h4" /><path d="M12 8v4.5l3 1.8" /></svg>
+    </button>
     <button id="settingsBtn" class="icon" title="Settings" aria-label="Settings" aria-pressed="true">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></svg>
     </button>
   </header>
-  <div id="inviteBox" hidden><input id="inviteLink" readonly /></div>
+  <div id="inviteBox" class="card" hidden><input id="inviteLink" readonly /></div>
 
-  <div id="watchBar">
+  <div id="watchBar" class="card" hidden>
     <img id="watchIcon" alt="" hidden />
     <div class="wb-text">
       <span class="wb-label">Watching</span>
@@ -181,15 +277,23 @@
     <button id="handBtn" class="icon" title="Hold their hand">🤝</button>
     <button id="countdownBtn" class="icon" title="Count down 3-2-1 and play together">3·2·1</button>
   </div>
-  <div id="followBar" hidden>
+  <div id="followBar" class="card" hidden>
     <span id="followText"></span>
     <button id="followGo" class="primary">Go</button>
     <button id="followClose" class="icon" title="Dismiss">✕</button>
   </div>
 
-  <details id="settings" open>
+  <details id="settings" class="card" open>
     <summary hidden>Settings</summary>
     <div class="body">
+      <section class="group">
+        <h2>Appearance</h2>
+        <div class="themes" role="radiogroup" aria-label="Appearance">
+          <button type="button" data-theme-choice="glass"><span class="swatch glass"></span>Glass</button>
+          <button type="button" data-theme-choice="dark"><span class="swatch dark"></span>Dark</button>
+          <button type="button" data-theme-choice="light"><span class="swatch light"></span>Light</button>
+        </div>
+      </section>
       <section class="group">
         <h2>Profile</h2>
         <div class="profile">
@@ -216,28 +320,30 @@
     </div>
   </details>
 
-  <div class="stage">
-    <video id="remote" autoplay playsinline></video>
-    <video id="local" autoplay playsinline muted hidden></video>
-    <div id="remoteMic" hidden title="Their microphone is off">🔇 Mic off</div>
-    <div id="placeholder"><div id="faces"></div><div id="phText"></div></div>
-  </div>
-  <div class="controls">
-    <button id="start" class="primary wide">Start video call</button>
-    <button id="join" class="primary wide" hidden>Join with camera</button>
-    <button id="mic" class="icon" hidden title="Mute / unmute">
-      <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
-    </button>
-    <button id="cam" class="icon" hidden title="Camera on / off">
-      <svg viewBox="0 0 24 24"><rect x="3" y="7" width="12" height="10" rx="2" /><path d="M15 10.5l6-3.5v10l-6-3.5" /></svg>
-    </button>
-    <button id="pip" class="icon" hidden title="Pop out (use before going fullscreen)">
-      <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2" /><rect x="12" y="11" width="6" height="5" rx="1" /></svg>
-    </button>
-    <button id="hangup" hidden>Hang up</button>
-  </div>
+  <section class="card call">
+    <div class="stage">
+      <video id="remote" autoplay playsinline></video>
+      <video id="local" autoplay playsinline muted hidden></video>
+      <div id="remoteMic" hidden title="Their microphone is off">🔇 Mic off</div>
+      <div id="placeholder"><div id="faces"></div><div id="phText"></div></div>
+    </div>
+    <div class="controls">
+      <button id="start" class="primary wide">Start video call</button>
+      <button id="join" class="primary wide" hidden>Join with camera</button>
+      <button id="mic" class="icon" hidden title="Mute / unmute">
+        <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
+      </button>
+      <button id="cam" class="icon" hidden title="Camera on / off">
+        <svg viewBox="0 0 24 24"><rect x="3" y="7" width="12" height="10" rx="2" /><path d="M15 10.5l6-3.5v10l-6-3.5" /></svg>
+      </button>
+      <button id="pip" class="icon" hidden title="Pop out (use before going fullscreen)">
+        <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2" /><rect x="12" y="11" width="6" height="5" rx="1" /></svg>
+      </button>
+      <button id="hangup" hidden>Hang up</button>
+    </div>
+  </section>
 
-  <section class="chat">
+  <section class="card chat">
     <div id="log"></div>
     <div id="emojiTray" class="tray" hidden>
       <div class="tray-label">Quick react: sends right away and floats on their screen</div>
@@ -254,6 +360,17 @@
         <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
       </button>
     </form>
+  </section>
+
+  <section id="historyView" class="card" hidden>
+    <div class="hv-head">
+      <button id="historyBack" class="icon" title="Back" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6" /></svg></button>
+      <h2 id="hvTitle">Past parties</h2>
+      <button id="historyClear" title="Delete every saved party">Clear all</button>
+      <button id="sessionDelete" hidden title="Delete this party">Delete</button>
+    </div>
+    <div id="sessions"></div>
+    <div id="sessionLog" hidden></div>
   </section>
 
   <script src="sidepanel.js"></script>

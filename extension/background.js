@@ -96,6 +96,12 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     historyWrite.then(() => chrome.storage.local.get('history')).then(({ history = [] }) => reply(history));
     return true;
   }
+  if (msg.type === 'open-sidebar') {
+    // From the floating camera's exit button; must run right away, while Chrome still counts the click.
+    if (!sender.tab) return reply({ ok: false });
+    chrome.sidePanel.open({ windowId: sender.tab.windowId }).then(() => reply({ ok: true }), () => reply({ ok: false }));
+    return true;
+  }
   if (msg.type === 'join-invite') {
     // Clicked "Join" on an invite page: open the sidebar while we still have the click, then join.
     // That tab is about to become the show, so it's the watch tab.
@@ -110,6 +116,20 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   } else if (msg.type === 'disconnect') {
     chrome.storage.local.set({ active: false });
     disconnect();
+    archiveParty(); // Leave ends the party: its chat moves to "Past parties"
+  } else if (msg.type === 'sessions') {
+    historyWrite.then(() => chrome.storage.local.get('sessions')).then(({ sessions = [] }) =>
+      reply(sessions.map(({ messages, ...summary }) => ({ ...summary, count: messages.length }))));
+    return true;
+  } else if (msg.type === 'session') {
+    chrome.storage.local.get('sessions').then(({ sessions = [] }) => reply(sessions.find((x) => x.id === msg.id) || null));
+    return true;
+  } else if (msg.type === 'delete-session' || msg.type === 'clear-sessions') {
+    historyWrite = historyWrite
+      .then(() => chrome.storage.local.get('sessions'))
+      .then(({ sessions = [] }) => chrome.storage.local.set({ sessions: msg.type === 'clear-sessions' ? [] : sessions.filter((x) => x.id !== msg.id) }));
+    historyWrite.then(() => reply({ ok: true }));
+    return true;
   } else if (msg.type === 'set-watch') {
     setWatchTab(msg.tabId, true).then(() => reply(statusView()));
     return true;
@@ -125,15 +145,37 @@ function statusView() {
 }
 
 function joinRoom(server, room) {
-  // A different room means a different party, so start its chat fresh.
+  // A different room means a different party: the old one's chat goes to "Past parties".
   historyWrite = historyWrite
     .then(() => chrome.storage.local.get('room'))
-    .then(({ room: previous }) => {
-      const update = { server, room, active: true };
-      if (previous !== room) update.history = [];
-      return chrome.storage.local.set(update);
-    });
+    .then(({ room: previous }) => (previous !== room ? archiveNow() : null))
+    .then(() => chrome.storage.local.set({ server, room, active: true }))
+    .catch(console.error);
   connect(server, room);
+}
+
+// ---- Past parties ----
+// When a party ends, its chat is saved with when it was and what you watched; newest 20 are kept.
+const MAX_SESSIONS = 20;
+async function archiveNow() {
+  const { history = [], room, partyShows = [], sessions = [] } = await chrome.storage.local.get(['history', 'room', 'partyShows', 'sessions']);
+  const update = { history: [], partyShows: [] };
+  if (history.length) {
+    const shows = [...new Set([...partyShows, watch?.title].filter(Boolean))];
+    update.sessions = [{ id: crypto.randomUUID(), room, startedAt: history[0].at, endedAt: Date.now(), shows, messages: history }, ...sessions].slice(0, MAX_SESSIONS);
+  }
+  await chrome.storage.local.set(update);
+}
+function archiveParty() {
+  historyWrite = historyWrite.then(archiveNow).catch(console.error);
+}
+// Remember what this party watched, for its title in "Past parties".
+function noteShow(title) {
+  if (!title) return;
+  historyWrite = historyWrite
+    .then(() => chrome.storage.local.get('partyShows'))
+    .then(({ partyShows = [] }) => (partyShows.includes(title) ? null : chrome.storage.local.set({ partyShows: [...partyShows, title].slice(-5) })))
+    .catch(console.error);
 }
 
 // ---- Watch tab ----
@@ -165,7 +207,9 @@ function clearWatch() {
 // Tell the other person what we're watching. `from` is what we were on before: if they're still
 // there (we were watching together), their tab follows automatically; otherwise they get a prompt.
 function announceShow(from) {
-  if (watch && /^https?:/.test(watch.url)) send({ type: 'now-watching', url: watch.url, title: watch.title, from });
+  if (!watch || !/^https?:/.test(watch.url)) return;
+  noteShow(watch.title);
+  send({ type: 'now-watching', url: watch.url, title: watch.title, from });
 }
 
 // Go where they are: reuse the show's tab if we have one, otherwise open a new one.

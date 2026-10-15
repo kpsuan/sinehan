@@ -80,10 +80,10 @@ function ask(msg, then) {
 }
 
 // Our name/picture, for reactions sent from this tab.
-let me = { name: 'Me', avatar: 0 };
-chrome.storage.local.get(['name', 'avatar']).then(({ name, avatar }) => (me = { name: name || 'Me', avatar }));
+let me = { name: 'Guest', avatar: 0 };
+chrome.storage.local.get(['name', 'avatar']).then(({ name, avatar }) => (me = { name: name || 'Guest', avatar }));
 chrome.storage.onChanged.addListener((c) => {
-  if (c.name) me.name = c.name.newValue || 'Me';
+  if (c.name) me.name = c.name.newValue || 'Guest';
   if (c.avatar) me.avatar = c.avatar.newValue;
 });
 
@@ -438,8 +438,8 @@ function showCount(n) {
     countEl = document.createElement('div');
     countEl.dataset.sinehan = '';
     countEl.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2147483647;pointer-events:none;' +
-      'width:150px;height:150px;border-radius:50%;display:grid;place-items:center;background:rgba(22,17,28,.82);' +
-      `color:#ece6f3;font:600 72px/1 ${FONT};box-shadow:0 8px 40px rgba(0,0,0,.5)`;
+      'width:150px;height:150px;border-radius:50%;display:grid;place-items:center;background:rgba(22,18,30,.58);backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);border:1px solid rgba(255,255,255,.12);' +
+      `color:#efeaf6;font:600 72px/1 ${FONT};box-shadow:0 8px 40px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.1)`;
   }
   if (n == null) return countEl.remove();
   const host = document.fullscreenElement || document.body;
@@ -472,7 +472,7 @@ function showFollowBanner(url, title, from) {
   bannerEl = document.createElement('div');
   bannerEl.dataset.sinehan = '';
   bannerEl.style.cssText = 'position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:2147483647;display:flex;align-items:center;gap:10px;' +
-    'padding:9px 10px 9px 14px;border-radius:8px;background:#1f1827;border:1px solid #2c2337;border-left:3px solid #c9b6f2;color:#ece6f3;' +
+    'padding:9px 10px 9px 14px;border-radius:9px;background:rgba(22,18,30,.58);backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);border:1px solid rgba(255,255,255,.12);color:#efeaf6;' +
     `font:13px/1.4 ${FONT};box-shadow:0 6px 24px rgba(0,0,0,.45);max-width:min(560px,90vw)`;
   const label = document.createElement('span');
   label.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
@@ -521,6 +521,8 @@ async function onLocal(msg) {
       post({ type: 'countdown', time });
       startCountdown(time);
     }
+  } else if (msg.type === 'call-state') {
+    overlay?.setCallState(msg);
   } else if (msg.type === 'cam-available') {
     if (overlay) post({ local: true, type: 'cam-want', from: viewId });
   } else if (msg.type === 'cam-offer') {
@@ -560,39 +562,60 @@ function buildOverlay(fsHost) {
       :host { font: 13px/1.4 ${FONT}; color: #ece6f3; }
       button { font: inherit; color: inherit; cursor: pointer; }
       [hidden] { display: none !important; }
-      .cam { position: absolute; top: 20px; right: 20px; width: 240px; aspect-ratio: 4 / 3; border-radius: 10px; overflow: hidden;
-        background: #0d0a11; box-shadow: 0 6px 24px rgba(0,0,0,.5); pointer-events: auto; }
-      .cam video { width: 100%; height: 100%; object-fit: cover; display: block; }
-      .cam .hide { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; border: 0; border-radius: 50%;
-        background: rgba(22,17,28,.7); opacity: 0; transition: opacity .15s; }
-      .cam:hover .hide { opacity: 1; }
-      .fab, .hand { position: absolute; right: 24px; width: 44px; height: 44px; border-radius: 50%; border: 1px solid #2c2337;
-        background: #1f1827; display: grid; place-items: center; pointer-events: auto; box-shadow: 0 4px 16px rgba(0,0,0,.45); }
+      .cam { position: absolute; top: 20px; left: calc(100% - 260px); width: 240px; aspect-ratio: 4 / 3; border-radius: 8px; overflow: hidden;
+        background: #0d0a11; box-shadow: 0 6px 24px rgba(0,0,0,.5); pointer-events: auto; cursor: grab; touch-action: none;
+        transform-origin: var(--origin, top right); transition: transform .18s ease; }
+      .cam:hover:not(.dragging) { transform: scale(1.5); }
+      .cam.dragging { cursor: grabbing; transition: none; }
+      .cam video { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+      .cam .hide { position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border: 0; border-radius: 50%;
+        background: rgba(22,17,28,.7); font-size: 11px; opacity: 0; transition: opacity .15s; }
+      .controls { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; gap: 6px; padding: 18px 6px 6px;
+        background: linear-gradient(transparent, rgba(13,10,17,.85)); opacity: 0; transition: opacity .15s; }
+      .cam:hover .hide, .cam:hover .controls { opacity: 1; }
+      .cam.dragging .hide, .cam.dragging .controls { opacity: 0; }
+      .controls button { width: 28px; height: 28px; border: 0; border-radius: 50%; display: grid; place-items: center; background: rgba(236,230,243,.16); }
+      .controls button:hover { background: rgba(236,230,243,.28); }
+      .controls button.off { background: rgba(229,134,143,.85); color: #1b1325; }
+      .controls button[hidden] { display: none; }
+      .controls svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+      .fab, .hand { position: absolute; right: 24px; width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(255,255,255,.14);
+        background: rgba(22,18,30,.5); backdrop-filter: blur(16px) saturate(140%); display: grid; place-items: center; pointer-events: auto;
+        box-shadow: 0 6px 20px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.08); }
       .fab { bottom: 96px; }
       .hand { bottom: 148px; font-size: 18px; }
-      .fab:hover, .hand:hover { background: #2a2134; }
+      .fab:hover, .hand:hover { background: rgba(40,33,52,.65); }
       .fab svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
       .badge { position: absolute; top: -3px; right: -3px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
         background: #c9b6f2; color: #1b1325; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
       .panel { position: absolute; right: 80px; bottom: 96px; width: 300px; height: min(380px, 60vh); display: flex; flex-direction: column;
-        border-radius: 10px; border: 1px solid #2c2337; background: rgba(22,17,28,.94); box-shadow: 0 8px 30px rgba(0,0,0,.5); pointer-events: auto; overflow: hidden; }
-      .head { display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; border-bottom: 1px solid #2c2337; font-weight: 600; }
+        border-radius: 10px; border: 1px solid rgba(255,255,255,.12); background: rgba(20,16,27,.55); backdrop-filter: blur(22px) saturate(140%);
+        box-shadow: 0 12px 36px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.08); pointer-events: auto; overflow: hidden; }
+      .head { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,.08); font-weight: 600; }
       .head button { border: 0; background: none; color: #978ca6; font-size: 16px; line-height: 1; padding: 2px 4px; }
       .log { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; scrollbar-width: thin; scrollbar-color: #2c2337 transparent; }
-      .msg { max-width: 82%; align-self: flex-start; padding: 6px 10px; border-radius: 12px 12px 12px 3px; background: #251d2e; overflow-wrap: anywhere; }
-      .msg.me { align-self: flex-end; border-radius: 12px 12px 3px 12px; background: #c9b6f2; color: #1b1325; }
-      .msg.big { background: none; font-size: 26px; line-height: 1.15; padding: 0 2px; }
+      .msg { max-width: 82%; align-self: flex-start; padding: 7px 11px; border-radius: 10px 10px 10px 3px; background: rgba(255,255,255,.09); border: 1px solid rgba(255,255,255,.08); overflow-wrap: anywhere; }
+      .msg.me { align-self: flex-end; border-radius: 10px 10px 3px 10px; background: #c9b6f2; border-color: transparent; color: #1b1325; }
+      .msg.big { background: none; border-color: transparent; font-size: 26px; line-height: 1.15; padding: 0 2px; }
       .who { display: block; font-size: 11px; color: #978ca6; }
       .msg.me .who, .msg.big .who { display: none; }
-      .quick { display: flex; justify-content: space-between; padding: 6px 10px; border-top: 1px solid #2c2337; }
+      .quick { display: flex; justify-content: space-between; padding: 6px 10px; border-top: 1px solid rgba(255,255,255,.08); }
       .quick button { border: 0; background: none; font-size: 18px; padding: 2px 4px; border-radius: 6px; }
-      .quick button:hover { background: #2c2337; }
-      form { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid #2c2337; }
-      input { flex: 1; min-width: 0; padding: 7px 9px; border-radius: 6px; border: 1px solid #2c2337; background: #1f1827; color: inherit; font: inherit; outline: none; }
+      .quick button:hover { background: rgba(255,255,255,.1); }
+      form { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid rgba(255,255,255,.08); }
+      input { flex: 1; min-width: 0; padding: 8px 10px; border-radius: 7px; border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.06); color: inherit; font: inherit; outline: none; }
       input:focus { border-color: #c9b6f2; }
-      form button { border: 0; border-radius: 6px; padding: 0 12px; background: #c9b6f2; color: #1b1325; font-weight: 600; }
+      form button { border: 0; border-radius: 7px; padding: 0 12px; background: #c9b6f2; color: #1b1325; font-weight: 600; box-shadow: 0 4px 16px rgba(201,182,242,.3); }
     </style>
-    <div class="cam" hidden><video autoplay playsinline muted></video><button class="hide" title="Hide camera">✕</button></div>
+    <div class="cam" hidden>
+      <video autoplay playsinline muted></video>
+      <button class="hide" title="Hide">✕</button>
+      <div class="controls">
+        <button class="c-mic" title="Mute / unmute your mic"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg></button>
+        <button class="c-cam" title="Turn your camera on / off"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="12" height="10" rx="2" /><path d="M15 10.5l6-3.5v10l-6-3.5" /></svg></button>
+        <button class="c-exit" title="Exit fullscreen and open the sidebar"><svg viewBox="0 0 24 24"><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" /><path d="M14 10l6-6M10 14l-6 6" /></svg></button>
+      </div>
+    </div>
     <div class="panel" hidden>
       <div class="head">Chat <button class="close" title="Close">✕</button></div>
       <div class="log"></div>
@@ -644,6 +667,59 @@ function buildOverlay(fsHost) {
   $('.hide').onclick = () => {
     camHidden = true;
     $('.cam').hidden = true;
+  };
+
+  // Her camera: drag it anywhere (remembered), it grows toward the middle of the screen on hover,
+  // and its controls work your mic/camera in the call (which runs in the sidebar).
+  const cam = $('.cam');
+  function placeCam(x, y) {
+    const w = cam.offsetWidth || 240;
+    const h = cam.offsetHeight || 180;
+    const left = Math.min(Math.max(8, x), innerWidth - w - 8);
+    const top = Math.min(Math.max(8, y), innerHeight - h - 8);
+    cam.style.left = `${left}px`;
+    cam.style.top = `${top}px`;
+    // Zoom from the corner nearest the screen edge, so it grows inward and never off-screen.
+    cam.style.setProperty('--origin', `${top + h / 2 > innerHeight / 2 ? 'bottom' : 'top'} ${left + w / 2 > innerWidth / 2 ? 'right' : 'left'}`);
+  }
+  chrome.storage.local.get('camPos').then(({ camPos }) => {
+    if (camPos) placeCam(camPos.x * innerWidth, camPos.y * innerHeight);
+  }).catch(() => {});
+  let drag = null;
+  cam.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || e.composedPath().some((el) => el.tagName === 'BUTTON')) return;
+    const r = cam.getBoundingClientRect();
+    drag = { dx: e.clientX - r.left, dy: e.clientY - r.top, moved: false };
+    cam.setPointerCapture(e.pointerId);
+  });
+  cam.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    if (!drag.moved) {
+      drag.moved = true;
+      cam.classList.add('dragging'); // un-zoom while moving, so it follows the pointer exactly
+    }
+    placeCam(e.clientX - drag.dx, e.clientY - drag.dy);
+  });
+  const endDrag = () => {
+    if (!drag) return;
+    if (drag.moved) {
+      cam.classList.remove('dragging');
+      const r = cam.getBoundingClientRect();
+      chrome.storage.local.set({ camPos: { x: r.left / innerWidth, y: r.top / innerHeight } }).catch(() => {});
+    }
+    drag = null;
+  };
+  cam.addEventListener('pointerup', endDrag);
+  cam.addEventListener('pointercancel', endDrag);
+
+  $('.c-mic').onclick = () => post({ local: true, type: 'call-control', action: 'mic' });
+  $('.c-cam').onclick = () => post({ local: true, type: 'call-control', action: 'cam' });
+  $('.c-exit').onclick = () => {
+    // Chrome hides the sidebar in fullscreen: leave fullscreen and bring the sidebar back.
+    ask({ type: 'open-sidebar' }, (r) => {
+      if (!r?.ok) toast('Click the Sinehan icon to open the sidebar');
+    });
+    document.exitFullscreen?.().catch(() => {});
   };
   $('.hand').onclick = () => {
     post({ type: 'hand', name: me.name });
@@ -699,6 +775,14 @@ function buildOverlay(fsHost) {
     setCam(stream) {
       $('.cam video').srcObject = stream;
       $('.cam').hidden = !stream || camHidden;
+      if (stream) post({ local: true, type: 'call-state-request' });
+    },
+    setCallState({ mic, cam: camOn, hasCamera }) {
+      $('.c-mic').classList.toggle('off', !mic);
+      $('.c-mic').title = mic ? 'Mute your mic' : 'Unmute your mic';
+      $('.c-cam').classList.toggle('off', !camOn);
+      $('.c-cam').title = camOn ? 'Turn your camera off' : 'Turn your camera on';
+      $('.c-mic').hidden = $('.c-cam').hidden = !hasCamera; // (watching her without your own camera on)
     },
     destroy() {
       for (const type of keyEvents) window.removeEventListener(type, swallow, true);
@@ -716,9 +800,9 @@ function toast(text) {
     toastEl = document.createElement('div');
     toastEl.dataset.sinehan = '';
     toastEl.style.cssText =
-      'position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483647;padding:8px 12px;border-radius:6px;' +
-      'background:#1f1827;border:1px solid #2c2337;border-left:3px solid #c9b6f2;color:#ece6f3;max-width:60vw;' +
-      `font:13px/1.4 ${FONT};box-shadow:0 4px 16px rgba(0,0,0,.4);pointer-events:none;transition:opacity .3s`;
+      'position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483647;padding:8px 14px;border-radius:8px;' +
+      'background:rgba(22,18,30,.58);backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);border:1px solid rgba(255,255,255,.12);color:#efeaf6;max-width:60vw;' +
+      `font:13px/1.4 ${FONT};box-shadow:0 8px 28px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.08);pointer-events:none;transition:opacity .3s`;
   }
   const host = document.fullscreenElement || document.body;
   if (toastEl.parentNode !== host) host.appendChild(toastEl);

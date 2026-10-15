@@ -5,38 +5,105 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <!-- The Sinehan extension looks for this tag to wire up the Join button. -->
   <meta name="watch-party-join" content="1" />
-  <title>Sinehan invite</title>
+  <title>You're invited · Sinehan</title>
+  <link rel="icon" href="/static/logo.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <style>
-    :root { color-scheme: dark; }
-    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; box-sizing: border-box;
-      background: #16111c; color: #ece6f3; font: 15px/1.5 'Inter', system-ui, sans-serif; }
-    main { max-width: 380px; }
-    .eyebrow { color: #978ca6; font-size: 13px; margin: 0; }
-    h1 { font-size: 28px; font-weight: 600; line-height: 1.2; letter-spacing: -0.02em; margin: 6px 0 14px; }
-    p { color: #b7adc4; margin: 0 0 18px; }
-    button { padding: 10px 18px; border: 0; border-radius: 6px; background: #c9b6f2; color: #1b1325; font: inherit; font-weight: 600; cursor: pointer; }
-    button:hover { background: #d8c9f7; }
+    :root { color-scheme: dark; --text: #efeaf6; --muted: #9a90aa; --faint: #6d6479; --accent: #c9b6f2; --accent-ink: #1b1325; --edge: rgba(255, 255, 255, .09); }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; color: var(--text);
+      font: 15px/1.5 'Inter', system-ui, sans-serif;
+      background: radial-gradient(90% 60% at 50% 0%, #241c31 0%, #120f17 55%, #0b090e 100%); }
+    [hidden] { display: none !important; }
+
+    .card { width: 100%; max-width: 400px; padding: 28px; border-radius: 12px; background: rgba(255, 255, 255, .035); border: 1px solid var(--edge);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 24px 60px rgba(0, 0, 0, .45); backdrop-filter: blur(16px); }
+    .brand { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; font-weight: 500; }
+    .brand img { width: 22px; height: 22px; }
+
+    .who { display: flex; align-items: center; gap: 12px; margin: 26px 0 6px; }
+    .avatar { width: 48px; height: 48px; border-radius: 50%; overflow: hidden; flex: none; box-shadow: 0 0 0 1px var(--edge); }
+    .avatar img { width: 100%; height: 100%; display: block; }
+    .who p { margin: 0; color: var(--muted); }
+    .who strong { color: var(--text); font-weight: 600; }
+    h1 { margin: 14px 0 0; font-size: 24px; font-weight: 700; line-height: 1.25; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+    .site { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; padding: 3px 9px; border-radius: 6px; font-size: 12px;
+      color: var(--muted); background: rgba(255, 255, 255, .05); border: 1px solid var(--edge); }
+
+    .join { display: block; width: 100%; margin-top: 26px; padding: 12px 18px; border: 0; border-radius: 8px; cursor: pointer;
+      background: var(--accent); color: var(--accent-ink); font: inherit; font-weight: 600; box-shadow: 0 8px 26px rgba(201, 182, 242, .3);
+      transition: background .15s, transform .1s; }
+    .join:hover { background: #d8c9f7; }
+    .join:active { transform: scale(.98); }
+    .note { margin: 12px 0 0; color: var(--faint); font-size: 13px; text-align: center; }
+    .done { margin-top: 22px; padding: 12px 14px; border-radius: 8px; background: rgba(159, 214, 176, .08); border: 1px solid rgba(159, 214, 176, .25); color: #cde9d6; }
+
+    .steps { margin: 22px 0 0; padding: 0; list-style: none; counter-reset: step; }
+    .steps li { counter-increment: step; display: flex; gap: 10px; padding: 8px 0; color: var(--muted); }
+    .steps li::before { content: counter(step); flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+      font-size: 12px; font-weight: 600; color: var(--text); background: rgba(255, 255, 255, .07); border: 1px solid var(--edge); }
+
+    .features { display: flex; justify-content: center; gap: 14px; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--edge);
+      color: var(--faint); font-size: 12px; }
+
     .has-ext { display: none; }
     html[data-wp-ready] .has-ext { display: block; }
     html[data-wp-ready] .needs-ext { display: none; }
-    [hidden] { display: none !important; }
   </style>
 </head>
 <body>
-  <main>
-    <p class="eyebrow">Sinehan</p>
-    <h1>You've been invited to watch together.</h1>
+  <main class="card">
+    <div class="brand"><img src="/static/logo.png" alt="" /> Sinehan</div>
+
+    <div class="who">
+      <div class="avatar" id="avatar"><img id="avatarImg" src="/static/avatar1.png" alt="" /></div>
+      <p><strong id="inviter">Someone</strong> invited you to watch</p>
+    </div>
+    <h1 id="show">a watch party</h1>
+    <span class="site" id="site" hidden><span id="siteName"></span></span>
+
     <div class="has-ext">
-      <p>Joining takes you to the show. Playback stays in sync, and chat and video open in the sidebar.</p>
-      <button id="wp-join">Join</button>
-      <p id="wp-done" hidden>You're in. Open the show you're watching.</p>
+      <button class="join" id="wp-join">Join the party</button>
+      <p class="note">You'll go straight to the show. Playback, chat and video stay in sync.</p>
+      <p class="done" id="wp-done" hidden>You're in. Open the show you're watching together.</p>
     </div>
+
     <div class="needs-ext">
-      <p>This needs the Sinehan extension in Chrome. Install it, then refresh this page.</p>
+      <ol class="steps">
+        <li><span>Get the Sinehan extension for Chrome from <span id="askWho">the person who invited you</span>.</span></li>
+        <li><span>Come back and refresh this page.</span></li>
+      </ol>
     </div>
+
+    <div class="features"><span>Synced playback</span><span>·</span><span>Chat</span><span>·</span><span>Video call</span></div>
   </main>
+
+  <script>
+    // Fills in who invited you and to what, from the invite link. Text only; nothing here runs as HTML.
+    (() => {
+      const q = new URLSearchParams(location.search);
+      const COLORS = ['#c9b6f2', '#f1c9b0', '#bfe0d0', '#c6d4ec'];
+      const name = (q.get('n') || '').trim().slice(0, 30);
+      const avatar = Math.min(3, Math.max(0, parseInt(q.get('a'), 10) || 0));
+      const title = (q.get('t') || '').trim().slice(0, 120);
+      if (name) {
+        document.getElementById('inviter').textContent = name;
+        document.getElementById('askWho').textContent = name;
+        document.title = `${name} invited you · Sinehan`;
+      }
+      document.getElementById('avatar').style.background = COLORS[avatar];
+      document.getElementById('avatarImg').src = `/static/avatar${avatar + 1}.png`;
+      if (title) document.getElementById('show').textContent = title;
+      try {
+        const to = new URL(q.get('to'));
+        if (/^https?:$/.test(to.protocol)) {
+          document.getElementById('siteName').textContent = to.hostname.replace(/^www\./, '');
+          document.getElementById('site').hidden = false;
+        }
+      } catch {}
+    })();
+  </script>
 </body>
 </html>

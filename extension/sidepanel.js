@@ -141,6 +141,10 @@ $('disconnect').onclick = () => {
   if (pc) endCall('You left');
   $('inviteBox').hidden = true;
   ask({ type: 'disconnect' }, showStatus);
+  // Leaving ends the party: the chat is saved under "Past parties" and this one starts fresh.
+  $('log').replaceChildren();
+  seenChat.clear();
+  theirShow = null;
 };
 
 // Gear icon in the header shows/hides the settings section.
@@ -194,7 +198,9 @@ $('invite').onclick = async () => {
   if (tab?.url?.startsWith('http')) ask({ type: 'set-watch', tabId: tab.id }, showStatus); // inviting to this = watching this
   const base = server.replace(/^ws/, 'http').replace(/\/+$/, '');
   let link = `${base}/join?room=${encodeURIComponent(room)}`;
-  if (tab?.url?.startsWith('http')) link += `&to=${encodeURIComponent(tab.url)}`;
+  // Who's inviting and to what, so the invite page can say so.
+  link += `&n=${encodeURIComponent(myName())}&a=${me.avatar}`;
+  if (tab?.url?.startsWith('http')) link += `&to=${encodeURIComponent(tab.url)}&t=${encodeURIComponent((tab.title || '').slice(0, 120))}`;
 
   try {
     await navigator.clipboard.writeText(link);
@@ -223,6 +229,67 @@ function renderProfiles() {
   render();
 }
 
+// ---- Appearance: Glass (the show shows through), Dark, Light ----
+// Cached in localStorage too, so the sidebar opens in the right theme without a flash.
+let theme = 'glass';
+function applyTheme(t) {
+  theme = ['glass', 'dark', 'light'].includes(t) ? t : 'glass';
+  document.documentElement.dataset.theme = theme;
+  document.querySelectorAll('[data-theme-choice]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.themeChoice === theme)));
+  try {
+    localStorage.setItem('theme', theme);
+  } catch {}
+  if (theme === 'dark') $('backdrop').classList.remove('on');
+}
+try {
+  applyTheme(localStorage.getItem('theme'));
+} catch {
+  applyTheme('glass');
+}
+chrome.storage.local.get('theme').then(({ theme: saved }) => saved && applyTheme(saved));
+document.querySelectorAll('[data-theme-choice]').forEach((b) => {
+  b.onclick = () => {
+    applyTheme(b.dataset.themeChoice);
+    chrome.storage.local.set({ theme });
+    if (theme !== 'dark') updateBackdrop(true);
+  };
+});
+
+// ---- See-through backdrop ----
+// Chrome draws the sidebar as a solid surface, so to get real "glass" we put a blurred snapshot of the
+// show behind the cards, refreshed every few seconds while you're in a party.
+// Protected video (Netflix, Prime…) can capture as solid black; then we keep the plain dark background.
+async function updateBackdrop(force = false) {
+  if (theme === 'dark' || !status.connected || (!force && document.visibilityState === 'hidden')) return;
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }).catch(() => []);
+  if (!tab || !/^https?:/.test(tab.url || '')) return;
+  let shot;
+  try {
+    shot = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 30 });
+  } catch {
+    return;
+  }
+  if (await isBlank(shot)) return $('backdrop').classList.remove('on');
+  $('backdrop').style.backgroundImage = `url(${shot})`;
+  $('backdrop').classList.add('on');
+}
+// Average brightness of a tiny copy of the image; near zero = a black (protected) frame.
+async function isBlank(src) {
+  const img = new Image();
+  img.src = src;
+  await img.decode().catch(() => {});
+  const c = document.createElement('canvas');
+  c.width = 24;
+  c.height = 14;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.drawImage(img, 0, 0, c.width, c.height);
+  const px = g.getImageData(0, 0, c.width, c.height).data;
+  let sum = 0;
+  for (let i = 0; i < px.length; i += 4) sum += px[i] + px[i + 1] + px[i + 2];
+  return sum / (px.length / 4) / 3 < 6;
+}
+setInterval(updateBackdrop, 3000);
+
 // ---- What we're watching ----
 let theirShow = null; // { url, title } — what they said they're watching
 let activeTab = null;
@@ -239,6 +306,13 @@ function showKey(url) {
 
 async function renderWatch() {
   const w = status.watch;
+  if (!status.connected) {
+    // Not in a party: nothing to show, and no need to keep checking tabs.
+    $('watchBar').hidden = true;
+    $('followBar').hidden = true;
+    $('backdrop').classList.remove('on');
+    return;
+  }
   $('watchTitle').textContent = w ? w.title || w.url : 'Nothing yet. Open a show and click Watch here.';
   $('watchTitle').classList.toggle('none', !w);
   $('watchIcon').hidden = !w?.favIconUrl;
@@ -248,7 +322,8 @@ async function renderWatch() {
   $('countdownBtn').disabled = !w || !(status.connected && status.peers > 1);
   $('handBtn').disabled = !(status.connected && status.peers > 1);
   // Their prompt goes away once we're on the same thing.
-  const showPrompt = theirShow && showKey(theirShow.url) !== showKey(w?.url || '');
+  $('watchBar').hidden = !status.connected;
+  const showPrompt = status.connected && theirShow && showKey(theirShow.url) !== showKey(w?.url || '');
   $('followBar').hidden = !showPrompt;
   if (showPrompt) $('followText').textContent = `${peer?.name ? `${peer.name} is` : 'They’re'} watching ${theirShow.title ? `“${theirShow.title}”` : 'something new'}`;
 }
@@ -286,7 +361,7 @@ ask({ type: 'history' }, (history = []) => {
 });
 
 function myName() {
-  return $('name').value.trim() || 'Me';
+  return $('name').value.trim() || 'Guest';
 }
 
 $('form').onsubmit = (e) => {
@@ -344,7 +419,9 @@ function isEmojiOnly(text) {
     && [...new Intl.Segmenter().segment(text.replace(/\s/g, ''))].length <= 8;
 }
 
-function addChat(name, text, kind, avatar, vt) {
+// `into` = which list (the live chat, or a past party being read); past parties' timestamps aren't clickable.
+function addChat(name, text, kind, avatar, vt, into = $('log')) {
+  const live = into === $('log');
   const line = document.createElement('div');
   line.className = `line ${kind}`;
   if (kind === 'system') {
@@ -363,15 +440,78 @@ function addChat(name, text, kind, avatar, vt) {
       stamp.className = 'stamp';
       stamp.type = 'button';
       stamp.textContent = clock(vt);
-      stamp.title = 'Jump here together';
-      stamp.onclick = () => send({ local: true, type: 'jump', time: vt });
+      stamp.title = live ? 'Jump here together' : 'Where in the show this was said';
+      if (live) stamp.onclick = () => send({ local: true, type: 'jump', time: vt });
+      else stamp.disabled = true;
       bubble.append(document.createElement('br'), stamp);
     }
     line.append(avatarEl(Number(avatar) || 0), bubble);
   }
-  $('log').appendChild(line);
-  $('log').scrollTop = $('log').scrollHeight;
+  into.appendChild(line);
+  into.scrollTop = into.scrollHeight;
 }
+
+// ---- Past parties ----
+let openSession = null;
+function showHistory(on) {
+  document.body.classList.toggle('show-history', on);
+  $('historyView').hidden = !on;
+  $('historyBtn').setAttribute('aria-pressed', String(on));
+  if (on) listSessions();
+}
+$('historyBtn').onclick = () => showHistory($('historyView').hidden);
+$('historyBack').onclick = () => (openSession ? listSessions() : showHistory(false));
+
+function partyDate(ts) {
+  return new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function listSessions() {
+  openSession = null;
+  $('hvTitle').textContent = 'Past parties';
+  $('sessionLog').hidden = true;
+  $('sessions').hidden = false;
+  $('sessionDelete').hidden = true;
+  ask({ type: 'sessions' }, (sessions = []) => {
+    $('historyClear').hidden = !sessions.length;
+    $('sessions').replaceChildren(...sessions.map((x) => {
+      const b = document.createElement('button');
+      b.className = 'session';
+      b.type = 'button';
+      const title = document.createElement('span');
+      title.className = 's-title';
+      title.textContent = x.shows?.length ? x.shows.join(' · ') : 'Watch party';
+      const meta = document.createElement('span');
+      meta.className = 's-meta';
+      meta.textContent = `${partyDate(x.endedAt)} · ${x.count} message${x.count === 1 ? '' : 's'}`;
+      b.append(title, meta);
+      b.onclick = () => readSession(x.id);
+      return b;
+    }));
+  });
+}
+
+function readSession(id) {
+  ask({ type: 'session', id }, (x) => {
+    if (!x) return listSessions();
+    openSession = x.id;
+    $('hvTitle').textContent = `${partyDate(x.endedAt)}${x.shows?.length ? ` · ${x.shows[0]}` : ''}`;
+    $('sessions').hidden = true;
+    $('historyClear').hidden = true;
+    $('sessionDelete').hidden = false;
+    $('sessionLog').hidden = false;
+    $('sessionLog').replaceChildren();
+    for (const m of x.messages) addChat(m.name, m.text, m.mine ? 'me' : 'them', m.avatar, m.vt, $('sessionLog'));
+    $('sessionLog').scrollTop = 0;
+  });
+}
+
+$('sessionDelete').onclick = () => {
+  if (openSession) ask({ type: 'delete-session', id: openSession }, listSessions);
+};
+$('historyClear').onclick = () => {
+  if (confirm('Delete all past parties? This can’t be undone.')) ask({ type: 'clear-sessions' }, listSessions);
+};
 
 // ---- Emoji tray ----
 const QUICK_REACTIONS = '😂 😭 😍 😱 🔥 👏 ❤️ 💀';
@@ -668,6 +808,21 @@ function toggleTrack(kind, button) {
   if (!track) return;
   track.enabled = !track.enabled;
   button.classList.toggle('off', !track.enabled);
+  sendCallState();
+}
+
+// Keeps the fullscreen camera's mic/camera buttons matching the real state.
+let lastCallState = '';
+function sendCallState(force = false) {
+  const state = {
+    mic: !!localStream?.getAudioTracks().length,
+    cam: !!localStream?.getVideoTracks()[0]?.enabled,
+    hasCamera: !!localStream,
+  };
+  const key = JSON.stringify(state);
+  if (!force && key === lastCallState) return;
+  lastCallState = key;
+  send({ local: true, type: 'call-state', ...state });
 }
 
 // ---- Camera hand-off to fullscreen tabs ----
@@ -677,6 +832,13 @@ const relays = new Map(); // tab view id -> RTCPeerConnection
 
 async function onLocal(msg) {
   const relay = relays.get(msg.from);
+  if (msg.type === 'call-control') {
+    // From the floating camera in fullscreen.
+    if (msg.action === 'mic') await setMic(!localStream?.getAudioTracks().length);
+    else if (msg.action === 'cam') toggleTrack('video', $('cam'));
+    return sendCallState(true);
+  }
+  if (msg.type === 'call-state-request') return sendCallState(true);
   if (msg.type === 'cam-want') await startRelay(msg.from);
   else if (msg.type === 'cam-answer') await relay?.setRemoteDescription(msg.description);
   else if (msg.type === 'cam-ice') await relay?.addIceCandidate(msg.candidate).catch(() => {});
@@ -730,6 +892,7 @@ function render() {
   $('join').hidden = !inCall || hasCamera;
   $('mic').hidden = $('cam').hidden = !hasCamera;
   $('mic').classList.toggle('off', !localStream?.getAudioTracks().length);
+  sendCallState();
   $('mic').title = localStream?.getAudioTracks().length ? 'Mic on: click to turn it off' : 'Mic off: click to talk';
   $('pip').hidden = !seeingThem;
   $('hangup').hidden = !inCall;

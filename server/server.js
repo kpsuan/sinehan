@@ -7,6 +7,7 @@ const { WebSocketServer } = require('ws');
 const PORT = process.env.PORT || 8080;
 const rooms = new Map(); // room -> Set<ws>
 const JOIN_PAGE = fs.readFileSync(path.join(__dirname, 'join.html'));
+const STATIC_FILES = new Set(['logo.png', 'avatar1.png', 'avatar2.png', 'avatar3.png', 'avatar4.png']);
 const KLIPY_API_KEY = process.env.KLIPY_API_KEY;
 
 const server = http.createServer((req, res) => {
@@ -17,6 +18,16 @@ const server = http.createServer((req, res) => {
     return res.end(JOIN_PAGE);
   }
   if (url.pathname === '/gifs') return gifs(url, res);
+  // Images for the invite page (logo + profile pictures). Only these exact files are served.
+  if (url.pathname.startsWith('/static/')) {
+    const name = url.pathname.slice('/static/'.length);
+    if (!STATIC_FILES.has(name)) {
+      res.writeHead(404);
+      return res.end();
+    }
+    res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' });
+    return fs.createReadStream(path.join(__dirname, 'public', name)).pipe(res);
+  }
   res.end('watch-party relay ok');
 });
 

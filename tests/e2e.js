@@ -51,7 +51,7 @@ function makeWav(seconds = 120, rate = 8000) {
   return buf;
 }
 const WAV = makeWav();
-const VIDEO_PAGE = `<!doctype html><html><body style="margin:0;background:#000">
+const VIDEO_PAGE = `<!doctype html><html><body style="margin:0;background:#3a3150">
 <div id="player" style="width:640px;height:360px;position:relative;background:#111">
   <video id="v" src="/tone.wav" preload="auto" style="width:100%;height:100%"></video>
 </div>
@@ -397,6 +397,31 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     check('page went fullscreen', await until(() => vB.evaluate(() => !!document.fullscreenElement)));
     check('chat button appears in fullscreen', await until(() => vB.locator('.fab').isVisible()));
     check('her camera appears in fullscreen', await until(() => vB.locator('.cam video').evaluate((v) => v.videoWidth > 0 && !v.parentElement.hidden), 10000));
+
+    // The floating camera: drag it, it grows on hover, and its buttons run your mic/camera.
+    const camPos = () => vB.locator('.cam').evaluate((c) => ({ x: c.offsetLeft, y: c.offsetTop }));
+    const start = await camPos();
+    const box = await vB.locator('.cam').boundingBox();
+    await vB.mouse.move(box.x + 40, box.y + 40);
+    await vB.mouse.down();
+    await vB.mouse.move(box.x - 200, box.y + 150, { steps: 8 });
+    await vB.mouse.up();
+    const moved = await camPos();
+    check('camera can be dragged around', start.x - moved.x > 100 && moved.y - start.y > 80, JSON.stringify({ start, moved }));
+    check('…and its spot is remembered', await until(async () => !!(await pB2.evaluate(() => chrome.storage.local.get('camPos'))).camPos));
+    await vB.mouse.move(box.x - 200 + 60, box.y + 150 + 40);
+    check('it grows on hover', await until(() => vB.locator('.cam').evaluate((c) => getComputedStyle(c).transform !== 'none')));
+    const micWasOff = await pB2.$eval('#mic', (b) => b.classList.contains('off'));
+    await vB.locator('.cam .c-mic').click();
+    check('fullscreen mic button toggles your mic', await until(async () => (await pB2.$eval('#mic', (b) => b.classList.contains('off'))) !== micWasOff));
+    check('…and the button shows the new state', await until(async () => (await vB.locator('.cam .c-mic').evaluate((b) => b.classList.contains('off'))) !== micWasOff));
+    await vB.locator('.cam .c-mic').click();
+    await until(async () => (await pB2.$eval('#mic', (b) => b.classList.contains('off'))) === micWasOff);
+    await vB.locator('.cam .c-cam').click();
+    check('fullscreen camera button turns your camera off', await until(() => pB2.$eval('#cam', (b) => b.classList.contains('off'))));
+    check('…which the other side sees', await until(() => vB.locator('.cam .c-cam').evaluate((b) => b.classList.contains('off'))));
+    await vB.locator('.cam .c-cam').click();
+    check('…and back on', await until(() => pB2.$eval('#cam', (b) => !b.classList.contains('off'))));
     await vB.locator('.fab').click();
     check('fullscreen chat opens with history', await until(async () => (await vB.locator('.panel .log').textContent()).includes('are you there?')));
     const keysBefore = await vB.evaluate(() => window.__keys);
@@ -416,7 +441,9 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     await vB.locator('.fab').click();
     await vB.locator('.quick button').first().click();
     check('quick reaction from fullscreen reaches the other side', await until(async () => (await logLines(pA)).some((l) => l.text === '😂' || l.text.endsWith('😂'))));
-    await vB.evaluate(() => document.exitFullscreen());
+    await vB.locator('.cam').hover();
+    await vB.locator('.cam .c-exit').click();
+    check('exit button leaves fullscreen', await until(() => vB.evaluate(() => !document.fullscreenElement)));
     check('overlay removed after leaving fullscreen', await until(async () => (await vB.locator('.fab').count()) === 0));
 
     // ---------------------------------------------------------------
@@ -453,6 +480,7 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     await vA2.bringToFront();
     check('"Watch here" offered for another tab', await until(() => pA.$eval('#watchHere', (b) => !b.hidden)));
     await pA.click('#watchHere');
+    check('sidebar shows the show through the glass (backdrop)', await until(async () => { await pA.evaluate(() => updateBackdrop(true)); return pA.$eval('#backdrop', (b) => b.classList.contains('on') && b.style.backgroundImage.startsWith('url("data:image/jpeg')); }));
     check('B follows to the new show automatically', await until(() => vB.url().endsWith('/other'), 10000), vB.url());
     await vB.waitForFunction(() => document.getElementById('v').readyState >= 1);
     await sleep(2500);
@@ -564,6 +592,23 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     check('partner leaving is announced', await until(async () => (await logLines(pA)).filter((l) => l.text.includes('left')).length >= 2));
     check('partner removed from header', await until(async () => (await text(pA, '#names')) === 'fran'));
     check('status back to waiting', await until(async () => (await text(pA, '#status')) === 'Waiting for them to join'));
+
+    // Leave ends the party: chat clears, and it's saved under Past parties.
+    check('leaving clears the chat', await until(() => pB2.$$eval('#log .line', (l) => l.length === 0)));
+    check('Watching bar hides when not in a party', await until(() => pB2.$eval('#watchBar', (b) => b.hidden)));
+    await pB2.click('#historyBtn');
+    const parties = await until(async () => { const t = await pB2.$$eval('#sessions .session', (s) => s.map((x) => x.textContent)); return t.length ? t : false; });
+    check('the party is saved in Past parties', parties && /\d+ messages?/.test(parties[0]), JSON.stringify(parties));
+    await pB2.click('#sessions .session');
+    check('a past party can be read back', await until(async () => (await pB2.$$eval('#sessionLog .line', (l) => l.map((x) => x.textContent))).some((t) => t.includes('hello there'))));
+    check('…with its timestamps (not clickable there)', await pB2.$$eval('#sessionLog .stamp', (st) => st.length > 0 && st.every((b) => b.disabled)));
+    await pB2.click('#sessionDelete');
+    check('a past party can be deleted', await until(async () => (await pB2.$$eval('#sessions .session', (x) => x.length)) === parties.length - 1));
+    await pB2.click('#historyBtn');
+    check('closing Past parties returns to where you were', await pB2.evaluate(() => document.getElementById('historyView').hidden && !document.body.classList.contains('show-history')
+      && getComputedStyle(document.getElementById('settings')).display !== 'none'));
+    await pB2.click('#settingsBtn');
+    check('…and closing Settings shows the chat again', await pB2.$eval('.chat', (c) => getComputedStyle(c).display !== 'none'));
 
     await connect(pB2, 'Bob', 'r2');
     await until(async () => (await text(pB2, '#status')) === 'Waiting for them to join');
