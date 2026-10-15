@@ -601,6 +601,15 @@ function setVerdict(id, verdict, share) {
     const g = list.find((x) => x.id === id);
     if (!g || !g.revealed) return;
     g.verdict = verdict;
+    // Only one answer per episode: marking one guess right settles the others from the same round
+    // (the same name is right too, anything else is wrong).
+    if (verdict === 'right') {
+      const same = (x) => String(x || '').trim().toLowerCase();
+      for (const x of list) {
+        if (x === g || !x.revealed || x.show !== g.show || (x.ep || '') !== (g.ep || '') || Math.abs((x.at || 0) - (g.at || 0)) > 3 * 3600 * 1000) continue;
+        x.verdict = same(x.text) === same(g.text) ? 'right' : 'wrong';
+      }
+    }
     if (share) send({ type: 'guess-verdict', id, verdict });
   });
 }

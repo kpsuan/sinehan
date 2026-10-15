@@ -285,6 +285,7 @@ $('settingsBtn').onclick = () => ($('settings').open = !$('settings').open);
 $('settings').addEventListener('toggle', () => {
   $('settingsBtn').setAttribute('aria-pressed', String($('settings').open));
   if ($('settings').open && !$('historyView').hidden) showHistory(false);
+  if ($('settings').open && !$('bestView').hidden) showBest(false);
 });
 
 // ---- Bantay's introduction (the first time) ----
@@ -419,6 +420,9 @@ function showStatus(s) {
   const prev = status;
   const wasConnected = prev.connected;
   status = s;
+  // Tonight's "start a party first" follows the connection (after load: those are declared further down).
+  if ((prev.connected && prev.peers > 1) !== (s.connected && s.peers > 1))
+    setTimeout(() => episodesMode === 'tonight' && !$('bestView').hidden && !tonight && renderTonight());
   // The link icon copies this party's invite; with no party yet, "Start a party" makes one.
   $('invite').disabled = !s.room;
   $('invite').title = s.room ? 'Copy invite link' : 'Start a party first';
@@ -1034,6 +1038,7 @@ $('historyClear').onclick = () => {
 // Reads what Reddit says about the show (reddit.js) and ranks the episodes people name most.
 function showBest(on) {
   if (on) showHistory(false);
+  if (on) $('settings').open = false; // one at a time: Guides or Settings
   document.body.classList.toggle('show-best', on);
   $('bestView').hidden = !on;
   renderWelcome();

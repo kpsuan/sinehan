@@ -1095,6 +1095,18 @@ const vstate = (p) =>
     check('…checked as unchanged since it was locked', await until(async () => /unchanged/.test(await card(pB2).innerText())));
     await card(pB2).locator('.gq-actions button', { hasText: 'Right' }).click();
     check('a verdict shows on both sides, with the score', await until(async () => /got it!/.test(await card(pA).innerText()) && /: \S+ 1/.test(await card(pA).innerText())));
+    // A second guess the same round: marking it right settles the first as wrong.
+    await pB2.click('#guessBtn');
+    await pB2.fill('#guessName', 'The gardener');
+    await pB2.click('#guessLock');
+    await until(async () => /locked a guess/i.test(await card(pA).innerText()));
+    await card(pA).locator('.gq-actions button').click();
+    await until(async () => /wants to reveal/i.test(await card(pB2).innerText()));
+    await card(pB2).locator('.gq-actions button').click();
+    await until(async () => /The gardener/.test(await card(pA).innerText()) && (await card(pA).locator('.gq-actions button', { hasText: 'Right' }).count()) > 0);
+    await card(pA).locator('.gq-actions button', { hasText: 'Right' }).click();
+    const firstCard = (p) => p.locator('#log .guess-card').first();
+    check('only one guess per round can be right', await until(async () => /Not this time/.test(await firstCard(pA).innerText()) && /Not this time/.test(await firstCard(pB2).innerText())));
 
     // ---------------------------------------------------------------
     section('Tonight: swipe to match');
@@ -1460,6 +1472,10 @@ const vstate = (p) =>
     );
     await pB2.click('#settingsBtn');
     check('…both ways', await until(() => pB2.$eval('#historyView', (v) => v.hidden)));
+    await pB2.evaluate(() => showBest(true));
+    await pB2.click('#settingsBtn');
+    check('Settings opens from Guides too', await until(() => pB2.evaluate(() => $('bestView').hidden && $('settings').open)));
+    await pB2.click('#settingsBtn');
     await pB2.click('#historyBtn');
     const parties = await until(async () => {
       const t = await pB2.$$eval('#sessions .session', (s) => s.map((x) => x.textContent));
