@@ -7,7 +7,7 @@ let me = { name: '', avatar: 0 };
 let peer = null; // { name, avatar } once the other side has said hello
 let askedPeer = false;
 
-// Premade profile pictures: hand-drawn faces (avatars/1-4.png) on a soft color.
+// Premade profile pictures (avatars/1-4.png), each on a soft color.
 const AVATAR_COLORS = ['#c9b6f2', '#f1c9b0', '#bfe0d0', '#c6d4ec'];
 const AVATAR_COUNT = AVATAR_COLORS.length;
 
@@ -24,11 +24,11 @@ function avatarEl(index, size = 26) {
   return el;
 }
 
-// Bantay, the mascot (bantay.js): on the welcome screen, in an empty chat, on the resume card.
-// His coat is your pick (Settings → Bantay); the page's tab reads the same setting.
+// ---- Bantay ----
+// The mascot (bantay.js); the coat is picked in Settings and the show's tab reads the same setting.
 let bantayCoat = 'white';
 function drawBantay() {
-  $('wlBantay').innerHTML = Bantay.svg('sit', { coat: bantayCoat }); // fixed markup from bantay.js
+  $('wlBantay').innerHTML = Bantay.svg('sit', { coat: bantayCoat }); // fixed markup
   $('rbDog').innerHTML = Bantay.svg('asleep', { coat: bantayCoat });
   document
     .querySelectorAll('.g-empty svg.bantay')
@@ -60,7 +60,8 @@ chrome.storage.local.get('bantayCoat').then(({ bantayCoat: saved }) => {
   }
 });
 
-// ---- Link to background (which owns the relay connection) ----
+// ---- Link to background ----
+// The background owns the relay connection.
 function connectPort() {
   port = chrome.runtime.connect({ name: 'panel' });
   port.onMessage.addListener(onMessage);
@@ -74,7 +75,7 @@ function send(msg) {
   } catch {}
 }
 
-// One-off request to the background; ignores the harmless error when it's restarting.
+// One-off request; ignores the error when the background is restarting.
 function ask(msg, then) {
   chrome.runtime.sendMessage(msg, (reply) => {
     if (chrome.runtime.lastError) return;
@@ -88,6 +89,7 @@ function onMessage(msg) {
   } else if (msg.type === 'chat') {
     if (seenChat.has(msg.id)) return;
     seenChat.add(msg.id);
+
     // `mine` = sent from this browser's fullscreen chat rather than this sidebar.
     addChat(msg.name, msg.text, msg.mine ? 'me' : 'them', msg.avatar, msg.vt, $('log'), msg.guide);
     if (!msg.mine) showTyping(null);
@@ -102,7 +104,7 @@ function onMessage(msg) {
     showTyping(msg.name);
   } else if (msg.type === 'hand') {
     $('who').closest('.top').classList.remove('holding');
-    void $('who').offsetWidth; // restart the animation
+    void $('who').offsetWidth; // force a reflow so the animation restarts
     $('who').closest('.top').classList.add('holding');
   } else if (msg.type === 'now-watching') {
     theirShow = { url: msg.url, title: msg.title };
@@ -140,7 +142,7 @@ function onMessage(msg) {
     if (msg.ask) sendProfile(false);
     renderProfiles();
   } else if (msg.type === 'rtc' && msg.from !== myId) {
-    // Call setup hiccups (a late duplicate, a race) sort themselves out; note them without raising an error.
+    // Setup hiccups (late duplicates, races) resolve themselves, so warn rather than error.
     onSignal(msg).catch((e) => console.warn('[watch-party] call setup:', e?.name, e?.message));
   } else if (msg.type === 'peer') {
     if (msg.joined ?? msg.count > 1) {
@@ -167,7 +169,7 @@ function sendProfile(ask) {
 
 // ---- Profile & connection settings ----
 const DEFAULT_SERVER = 'wss://sinehan.live';
-const OLD_SERVERS = ['ws://localhost:8080', 'wss://sinehan-rhua.onrender.com']; // earlier defaults
+const OLD_SERVERS = ['ws://localhost:8080', 'wss://sinehan-rhua.onrender.com']; // old defaults, replaced on load
 
 chrome.storage.local.get(['name', 'avatar', 'server', 'room']).then(({ name, avatar, server, room }) => {
   me.name = name || '';
@@ -183,7 +185,7 @@ let profileTimer = null;
 $('name').oninput = () => {
   me.name = $('name').value.trim();
   chrome.storage.local.set({ name: me.name });
-  renderProfiles(); // header shows the new name right away
+  renderProfiles();
   clearTimeout(profileTimer);
   profileTimer = setTimeout(() => sendProfile(false), 600);
 };
@@ -213,7 +215,8 @@ $('connect').onclick = () => {
   const room = $('room').value.trim();
   if (server && room) ask({ type: 'connect', server, room }, showStatus);
 };
-// Leaving takes a moment on screen ("Leaving…") so it doesn't feel like the sidebar just snapped shut.
+
+// Leaving lingers briefly ("Leaving…") so the sidebar doesn't feel like it snapped shut.
 let leaving = false;
 $('disconnect').onclick = async () => {
   if (leaving) return;
@@ -225,11 +228,13 @@ $('disconnect').onclick = async () => {
   await new Promise((r) => setTimeout(r, 900));
   $('inviteBox').hidden = true;
   ask({ type: 'disconnect' }, showStatus);
+
   // Leaving ends the party: the chat is saved under "Past parties" and this one starts fresh.
   $('log').replaceChildren();
   seenChat.clear();
   theirShow = null;
-  // We left, so no "they left" message comes: forget them here (header back to just you).
+
+  // We left, so no "they left" message comes: forget them here.
   peer = null;
   askedPeer = false;
   renderProfiles();
@@ -250,6 +255,7 @@ function startFresh() {
   peer = null;
   askedPeer = false;
   renderProfiles();
+
   // After the background has filed the old chat away, show whatever this party already has.
   setTimeout(
     () =>
@@ -264,7 +270,6 @@ function startFresh() {
   );
 }
 
-// Gear icon in the header shows/hides the settings section.
 $('settingsBtn').onclick = () => ($('settings').open = !$('settings').open);
 $('settings').addEventListener('toggle', () =>
   $('settingsBtn').setAttribute('aria-pressed', String($('settings').open)),
@@ -318,10 +323,11 @@ function showStatus(s) {
   const prev = status;
   const wasConnected = prev.connected;
   status = s;
-  // An invite link may have connected us to a different room/server — reflect it.
-  // Only when the connection itself changed — never overwrite what someone is typing or just typed.
+
+  // An invite link may have moved us to another room/server: reflect it, but never over what someone is typing.
   if (s.room && s.room !== prev.room && document.activeElement !== $('room')) $('room').value = s.room;
-  // Straight from one party into another (an invite link while the sidebar is open): start this one fresh.
+
+  // Straight from one party into another (an invite link while open): start fresh.
   if (s.room && prev.room && s.room !== prev.room) startFresh();
   if (s.server && s.server !== prev.server && document.activeElement !== $('server')) $('server').value = s.server;
   $('status').textContent = !s.room
@@ -362,8 +368,8 @@ function newRoomId() {
   const abc = 'abcdefghijkmnpqrstuvwxyz23456789';
   return `party-${[...crypto.getRandomValues(new Uint8Array(20))].map((b) => abc[b % abc.length]).join('')}`;
 }
-// Points at the relay's /join page; the extension picks it up there, joins the room
-// and forwards them to whatever you're watching.
+
+// The link points at the relay's /join page, where the extension joins the room and opens your show.
 $('invite').onclick = async () => {
   const server = $('server').value.trim();
   if (!server) {
@@ -372,8 +378,8 @@ $('invite').onclick = async () => {
     $('server').focus();
     return;
   }
-  // In a party: invite to it. Otherwise always a brand-new room, never one left over from an old party
-  // (its chat would carry over, and the old partner's link would still work).
+
+  // Not in a party: always a new room, so an old party's chat and invite link don't carry over.
   const room = status.room || ($('room').value = newRoomId());
   if (!status.connected || status.room !== room) {
     ask({ type: 'connect', server, room }, showStatus);
@@ -383,14 +389,15 @@ $('invite').onclick = async () => {
   if (tab?.url?.startsWith('http')) ask({ type: 'set-watch', tabId: tab.id }, showStatus); // inviting to this = watching this
   const base = server.replace(/^ws/, 'http').replace(/\/+$/, '');
   let link = `${base}/join?room=${encodeURIComponent(room)}`;
+
   // Who's inviting and to what, so the invite page can say so.
   link += `&n=${encodeURIComponent(myName())}&a=${me.avatar}`;
   const onShow = status.watch?.tabId === tab?.id;
   const title = inviteTitle((onShow && status.watch?.showTitle) || tab?.title || '');
   if (tab?.url?.startsWith('http'))
     link += `&to=${encodeURIComponent(tab.url)}&t=${encodeURIComponent(title.slice(0, 120))}`;
-  // The show's picture: YouTube's thumbnail or the page's own, else the show's artwork from TVmaze,
-  // else the biggest image on the page.
+
+  // Picture: YouTube's or the page's own, else TVmaze artwork, else the page's biggest image.
   const picture =
     showPicture(tab?.url, onShow ? status.watch?.image : null) ||
     (title && (await tvPicture(title))) ||
@@ -399,7 +406,8 @@ $('invite').onclick = async () => {
 
   try {
     await navigator.clipboard.writeText(link);
-    // Quick confirmation on the icon itself: link turns into a check for a moment.
+
+    // Brief confirmation: the link icon turns into a check.
     $('invite').classList.add('copied');
     clearTimeout(copiedTimer);
     copiedTimer = setTimeout(() => $('invite').classList.remove('copied'), 1600);
@@ -413,8 +421,7 @@ $('invite').onclick = async () => {
 let copiedTimer = null;
 $('inviteLink').onclick = () => $('inviteLink').select();
 
-// Just the show's name: "Prime Video: The Mentalist - Season 3" -> "The Mentalist"
-// (the invite page shows the platform separately).
+// "Prime Video: The Mentalist - Season 3" -> "The Mentalist" (the invite page shows the platform separately).
 function inviteTitle(raw) {
   return tidyTitle(String(raw || '').replace(/^(Prime Video|Amazon\.com|Watch)\s*:\s*/i, '')).replace(
     /[\s\-–—:|·]+$/,
@@ -422,7 +429,7 @@ function inviteTitle(raw) {
   );
 }
 
-// A TV show's artwork from TVmaze (free, no key), for pages that publish no picture. Quick, or nothing.
+// TVmaze artwork (free, no key) for pages with no picture; gives up after 1.5s.
 const tvPictures = new Map();
 async function tvPicture(title) {
   const name = tidyTitle(title).replace(/[\s\-–—:|·]+$/, '');
@@ -434,6 +441,7 @@ async function tvPicture(title) {
       signal: AbortSignal.timeout(1500),
     });
     const show = r.ok ? await r.json() : null;
+
     // Only if it's really this show, not just the closest name.
     if (show && norm(show.name) === norm(name)) pic = String(show.image?.original || '').replace(/^http:/, 'https:');
   } catch {}
@@ -441,8 +449,7 @@ async function tvPicture(title) {
   return pic;
 }
 
-// A picture of the show for the invite page: YouTube's own thumbnail, otherwise the image the page
-// publishes for link previews (reported by the show's tab).
+// YouTube's thumbnail, else the page's link-preview image (reported by the show's tab).
 function showPicture(url, published) {
   try {
     const u = new URL(url);
@@ -468,8 +475,8 @@ function renderProfiles() {
   render();
 }
 
-// ---- Appearance: Glass (the show shows through), Dark, Light ----
-// Cached in localStorage too, so the sidebar opens in the right theme without a flash.
+// ---- Appearance ----
+// Glass, Dark or Light; also cached in localStorage so the sidebar opens without a theme flash.
 let theme = 'glass';
 function applyTheme(t) {
   theme = ['glass', 'dark', 'light'].includes(t) ? t : 'glass';
@@ -497,9 +504,8 @@ document.querySelectorAll('[data-theme-choice]').forEach((b) => {
 });
 
 // ---- See-through backdrop ----
-// Chrome draws the sidebar as a solid surface, so to get real "glass" we put a blurred snapshot of the
-// show behind the cards, refreshed every few seconds while you're in a party.
-// Protected video (Netflix, Prime…) can capture as solid black; then we keep the plain dark background.
+// Chrome draws the sidebar solid, so glass is faked with a blurred snapshot of the show behind the cards.
+// Protected video (Netflix, Prime…) can capture as solid black; then the plain background stays.
 async function updateBackdrop(force = false) {
   if (theme !== 'glass' || !status.connected || (!force && document.visibilityState === 'hidden')) return;
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }).catch(() => []);
@@ -514,6 +520,7 @@ async function updateBackdrop(force = false) {
   $('backdrop').style.backgroundImage = `url(${shot})`;
   $('backdrop').classList.add('on');
 }
+
 // Average brightness of a tiny copy of the image; near zero = a black (protected) frame.
 async function isBlank(src) {
   const img = new Image();
@@ -532,7 +539,7 @@ async function isBlank(src) {
 setInterval(updateBackdrop, 3000);
 
 // ---- What we're watching ----
-let theirShow = null; // { url, title } — what they said they're watching
+let theirShow = null; // { url, title }: what they say they're watching
 let activeTab = null;
 
 function showKey(url) {
@@ -545,8 +552,8 @@ function showKey(url) {
   }
 }
 
-// The show's tab without our page script (open since before an extension reload): offer a refresh.
-// Only after a few seconds, so a tab that's just loading doesn't flash it.
+// The show's tab lacks our page script (open since before an extension reload): offer a refresh,
+// after 3s so a tab that's still loading doesn't flash it.
 let staleSince = 0;
 function renderStale() {
   const stale = status.connected && status.watch && status.watchLive === false;
@@ -564,7 +571,6 @@ async function renderWatch() {
   renderStale();
   const w = status.watch;
   if (!status.connected) {
-    // Not in a party: nothing to show, and no need to keep checking tabs.
     $('watchBar').hidden = true;
     $('followBar').hidden = true;
     $('backdrop').classList.remove('on');
@@ -583,8 +589,9 @@ async function renderWatch() {
   $('breakBtn').disabled = !onBreak && !status.connected;
   renderResume();
   $('handBtn').disabled = !(status.connected && status.peers > 1);
-  // Their prompt goes away once we're on the same thing.
   $('watchBar').hidden = !status.connected;
+
+  // Their prompt goes away once we're on the same thing.
   const showPrompt = status.connected && theirShow && showKey(theirShow.url) !== showKey(w?.url || '');
   $('followBar').hidden = !showPrompt;
   if (showPrompt)
@@ -612,7 +619,8 @@ $('countdownBtn').onclick = () => send({ local: true, type: 'countdown-start' })
 
 // CR break: the show's tab pauses both of you; "I'm back" counts you both back in.
 let onBreak = false;
-// The break button: "I'm back" while on a break; otherwise a choice of CR break or stopping for tonight.
+
+// On a break the button means "I'm back"; otherwise it opens the CR break / stop for tonight menu.
 $('breakBtn').onclick = () => {
   if (onBreak) return send({ local: true, type: 'break-toggle' });
   showBreakMenu($('breakMenu').hidden);
@@ -690,7 +698,7 @@ function renderBreak() {
 }
 
 // ---- Who paused, played or jumped, in the chat ----
-// "sapi paused at 12:34". Quick repeats by the same person (a few seeks while scrubbing) update one line.
+// e.g. "sapi paused at 12:34".
 let lastPlayback = null; // { who, el, at }
 function playbackLine(who, action, time) {
   if (typeof time !== 'number' || !Number.isFinite(time)) return;
@@ -702,7 +710,8 @@ function playbackLine(who, action, time) {
         ? `${who} pressed play at ${at}`
         : `${who} jumped to ${at}`;
   const log = $('log');
-  // Only jumps merge (scrubbing through a scene); a pause or play always gets its own line.
+
+  // Quick repeated jumps by the same person (scrubbing) update one line; pause and play always get their own.
   if (
     action === 'seeked' &&
     lastPlayback?.action === 'seeked' &&
@@ -720,7 +729,7 @@ function playbackLine(who, action, time) {
 }
 
 // ---- Chat ----
-// History is kept by the background script, so closing the sidebar doesn't lose it.
+// History lives in the background script, so closing the sidebar doesn't lose it.
 const seenChat = new Set();
 ask({ type: 'history' }, (history = []) => {
   const live = [...$('log').children]; // anything that arrived while history was loading
@@ -754,7 +763,7 @@ function sendChat(text, extra = {}) {
   addChat(myName(), text, 'me', me.avatar, vt, $('log'), extra.guide);
 }
 
-// Where the show is right now (from the show's tab), for stamping chat messages.
+// Current position in the show (from the show's tab), for stamping chat messages.
 function showTime() {
   const pos = status.pos;
   if (!pos || Date.now() - pos.at > 5000) return undefined;
@@ -810,7 +819,7 @@ function addChat(name, text, kind, avatar, vt, into = $('log'), guide = null) {
     who.textContent = name;
     if (isEmojiOnly(text || '') && !guide) bubble.classList.add('big');
     if (guide?.id) {
-      // A shared watch guide: a small card with a way to open it.
+      // A shared watch guide shows as a card with an Open button.
       bubble.classList.add('card-msg');
       const label = document.createElement('span');
       label.className = 'gc-label';
@@ -830,6 +839,7 @@ function addChat(name, text, kind, avatar, vt, into = $('log'), guide = null) {
     } else {
       bubble.append(who, document.createTextNode(text || ''));
     }
+
     // Where in the show it was said; clicking jumps you both there.
     if (typeof vt === 'number' && Number.isFinite(vt)) {
       const stamp = document.createElement('button');
@@ -966,8 +976,7 @@ const norm = (s) =>
     .trim();
 
 // ---- Watch guide ----
-// A guide you make can be saved: it's kept, sent to the other person (it shows in their list too),
-// and ticks are shared. Unsaved guides keep their ticks only until you leave them.
+// Saved guides are kept, show in the other person's list too, and share ticks; unsaved ticks last until you leave.
 let openGuide = null; // the guide on screen: { id, show, topic, episodes, threads, done, saved, problems }
 const guideId = (show, topic) => `${norm(show)}|${norm(topic)}`;
 const askP = (msg) => new Promise((r) => ask(msg, r));
@@ -985,7 +994,7 @@ async function listGuides() {
       'Make a guide for a show or a franchise (and a story or saga, if you like). Saved guides show up here for both of you.',
     );
     empty.classList.add('g-empty');
-    empty.insertAdjacentHTML('afterbegin', Bantay.svg('lying', { coat: bantayCoat })); // fixed markup from bantay.js
+    empty.insertAdjacentHTML('afterbegin', Bantay.svg('lying', { coat: bantayCoat })); // fixed markup
     $('bestResults').replaceChildren(empty);
     return;
   }
@@ -1015,6 +1024,7 @@ async function listGuides() {
       del.setAttribute('aria-label', 'Remove');
       del.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>'; // fixed markup
       del.onclick = () => ask({ type: 'guide-delete', id: x.id }, listGuides);
+
       // Open it as a page in a new tab (the same link works on any device).
       const link = document.createElement('button');
       link.type = 'button';
@@ -1071,8 +1081,7 @@ async function makeGuide() {
   renderGuide(openGuide, true);
 }
 
-// The topic and the guide-thread link are easy to mix up: a link typed as the topic moves to the link
-// box, and words typed in the link box move to the topic.
+// Topic and guide link are easy to mix up: a link typed as the topic moves to the link box, and vice versa.
 const looksLikeLink = (v) => /^\s*(https?:\/\/|www\.|(old\.)?reddit\.com\/|redd\.it\/)/i.test(v);
 function showLinkRow(on) {
   $('guideLinkRow').hidden = !on;
@@ -1103,13 +1112,11 @@ const short = (text, n) => {
   return t.length <= n ? t : `${t.slice(0, n).replace(/\s+\S*$/, '')}…`;
 };
 
-// sinehan.live/guide#g=… : the guide packed into the link (squeezed, then base64url), with the party's
-// room when it's saved and you're in one, so ticks on that page sync live.
+// sinehan.live/guide#g=…: the guide deflated and base64url'd into the link, plus a live-tick channel
+// when it's saved and you're in its party.
 async function guidePageLink(g) {
-  // (Guides saved before they remembered their fan wiki: the page finds it by itself.)
-  // Compact: just which episodes (the page looks up titles, pictures and summaries itself), not the guide's
-  // descriptions, so the link stays short. A show: "1.1 1.11 2.8"; a franchise: its titles, F/S/X for
-  // film / series / short. Ticked ones as their positions.
+  // Keys only, so the link stays short (the page looks up titles and details): a show as "1.1 1.11 2.8",
+  // a franchise as titles prefixed F/S/X (film/series/short); ticked ones as their positions.
   const series = g.episodes.every((e) => /^S\d+E\d+$/.test(e.key));
   const data = {
     v: 2,
@@ -1124,6 +1131,7 @@ async function guidePageLink(g) {
       .join(' '),
     f: g.wiki || '', // the fan wiki, so the page can link each episode to its page
   };
+
   // The artwork picked for it (TVmaze pictures only: an uploaded one is too big for a link).
   const tvmaze = (x) =>
     /^https:\/\/static\.tvmaze\.com\/uploads\/images\//.test(x || '')
@@ -1132,8 +1140,9 @@ async function guidePageLink(g) {
   if (g.art && (tvmaze(g.art.poster) || tvmaze(g.art.background)))
     data.a = { p: tvmaze(g.art.poster), b: tvmaze(g.art.background), at: g.art.at };
   const server = ($('server').value.trim() || DEFAULT_SERVER).replace(/\/+$/, '');
-  // Live ticks with this party: a code made from the room and the guide (the relay matches it up). The
-  // room itself never goes in the link, so the link can't be used to read your party.
+
+  // Live ticks: a channel hashed from room and guide; the room itself never goes in the link,
+  // so the link can't be used to read your party.
   if (g.saved && g.room && g.room === status.room && status.connected) {
     const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${g.room}|${g.id}`));
     const channel = [...new Uint8Array(hash)]
@@ -1190,6 +1199,7 @@ async function addToGuide(g, text) {
     const guide = await Reddit.episodeGuide(g.show).catch(() => null);
     let key = [...Reddit.episodesIn(text).keys()].find((k) => /^S\d+E\d+$/.test(k));
     if (!key && guide) key = Reddit.titleIn(text, guide) || guide.eps.find((e) => norm(e.name) === norm(text))?.key;
+
     // "episode 5" in a one-season show
     if (!key && guide?.seasons === 1)
       key = [...Reddit.episodesIn(text).keys()].map((k) => k.replace(/^E/, 'S1E')).find((k) => /^S1E\d+$/.test(k));
@@ -1310,6 +1320,7 @@ async function renderGuide(g, fresh = false) {
       share.disabled = true;
     };
   }
+
   // A page for any device (phone, tablet, someone without the extension), with the guide inside the link.
   const page = document.createElement('button');
   page.type = 'button';
@@ -1366,7 +1377,7 @@ async function renderGuide(g, fresh = false) {
     if (e.reason) {
       const why = document.createElement('span');
       why.className = 'g-why';
-      why.textContent = Reddit.cleanReason(e.reason, e.title); // (also tidies guides saved before the cleanup)
+      why.textContent = Reddit.cleanReason(e.reason, e.title); // also tidies older saved guides
       body.append(why);
     }
     const src = document.createElement('span');
@@ -1386,6 +1397,7 @@ async function renderGuide(g, fresh = false) {
     if (e.added) chip('Added by you', true);
     body.append(src);
     row.append(box, body);
+
     // Tick it off as you watch; the list remembers.
     row.onclick = async () => {
       const v = !done[e.key];
@@ -1458,6 +1470,7 @@ async function renderGuide(g, fresh = false) {
   }
   const scroll = $('bestResults').scrollTop;
   $('bestResults').replaceChildren(...out);
+
   // First time showing this guide: jump to what's next. Re-renders (ticking) keep your place.
   if (g.shown) $('bestResults').scrollTop = scroll;
   else nextRow?.scrollIntoView({ block: 'center' });
@@ -1657,7 +1670,8 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeTrays();
 });
 
-// A soft two-note chime every two seconds, made in the browser (no sound file needed).
+// ---- Incoming call ----
+// Ringtone: a soft two-note chime every 2s, synthesized (no sound file).
 function makeRinger() {
   let ctx = null;
   let timer = null;
@@ -1735,14 +1749,15 @@ let remoteStream = null;
 let makingOffer = false;
 let ignoreOffer = false;
 let awaitingOffer = false;
-let audioTx = null;
-let theirMicOn = null; // what they told us (null = not in a call / unknown) // the transceiver our mic goes out on (track swapped in/out without renegotiating)
+let audioTx = null; // the transceiver our mic goes out on (track swapped without renegotiating)
+let theirMicOn = null; // what they told us (null = not in a call / unknown)
+
 // Mic on/off is remembered. Off means the microphone is fully released, which keeps Bluetooth
 // headphones in high-quality mode and stops Windows from turning the show down "for a call".
 let micOn = false;
 chrome.storage.local.get('micOn').then(({ micOn: saved }) => (micOn = saved === true));
 
-// ---- Which camera / mic (Settings) ----
+// ---- Camera and mic choice ----
 let cameraId = '';
 let micId = '';
 chrome.storage.local.get(['cameraId', 'micId']).then((saved) => {
@@ -1780,11 +1795,13 @@ async function getMedia(kind) {
 
 async function listDevices() {
   const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+
   // Chrome adds "default"/"communications" stand-ins for audio; "System default" covers those.
   const real = (kind) =>
     devices.filter((d) => d.kind === kind && d.deviceId && !['default', 'communications'].includes(d.deviceId));
   fillDevices($('camSelect'), real('videoinput'), cameraId, 'Camera');
   fillDevices($('micSelect'), real('audioinput'), micId, 'Microphone');
+
   // Without camera/mic permission, Chrome hides device names.
   $('devicePerm').hidden = devices.some((d) => d.label);
 }
@@ -1803,6 +1820,7 @@ $('devicePerm').onclick = () => chrome.tabs.create({ url: 'permission.html' });
 $('camSelect').onchange = async () => {
   cameraId = $('camSelect').value;
   chrome.storage.local.set({ cameraId });
+
   // Mid-call: swap the camera in place, no hanging up.
   const old = localStream?.getVideoTracks()[0];
   if (!pc || !old) return;
@@ -1833,7 +1851,8 @@ $('micSelect').onchange = async () => {
   }
 };
 
-// ---- Call audio: their voice, and turning the show down while they talk ----
+// ---- Call audio ----
+// Their voice volume, and turning the show down while they talk.
 let duckLevel = 0.5; // the show's volume while they talk, as a share of yours (0 = leave it alone)
 chrome.storage.local.get(['duckLevel', 'voiceVol']).then((saved) => {
   if (typeof saved.duckLevel === 'number') duckLevel = saved.duckLevel;
@@ -1976,6 +1995,7 @@ async function onSignal({ description, candidate, bye, declined, want, from, nam
       if (pc.localDescription?.type === 'offer') signal({ description: pc.localDescription.toJSON() });
       return;
     }
+
     // An answer that arrives after we've already settled (a duplicate from a resent offer) has nothing to answer.
     if (description.type === 'answer' && pc.signalingState !== 'have-local-offer') return;
     await pc.setRemoteDescription(description);
@@ -2015,8 +2035,9 @@ async function turnOnCamera(voice = false) {
     return false;
   }
   $('local').srcObject = localStream;
-  // Answering a call that started while our sidebar was closed: ask them for a fresh offer, rather than
-  // both sides offering at once. (Falls back to offering ourselves if nothing comes.)
+
+  // Answering a call that started while our sidebar was closed: ask for a fresh offer rather than both
+  // sides offering at once; offer ourselves if none comes within 5s.
   const late = !pc;
   if (late) awaitingOffer = true;
   if (!pc) createPeer();
@@ -2241,6 +2262,7 @@ function render() {
   const camOn = !!localStream?.getVideoTracks()[0]?.enabled;
   $('cam').classList.toggle('off', hasCamera && !camOn);
   $('cam').title = camOn ? 'Camera on: click to turn it off' : 'Turn your camera on';
+
   // Not in a call: just the buttons. In a call with no video either way: a short stage.
   const callEl = document.querySelector('.call');
   callEl.classList.toggle('compact', !inCall && !incoming);

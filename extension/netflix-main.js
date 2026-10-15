@@ -1,5 +1,5 @@
-// Runs in Netflix's own page context, so it can reach their player: seeking (setting the video's time
-// directly crashes Netflix), and reading what's playing (name + artwork) for invite links.
+// Runs in Netflix's page context to reach its player: seeking (setting the video's time directly
+// crashes Netflix) and reading what's playing (name + artwork) for invite links.
 window.addEventListener('message', (e) => {
   if (e.source !== window || e.data?.source !== 'watch-party') return;
   if (typeof e.data.seekMs === 'number') {

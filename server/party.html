@@ -311,9 +311,10 @@
       $('fwdBtn').onclick = () => remote('forward');
       $('countBtn').onclick = () => send({ type: 'countdown', time: now() ?? 0 });
       $('handBtn').onclick = () => { send({ type: 'hand', name: me.name }); note('Holding their hand', 1800); };
+
       // Pause both laptops and save the spot for next time.
       $('nightBtn').onclick = () => {
-        send({ type: 'goodnight', name: me.name, time: now() ?? undefined }); // (each laptop saves its own show's address)
+        send({ type: 'goodnight', name: me.name, time: now() ?? undefined }); // each laptop saves its own show's address
         $('nightBtn').textContent = 'Saved. Goodnight';
         setTimeout(() => ($('nightBtn').textContent = 'Stop for tonight'), 2500);
       };

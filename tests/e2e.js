@@ -14,7 +14,7 @@ const SITE_PORT = 18091;
 const RELAY = `ws://localhost:${RELAY_PORT}`;
 const SITE = `http://localhost:${SITE_PORT}`;
 
-// ---------- tiny test harness ----------
+// ---- Test harness ----
 const results = [];
 function check(name, ok, detail = '') {
   results.push({ name, ok: !!ok, detail });
@@ -39,7 +39,8 @@ function section(title) {
   console.log(`\n== ${title}`);
 }
 
-// ---------- local test site: a page with a playable <video> ----------
+// ---- Local test site ----
+// A page with a playable <video>.
 function makeWav(seconds = 120, rate = 8000) {
   const samples = seconds * rate;
   const buf = Buffer.alloc(44 + samples * 2);
@@ -93,7 +94,8 @@ const site = http.createServer((req, res) => {
   res.end(VIDEO_PAGE);
 });
 
-// ---------- relay (the real server.js) ----------
+// ---- Relay ----
+// The real server.js.
 let relay = null;
 function startRelay() {
   relay = spawn(process.execPath, [SERVER], {
@@ -108,7 +110,7 @@ function stopRelay() {
   return sleep(300);
 }
 
-// ---------- browsers ----------
+// ---- Browsers ----
 const pageErrors = [];
 async function launch(label) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `sinehan-${label}-`));
@@ -129,6 +131,7 @@ async function launch(label) {
   const extId = sw.url().split('/')[2];
   const watch = (p) => {
     p.on('pageerror', (e) => pageErrors.push(`[${label}] ${p.url()}: ${e.message}`));
+
     // Chrome logs blocked extension-resource loads (e.g. fonts) as console errors, not page errors.
     p.on('console', (m) => {
       if (m.type() === 'error' && /chrome-extension:|Unsafe attempt/i.test(m.text()))
@@ -190,7 +193,7 @@ const vstate = (p) =>
     return { paused: v.paused, t: v.currentTime };
   });
 
-// =====================================================================
+// ---- Tests ----
 (async () => {
   await new Promise((r) => site.listen(SITE_PORT, r));
   await startRelay();
@@ -199,7 +202,6 @@ const vstate = (p) =>
   let C = null;
 
   try {
-    // ---------------------------------------------------------------
     section('Connecting & profiles');
     let pA = await openPanel(A);
     const pB = await openPanel(B);
@@ -257,7 +259,6 @@ const vstate = (p) =>
     );
     check('Start call enabled when both are here', await until(() => pA.$eval('#start', (b) => !b.disabled)));
 
-    // The reported bug: renaming didn't update the header.
     await pA.click('#settingsBtn');
     await pA.fill('#name', 'fran');
     check(
@@ -295,7 +296,6 @@ const vstate = (p) =>
     );
     await pA.click('#settingsBtn');
 
-    // ---------------------------------------------------------------
     section('Chat');
     await chat(pA, 'hello there');
     check(
@@ -359,7 +359,6 @@ const vstate = (p) =>
       histA && histA.some((l) => l.cls.includes('me') && l.text.includes('hello there')),
     );
 
-    // ---------------------------------------------------------------
     section('Playback sync');
     const vA = await openVideo(A);
     const vB = await openVideo(B);
@@ -435,8 +434,8 @@ const vstate = (p) =>
       JSON.stringify(await vstate(vB)),
     );
 
-    // ---------------------------------------------------------------
     section('Ads');
+
     // Simulates a streaming site's on-screen ad label inside the player.
     const showAd = (p, on) =>
       p.evaluate((on) => {
@@ -524,7 +523,6 @@ const vstate = (p) =>
       )),
     );
 
-    // ---------------------------------------------------------------
     section('Reactions & notices on the video');
     await chat(pA, '🔥');
     check(
@@ -557,7 +555,6 @@ const vstate = (p) =>
       await until(async () => (await logLines(pB2)).some((l) => l.text.includes('are you there?'))),
     );
 
-    // ---------------------------------------------------------------
     section('Video call');
     await until(() => pB2.$eval('#start', (b) => !b.disabled));
     await pA.click('#start');
@@ -599,6 +596,7 @@ const vstate = (p) =>
         8000,
       ),
     );
+
     // Audio really flows (bytes arriving), in both directions.
     const audioIn = (p) =>
       p.evaluate(async () => {
@@ -651,7 +649,6 @@ const vstate = (p) =>
     );
     await pA.click('#settingsBtn');
 
-    // ---------------------------------------------------------------
     section('Fullscreen overlay');
     await vB.bringToFront(); // Chrome only allows fullscreen in the active tab
     await vB.click('#fs');
@@ -760,7 +757,6 @@ const vstate = (p) =>
       await until(async () => (await vB.locator('.fab').count()) === 0),
     );
 
-    // ---------------------------------------------------------------
     section('Hang up');
     await pA.click('#hangup');
     check(
@@ -779,7 +775,6 @@ const vstate = (p) =>
         !(await pA.$eval('.stage', (s) => s.checkVisibility())),
     );
 
-    // ---------------------------------------------------------------
     section('Voice call');
     await pA.click('#startVoice');
     check('voice call: they can join with voice', await until(() => pB2.$eval('#joinVoice', (b) => !b.hidden), 8000));
@@ -809,7 +804,6 @@ const vstate = (p) =>
     await pA.click('#hangup');
     await until(async () => !(await pB2.$eval('#start', (b) => b.hidden)));
 
-    // ---------------------------------------------------------------
     section('Ringing');
     await pA.click('#start');
     await until(() => pB2.$eval('#decline', (b) => !b.hidden), 8000);
@@ -826,7 +820,7 @@ const vstate = (p) =>
     );
 
     // Your sidebar is closed when she calls: the show's tab shows it, and opening the sidebar picks it up.
-    // (Run on A: B's real Chrome sidebar was opened earlier by the fullscreen Exit button.)
+    // Run on A: B's real Chrome sidebar was opened earlier by the fullscreen Exit button.
     await pA.close();
     await sleep(800);
     await pB2.click('#start');
@@ -849,7 +843,6 @@ const vstate = (p) =>
     await pA.click('#hangup');
     await until(async () => !(await pB2.$eval('#start', (b) => b.hidden)));
 
-    // ---------------------------------------------------------------
     section('Watch tab & watching together');
     const watchTitle = (p) => p.$eval('#watchTitle', (e) => (e.classList.contains('none') ? '' : e.textContent));
     check('each side picked its show tab', await until(async () => (await watchTitle(pA)) && (await watchTitle(pB2))));
@@ -928,7 +921,8 @@ const vstate = (p) =>
     await sleep(600);
 
     section('Saved watch guides');
-    // (Reddit is mocked; this checks saving, sharing and shared ticks)
+
+    // Reddit is mocked; this checks saving, sharing and shared ticks.
     await pA.evaluate(async () => {
       const ep = (n, title) => ({
         key: `S1E${n}`,
@@ -977,6 +971,7 @@ const vstate = (p) =>
       'ticking an episode ticks it for both',
       await until(() => pB2.$eval('.g-ep', (r) => r.classList.contains('done'))),
     );
+
     // The guide as a page, on another device: same list, and ticks there reach the party.
     const pageLink = await pA.evaluate(() => guidePageLink(openGuide));
     check(
@@ -1006,6 +1001,7 @@ const vstate = (p) =>
       await until(async () => (await gp.$$eval('.ep', (r) => r.length)) === 4),
     );
     check('…and it reaches their sidebar', await until(async () => (await pB2.$$eval('.g-ep', (r) => r.length)) === 4));
+
     // Artwork picked on one page shows on another, and the party keeps it with the guide.
     const gp2 = await B.ctx.newPage();
     await gp2.goto(pageLink);
@@ -1041,6 +1037,7 @@ const vstate = (p) =>
     );
     check('…and the episode added there', await until(async () => (await gp.$$eval('.ep', (r) => r.length)) === 4));
     await gp.close();
+
     // Add your own episode: it lands in order and shows up on their side.
     await pA.evaluate(() => {
       Reddit.episodeGuide = async () => null;
@@ -1068,7 +1065,6 @@ const vstate = (p) =>
     await pA.evaluate(() => showBest(false));
     await pB2.evaluate(() => showBest(false));
 
-    // ---------------------------------------------------------------
     section('Typing, timestamps, hand-holding');
     await pA.fill('#msg', '');
     await pA.locator('#msg').pressSequentially('typing something');
@@ -1161,7 +1157,8 @@ const vstate = (p) =>
       }, 7000),
       await both(),
     );
-    // (faded-out pop-ups stay in the page invisibly, so only count what's actually showing)
+
+    // Faded-out pop-ups stay in the page invisibly, so only count what's showing.
     const showing = (p, re) =>
       p.evaluate(
         (src) =>
@@ -1192,6 +1189,7 @@ const vstate = (p) =>
       await until(async () => !(await vstate(vB)).paused && !(await vstate(vA2)).paused, 5000),
       await both(),
     );
+
     // Stop for tonight: both pause, and both save the spot for next time.
     const savedSpot = (p) => p.evaluate(() => new Promise((r) => chrome.runtime.sendMessage({ type: 'resume' }, r)));
     await pA.click('#breakBtn');
@@ -1210,7 +1208,6 @@ const vstate = (p) =>
       JSON.stringify(await savedSpot(pB2)),
     );
 
-    // ---------------------------------------------------------------
     section('Phone companion');
     const phone = await A.ctx.newPage();
     await phone.setViewportSize({ width: 390, height: 844 });
@@ -1289,7 +1286,6 @@ const vstate = (p) =>
     await vA2.evaluate(() => document.getElementById('v').pause());
     await until(async () => (await vstate(vB)).paused);
 
-    // ---------------------------------------------------------------
     section('Invite link');
     await vA2.bringToFront(); // invite from the show's tab
     await pA.click('#invite');
@@ -1344,7 +1340,6 @@ const vstate = (p) =>
     check('unreachable server shows "Connecting…"', (await text(pC, '#status')) === 'Connecting…');
     await leave(pC);
 
-    // ---------------------------------------------------------------
     section('Leaving, rooms, and server restarts');
     await vA2.evaluate(() => document.getElementById('v').play());
     await until(async () => !(await vstate(vB)).paused);

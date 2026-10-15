@@ -6,14 +6,14 @@ let status = { connected: false, peers: 0, room: '' };
 const ports = new Set();
 const HISTORY_LIMIT = 300;
 const DEFAULT_SERVER = 'wss://sinehan.live';
-// Addresses earlier versions used; anyone still on them moves to the real domain.
+
+// Retired relay addresses; saved settings pointing at them are migrated to the default.
 const OLD_SERVERS = ['ws://localhost:8080', 'wss://sinehan-rhua.onrender.com'];
 
 // The one tab that syncs. Everything from other tabs is ignored, and nothing is sent to them.
 let watch = null; // { tabId, url, title, favIconUrl }
 let lastPos = null; // { time, paused, at } — the watch tab's playback position, for chat timestamps
 
-// Toolbar icon opens the sidebar.
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(console.error);
 
 chrome.storage.local.get(['server', 'room', 'active', 'watch']).then(async ({ server, room, active, watch: saved }) => {
@@ -21,6 +21,7 @@ chrome.storage.local.get(['server', 'room', 'active', 'watch']).then(async ({ se
     server = DEFAULT_SERVER;
     chrome.storage.local.set({ server });
   }
+
   // Tab ids don't survive a browser restart, so only keep the watch tab if it still exists.
   if (saved?.tabId != null) {
     const tab = await chrome.tabs.get(saved.tabId).catch(() => null);
@@ -65,10 +66,12 @@ chrome.runtime.onConnect.addListener((port) => {
       }
       return;
     }
+
     // Playback messages only count from the show's tab; stray videos elsewhere can't control anything.
     if (fromTab && !fromWatchTab && msg.type !== 'chat') return;
 
     if (msg.type === 'goodnight' && fromWatchTab) saveSpot(msg);
+
     // Your own play / pause / jump, for the sidebar's chat (theirs arrive from the relay).
     if (fromWatchTab && ['play', 'pause', 'seeked'].includes(msg.type)) {
       for (const p of ports)
@@ -76,6 +79,7 @@ chrome.runtime.onConnect.addListener((port) => {
     }
     if (msg.type === 'chat') {
       remember({ ...msg, mine: true });
+
       // Keep this browser's other chat views in step (sidebar ↔ fullscreen chat).
       for (const p of ports) if (p !== port && wantsMessage(p)) postTo(p, { ...msg, mine: true });
     }
@@ -96,6 +100,7 @@ function postTo(port, msg) {
 }
 
 const isWatchTab = (port) => watch != null && port.tabId === watch.tabId;
+
 // The sidebar hears everything; tabs only if they're the show.
 const wantsMessage = (port) => port.name === 'panel' || isWatchTab(port);
 
@@ -123,7 +128,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     return;
   }
   if (msg.type === 'open-sidebar') {
-    // From the floating camera's exit button; must run right away, while Chrome still counts the click.
+    // From in-page buttons; must run right away, while Chrome still counts the click as a user gesture.
     if (!sender.tab) return reply({ ok: false });
     chrome.sidePanel.open({ windowId: sender.tab.windowId }).then(
       () => reply({ ok: true }),
@@ -132,8 +137,8 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     return true;
   }
   if (msg.type === 'join-invite') {
-    // Clicked "Join" on an invite page: open the sidebar while we still have the click, then join.
-    // That tab is about to become the show, so it's the watch tab.
+    // "Join" on an invite page: open the sidebar while we still have the click, then join.
+    // That tab is about to become the show, so make it the watch tab.
     if (sender.tab) {
       chrome.sidePanel.open({ windowId: sender.tab.windowId }).catch(() => {});
       setWatchTab(sender.tab.id, false);
@@ -231,8 +236,8 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 });
 
 function statusView() {
-  // watchLive: the show's tab is running our page script. It isn't in tabs that were open before the
-  // extension was reloaded or updated, until they're refreshed.
+  // watchLive: the show's tab is running our content script, which tabs open before an extension
+  // reload/update don't until refreshed.
   const watchLive = !!watch && [...ports].some((p) => p.name === 'party' && p.tabId === watch.tabId);
   return { ...status, retrying, watch, watchLive, pos: lastPos };
 }
@@ -270,6 +275,7 @@ async function archiveNow() {
 function archiveParty() {
   historyWrite = historyWrite.then(archiveNow).catch(console.error);
 }
+
 // Remember what this party watched, for its title in "Past parties".
 function noteShow(title) {
   if (!title) return;
@@ -290,6 +296,7 @@ async function readGuides() {
   return (await chrome.storage.local.get('guides')).guides || [];
 }
 const str = (x, n) => String(x ?? '').slice(0, n);
+
 // An episode ("S4E7") or, in a franchise's watch order, a title ("T:iron man").
 const GUIDE_KEY = /^(S\d+E\d+|T:[\p{L}\p{N} ]{1,100})$/u;
 function cleanGuide(g) {
@@ -338,6 +345,7 @@ function cleanGuide(g) {
     done,
   };
 }
+
 // The artwork picked on a guide's page: TVmaze pictures or a small uploaded one; the newest pick wins.
 function cleanArt(a) {
   if (!a || typeof a !== 'object') return null;
@@ -372,6 +380,7 @@ function guideSummary(g) {
 const panels = (msg) => {
   for (const p of ports) if (p.name === 'panel') postTo(p, msg);
 };
+
 // Save guides (ours, or ones they sent). `share` sends them on to the other person.
 function saveGuides(incoming, share, from = null) {
   guidesWrite = guidesWrite
@@ -386,6 +395,7 @@ function saveGuides(incoming, share, from = null) {
       }
       await chrome.storage.local.set({ guides: list.slice(0, MAX_GUIDES) });
       panels({ type: 'guides-changed', added });
+
       // One guide per message keeps each well under the relay's size limit.
       if (share) for (const g of incoming) send({ type: 'guide-sync', guide: list.find((x) => x.id === g.id) || g });
       if (share) send({ type: 'guide-channels', ids: incoming.map((g) => g.id) });
@@ -403,13 +413,14 @@ function tickGuide(tick, share) {
       if (!g.done[tick.key] || tick.at >= g.done[tick.key].at) g.done[tick.key] = { v: tick.v, at: tick.at };
       await chrome.storage.local.set({ guides: list });
       panels({ type: 'guides-changed', added: [], id: tick.id });
-      // Only into the party it belongs to.
+
+      // Only share within the party it belongs to.
       if (share && g.room && g.room === status.room) send({ type: 'guide-tick', ...tick });
     })
     .catch(console.error);
   return guidesWrite;
 }
-// When you're both here: catch each other up on this party's guides (never other parties').
+
 // An episode added on a guide's page (any device): add it to this party's copy of the guide.
 function addFromPage(msg) {
   const key = str(msg.key, 104);
@@ -446,6 +457,7 @@ function addFromPage(msg) {
     .catch(console.error);
 }
 
+// When you're both here: catch each other up on this party's guides (never other parties').
 function shareGuides() {
   guidesWrite.then(readGuides).then((list) => {
     const mine = list.filter((g) => g.room && g.room === status.room);
@@ -455,8 +467,8 @@ function shareGuides() {
 }
 
 // ---- Stop for tonight ----
-// Either of you (or the phone) stops for the night: both shows pause and the spot is saved, so next
-// time the sidebar offers to pick up right there.
+// Either of you (or the phone) stops for the night: both pause and the spot is saved, so the sidebar
+// can offer to pick up there next time.
 function saveSpot(msg) {
   const url = /^https?:\/\//.test(msg.url || '') ? msg.url : watch?.url;
   if (!url) return;
@@ -553,8 +565,7 @@ function showKey(url) {
 }
 
 // ---- Chat history ----
-// Lives here (not in the sidebar) so it survives closing the sidebar,
-// and messages that arrive while it's closed are still there when it reopens.
+// Kept here, not in the sidebar, so messages that arrive while it's closed are there when it reopens.
 let historyWrite = Promise.resolve();
 function remember(msg) {
   const entry = {
@@ -566,6 +577,7 @@ function remember(msg) {
     mine: msg.mine,
     at: Date.now(),
   };
+
   // A shared watch guide shows as a card with an Open button.
   if (msg.guide?.id)
     entry.guide = {
@@ -581,8 +593,8 @@ function remember(msg) {
 }
 
 // ---- Incoming calls while the sidebar is closed ----
-// The call itself lives in the sidebar. If it's closed when they call, ring on the show's tab and with
-// a notification; opening the sidebar picks the call up.
+// The call lives in the sidebar. If it's closed when they call, ring on the show's tab and with a
+// notification; opening the sidebar picks the call up.
 let pendingCall = null; // { name, at }
 let pendingTimer = null;
 function onCallSignal(msg) {
@@ -629,7 +641,7 @@ chrome.notifications?.onClicked.addListener(async (id) => {
 
 // ---- Relay connection ----
 // A connection can die without closing (Wi-Fi gone, laptop asleep): the relay answers our pings, and
-// if nothing at all comes back for a while we drop it ourselves and reconnect.
+// if nothing comes back for a while we drop it ourselves and reconnect.
 const SILENCE_LIMIT = 25000;
 let retrying = false; // lost the connection and trying to get it back
 function connect(server, room) {
@@ -637,7 +649,7 @@ function connect(server, room) {
   status = { connected: false, peers: 0, room, server };
   const sock = (ws = new WebSocket(server));
   let lastHeard = Date.now();
-  let answersPings = false; // older relays don't answer; then we only rely on the socket closing
+  let answersPings = false; // relays that don't answer pings rely on the socket closing instead
 
   sock.onopen = () => {
     status.connected = true;
@@ -645,7 +657,8 @@ function connect(server, room) {
     lastHeard = Date.now();
     sock.send(JSON.stringify({ type: 'join', room }));
     broadcastLocal({ type: 'connection', up: true });
-    // Keeps the relay connection (and this service worker) alive, and checks it's still really there.
+
+    // Keeps the connection (and this service worker) alive, and detects a silently dead one.
     pingTimer = setInterval(() => {
       send({ type: 'ping' });
       if (answersPings && Date.now() - lastHeard > SILENCE_LIMIT) {
@@ -668,7 +681,8 @@ function connect(server, room) {
       answersPings = true;
       return;
     }
-    // The room already has as many people as it allows: tell the sidebar and stop trying.
+
+    // The room is full: tell the sidebar and stop trying.
     if (msg.type === 'room-full') {
       for (const port of ports) if (port.name === 'panel') postTo(port, msg);
       chrome.storage.local.set({ active: false });
@@ -682,6 +696,7 @@ function connect(server, room) {
     if (msg.type === 'rtc') onCallSignal(msg);
     if (msg.type === 'goodnight') saveSpot(msg);
     if ((msg.type === 'joined' && msg.count > 1) || (msg.type === 'peer' && msg.joined)) shareGuides();
+
     // Tell the relay about this party's guides, so their pages can sync even before anyone ticks.
     if (msg.type === 'joined') {
       guidesWrite.then(readGuides).then((list) => {
@@ -713,13 +728,14 @@ function connect(server, room) {
       tickGuide({ id: str(msg.id, 200), key: str(msg.key, 104), v: !!msg.v, at: Number(msg.at) || Date.now() }, false);
     if (msg.type === 'chat') {
       remember({ ...msg, mine: false });
-      // Lets the show's tab know whether to flash the message on the video (sidebar closed or hidden by fullscreen).
+
+      // Tells the show's tab whether to flash it on the video (sidebar closed or hidden by fullscreen).
       msg.panelOpen = [...ports].some((p) => p.name === 'panel');
     }
     for (const port of ports) if (wantsMessage(port)) postTo(port, msg);
   };
 
-  // Dropped connection (not a manual Leave — disconnect() unhooks this first): pause the show, then retry.
+  // Dropped connection (not Leave; disconnect() unhooks this first): tell the tabs to pause, then retry.
   function lost() {
     clearInterval(pingTimer);
     if (ws !== sock) return; // already replaced by a newer connection

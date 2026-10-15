@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+
   <!-- The Sinehan extension looks for this tag to wire up the Join button. -->
   <meta name="watch-party-join" content="1" />
   <title>You're invited · Sinehan</title>
@@ -91,6 +92,7 @@
     <div class="avatar" id="avatar"><img id="avatarImg" src="/static/avatar1.png" alt="" /></div>
     <svg class="hello" viewBox="0 0 520 96" role="img" aria-label="Someone" id="penSvg">
       <defs>
+
         <!-- A soft-edged "pen" that sweeps left to right, uncovering the word as it goes. -->
         <linearGradient id="nib" x1="0" x2="1">
           <stop offset="0" stop-color="#fff" />
@@ -134,7 +136,7 @@
   </main>
 
   <script>
-    // Fills in who invited you and to what, from the invite link. Text only; nothing here runs as HTML.
+    // Fills in who invited you and to what, from the invite link. Link values are set as text, never as HTML.
     // Logos for the platforms we know, the same ones as on the home page.
     const PLATFORMS = [
         [/(^|\.)youtube\.com$/, "<svg viewBox=\"0 0 24 24\" role=\"img\" aria-label=\"YouTube\"><path d=\"M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z\" /></svg><span>YouTube</span>"],
@@ -164,6 +166,7 @@
       }
       document.getElementById('avatar').style.background = COLORS[avatar];
       document.getElementById('avatarImg').src = `/static/avatar${avatar + 1}.png`;
+
       // Just the show's name ("Prime Video: The Mentalist - Season 3" -> "The Mentalist"); older links carry the rest.
       const showName = title
         .replace(/^\(\d+\)\s*/, '')
@@ -173,9 +176,9 @@
         .replace(/[\s\-–—:|·]+$/, '')
         .trim();
       if (showName) document.getElementById('show').textContent = showName;
-      // The show's picture as the background. For shows on streaming services, their own key art (TVmaze's
-      // wide backdrops, or a film's poster from Wikipedia) beats the page's preview picture, which is often a
-      // random crop; YouTube's thumbnail is the video itself.
+
+      // The show's picture as the background. TVmaze's wide backdrops or a film's Wikipedia poster beat the page's
+      // preview picture, which is often a random crop; YouTube's thumbnail is the video itself.
       const setBackdrop = (src) => {
         const bg = document.getElementById('backdrop');
         bg.style.backgroundImage = `url("${src}")`;
@@ -186,6 +189,7 @@
       const linkPicture = /^https:\/\/[^\s"'()<>]+$/.test(img) && img.length < 600 ? img : '';
       const usePicture = () => {
         if (!linkPicture) return;
+
         // YouTube's standard thumbnail has black bars; try the full-size one first (tiny = not available).
         const full = linkPicture.replace(/\/hqdefault\.jpg$/, '/maxresdefault.jpg');
         const probe = new Image();
@@ -201,6 +205,7 @@
           const tv = r.ok ? await r.json() : null;
           if (tv && flat(tv.name) === flat(name)) {
             const images = await (await fetch(`https://api.tvmaze.com/shows/${tv.id}/images`, { signal: timeout() })).json();
+
             // The newest key art (TVmaze lists images oldest first; a newer one has a higher id).
             const wide = images.filter((x) => x.type === 'background').sort((a, b) => b.id - a.id)[0];
             const url = wide?.resolutions?.original?.url || tv.image?.original;
@@ -222,8 +227,10 @@
       } else {
         usePicture();
       }
+
       // Same party without the extension (chat + remote): keep the invite's details.
       document.getElementById('phoneLink').href = document.getElementById('remoteLink').href = `/party${location.search}`;
+
       // Phones can't install extensions, so lead with the phone option there; computers get the install steps.
       const onPhone = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
       document.getElementById('onPhone').hidden = !onPhone;

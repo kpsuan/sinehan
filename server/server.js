@@ -12,6 +12,7 @@ const LANDING_PAGE = fs.readFileSync(path.join(__dirname, 'landing.html'));
 const PARTY_PAGE = fs.readFileSync(path.join(__dirname, 'party.html'));
 const GUIDE_PAGE = fs.readFileSync(path.join(__dirname, 'guide.html'));
 const PRIVACY_PAGE = fs.readFileSync(path.join(__dirname, 'privacy.html'));
+
 // Only these exact files are served from public/.
 const STATIC_FILES = new Map([
   ['logo.png', 'image/png'],
@@ -31,19 +32,22 @@ const KLIPY_API_KEY = process.env.KLIPY_API_KEY;
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
+
   // Invite links land here; the extension takes it from there.
   if (url.pathname === '/join') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     return res.end(JOIN_PAGE);
   }
   if (url.pathname === '/gifs') return gifs(url, res);
-  // Images for the landing and invite pages.
+
+  // Assets for the web pages.
   if (url.pathname.startsWith('/static/')) {
     const name = url.pathname.slice('/static/'.length);
     if (!STATIC_FILES.has(name)) {
       res.writeHead(404);
       return res.end();
     }
+
     // A missing file is a 404 for that request, never a crash of the whole relay.
     const stream = fs.createReadStream(path.join(__dirname, 'public', name));
     stream.on('open', () => {
@@ -56,6 +60,7 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+
   // The extension itself, for the landing page's Download button.
   if (url.pathname === '/download') {
     res.writeHead(200, {
@@ -69,16 +74,18 @@ const server = http.createServer((req, res) => {
       .pipe(res);
   }
   if (url.pathname === '/health') return res.end('watch-party relay ok');
+
   // The phone companion: chat, reactions and a remote for the show playing on a laptop.
   if (url.pathname === '/party') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     return res.end(PARTY_PAGE);
   }
-  // A watch guide as a page, for any device. The guide itself is in the link after #, so it never reaches us.
   if (url.pathname === '/privacy') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     return res.end(PRIVACY_PAGE);
   }
+
+  // A watch guide as a page, for any device. The guide itself is in the link after #, so it never reaches us.
   if (url.pathname === '/guide') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     return res.end(GUIDE_PAGE);
@@ -134,6 +141,7 @@ function json(res, status, data) {
   res.writeHead(status, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
   res.end(JSON.stringify(data));
 }
+
 // Limits that keep one misbehaving client from hurting everyone else.
 const MAX_MESSAGE = 64 * 1024; // biggest real message is a call setup (a few KB)
 const MAX_PER_ROOM = 10; // two people, their phones, and room to spare
@@ -142,9 +150,8 @@ const PER_SECOND = 40; // ...refilled at this rate; beyond it, messages are drop
 const wss = new WebSocketServer({ server, maxPayload: MAX_MESSAGE });
 
 // ---- Guide pages ----
-// A watch guide opened as a page (any device) syncs its ticks through a "guide channel": a code made
-// from the party's room and the guide, which can't be turned back into the room. The page joins only
-// that channel and can only send ticks for that guide; it never sees the party's chat.
+// A guide page syncs ticks through a channel hashed from the room and guide, which can't be turned back
+// into the room. It can only send ticks for that guide and never sees the party's chat.
 const guideChannel = (room, id) => crypto.createHash('sha256').update(`${room}|${id}`).digest('hex').slice(0, 24);
 const channelSockets = new Map(); // channel -> Set<ws> (guide pages)
 const channelRoom = new Map(); // channel -> room (learned when the party's sidebars mention the guide)
@@ -174,6 +181,7 @@ wss.on('connection', (ws) => {
   let room = null;
   ws.isAlive = true;
   ws.on('pong', () => (ws.isAlive = true));
+
   // A bad message (too big, malformed frame) errors this connection only; never the whole relay.
   ws.on('error', () => ws.terminate());
   let tokens = BURST;
@@ -197,7 +205,7 @@ wss.on('connection', (ws) => {
       return;
     }
 
-    // The answer lets the extension notice a connection that died without closing (it reconnects).
+    // Lets the extension notice a connection that died without closing, and reconnect.
     if (msg.type === 'ping') return send(ws, { type: 'pong' });
 
     // Leaving on purpose, so the other side hears "left" rather than "connection dropped".
@@ -216,6 +224,7 @@ wss.on('connection', (ws) => {
         return;
       }
       room = wanted;
+
       // A phone companion (chat + remote) doesn't count as a person watching, and comes and goes quietly.
       ws.companion = msg.companion === true;
       if (!rooms.has(room)) rooms.set(room, new Set());
@@ -308,7 +317,6 @@ wss.on('connection', (ws) => {
   }
 });
 
-// People watching = everyone in the room except phone companions.
 function watchers(room) {
   let n = 0;
   for (const c of rooms.get(room) || []) if (!c.companion) n++;

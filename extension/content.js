@@ -1,6 +1,5 @@
-// Watches the page's <video> and mirrors play/pause/seek to/from the other person — but only in the
-// show's tab (the "watch tab" the background picks). Also: ads and buffering holds, auto-pause,
-// hand-holding glow, 3-2-1 countdown, and the fullscreen chat/camera overlay.
+// Mirrors the page's <video> play/pause/seek with the other person, only in the show's tab (the "watch tab"
+// the background picks). Also: ad/buffering holds, hand-holding glow, 3-2-1 countdown, fullscreen chat/camera.
 const isNetflix = location.hostname.endsWith('netflix.com');
 const viewId = crypto.randomUUID(); // identifies this tab/frame to the sidebar for the camera hand-off
 const QUICK_REACTIONS = ['😂', '😭', '😍', '😱', '🔥', '👏', '❤️', '💀'];
@@ -8,12 +7,13 @@ let port = null;
 let video = null;
 let isWatchTab = false; // only the show's tab syncs
 let hasWatch = false; // whether any tab is the show yet
+
 // What we just applied from the other side. Local events that match it are our own echo (skip them);
 // anything else is a real action by this person and is sent even if it happens right away.
 let applied = null; // { paused, time, until }
 
-// After the extension is reloaded or updated, copies of this script in tabs that were already open
-// keep running but can't reach the extension anymore. They notice and switch themselves off quietly.
+// After an extension reload/update, copies of this script in already-open tabs keep running but can't
+// reach the extension; they notice and shut themselves off.
 const timers = [];
 let dead = false;
 function extensionAlive() {
@@ -50,8 +50,7 @@ function connectPort() {
 }
 connectPort();
 
-// Back/forward cache: Chrome freezes this page and closes our connection. Let go cleanly and
-// reconnect if the page comes back.
+// Back/forward cache: Chrome freezes the page and closes our port; let go cleanly, reconnect if it comes back.
 window.addEventListener('pagehide', (e) => {
   if (!e.persisted || !port) return;
   const p = port;
@@ -79,12 +78,12 @@ function ask(msg, then) {
   } catch {}
 }
 
-// Bantay's coat (picked in the sidebar's settings).
+// Bantay's coat, picked in the sidebar's settings.
 let bantayCoat = 'white';
 chrome.storage.local.get('bantayCoat').then(({ bantayCoat: c }) => c && (bantayCoat = c));
 chrome.storage.onChanged.addListener((c) => c.bantayCoat && (bantayCoat = c.bantayCoat.newValue || 'white'));
 
-// Our name/picture, for reactions sent from this tab.
+// Our name and avatar, for chat, reactions and holds sent from this tab.
 let me = { name: 'Guest', avatar: 0 };
 chrome.storage.local.get(['name', 'avatar']).then(({ name, avatar }) => (me = { name: name || 'Guest', avatar }));
 chrome.storage.onChanged.addListener((c) => {
@@ -97,6 +96,7 @@ let lastClaim = 0;
 every(1000, () => {
   const v = mainVideo();
   if (v && v !== video) attach(v);
+
   // No show picked yet and this tab has a real player: offer it as the show.
   if (video && !isWatchTab && !hasWatch && video.readyState > 0 && Date.now() - lastClaim > 3000) {
     const r = video.getBoundingClientRect();
@@ -105,12 +105,13 @@ every(1000, () => {
       post({ type: 'claim' });
     }
   }
+
   // Where we are in the show, for chat timestamps.
   if (isWatchTab && video && !myAd) post({ type: 'position', time: video.currentTime, paused: video.paused });
 });
 
-// The biggest visible <video> that has media is the player; sites like Prime Video also keep
-// hidden previews/ads around, so "the first <video>" isn't reliable.
+// The biggest <video> (favouring ones with media) is the player; sites like Prime Video keep hidden
+// previews/ads around, so the first <video> isn't reliable.
 function mainVideo() {
   let best = null;
   let bestScore = 0;
@@ -147,8 +148,8 @@ function attach(v) {
   for (const ev of VIDEO_EVENTS) video?.removeEventListener(ev, onVideoEvent);
   video = v;
   for (const ev of VIDEO_EVENTS) v.addEventListener(ev, onVideoEvent);
-  // Just opened the show (e.g. from an invite link)? Ask the other side where they are
-  // (unless this is an ad's own player taking over; we re-sync when the ad ends).
+
+  // Just opened the show? Ask where they are, unless an ad's own player took over (we re-sync after the ad).
   if (isWatchTab && !detectAd()) post({ type: 'sync-request' });
   if (isWatchTab) checkResume();
 }
@@ -172,14 +173,15 @@ let pageKey = showKey(location.href);
 let switchedAt = 0;
 function sendState(type) {
   if (!video || !isWatchTab || myAd) return; // never share an ad's play/pause/position
-  // Sites like YouTube switch videos without reloading; the moments around a switch are the old and
-  // new video stopping/starting, not anything to sync. The other side follows via "now watching" instead.
+
+  // Sites like YouTube switch videos without reloading; events around a switch are just the old/new video
+  // stopping and starting, so don't sync them. The other side follows via "now watching" instead.
   const key = showKey(location.href);
   if (key !== pageKey) {
     pageKey = key;
     switchedAt = Date.now();
   }
-  if (type !== 'state' && Date.now() - switchedAt < 2500) return; // (answers to "where are you?" still go out)
+  if (type !== 'state' && Date.now() - switchedAt < 2500) return; // replies to sync requests still go out
   post({ type, time: video.currentTime, paused: video.paused });
 }
 
@@ -206,19 +208,22 @@ function onRemote(msg) {
     }
     return;
   }
-  // Everything below is for the show's tab only (the background doesn't send it elsewhere either).
+
+  // The rest is for the show's tab only (the background doesn't route it elsewhere anyway).
   if (!isWatchTab) return;
 
   if (msg.type === 'chat') {
     const text = String(msg.text || '');
     overlay?.add(msg); // keeps the fullscreen chat current, including what we sent from the sidebar
     if (msg.mine) return;
+
     // Emoji-only messages float up over the video so they're seen without looking at the chat.
     if (isEmojiOnly(text) && video) {
       floatEmoji(text);
       return;
     }
     if (overlay?.isOpen()) return;
+
     // The sidebar shows chat, but not when it's closed or hidden by fullscreen — so flash it on the video.
     if (document.fullscreenElement || !msg.panelOpen) {
       toast(`${msg.name}: ${text.length > 60 ? text.slice(0, 60) + '…' : text}`);
@@ -261,7 +266,7 @@ function onRemote(msg) {
     if (dropped === 'me') {
       netBar.hide();
       if (msg.count > 1) {
-        // They stayed connected, so they count us both back in (or just line us up if it was paused).
+        // They stayed connected, so they count us both back in (or just line us up if paused).
         dropped = null;
         dropResume = null;
         toast('Reconnected. Back in sync.');
@@ -283,6 +288,7 @@ function onRemote(msg) {
   if (Math.abs(delta) > 1) seek(msg.time);
   if (msg.paused) video.pause();
   else video.play().catch(() => toast('Click the video once so the browser lets it autoplay'));
+
   // Big jumps (skipping the intro, rewinding a scene) get called out so they're not a surprise.
   if (msg.type === 'seeked' && Math.abs(delta) > 10)
     toast(`They ${delta > 0 ? 'skipped ahead' : 'went back'} ${clock(Math.abs(delta))}`);
@@ -314,8 +320,8 @@ function clock(seconds) {
 }
 
 // ---- Holds: ads and buffering ----
-// While one of us is in an ad or loading, the other is paused; nothing from an ad is synced.
-// When it's over, the person who was held resumes and the other lines back up with them.
+// While one of us is in an ad or loading, the other is paused and nothing from the ad is synced.
+// Afterwards the held person resumes and the other lines back up with them.
 let myAd = false;
 let myBuffering = false;
 const theirHolds = new Set(); // 'ad' | 'buffer'
@@ -341,7 +347,7 @@ every(500, () => {
   }
 });
 
-// Buffering: a stall that lasts more than a moment (and isn't just a quick seek) holds the other side.
+// A stall longer than a moment (not just a quick seek) holds the other side.
 let stallTimer = null;
 function onWaiting() {
   if (!isWatchTab || myAd || video.paused) return;
@@ -375,7 +381,8 @@ function onTheirHold(reason, active, time, name) {
   } else {
     theirHolds.delete(reason);
     if (reason === 'break') breakBanner(null);
-    // (Coming back from a break starts a 3-2-1 countdown, which does the playing.)
+
+    // Coming back from a break starts a 3-2-1 countdown, which does the playing.
     if (!theirHolds.size && pausedForHold && !myAd && !countingDown) {
       releasePlayback();
       toast(reason === 'ad' ? 'Ad’s over. Back together.' : 'Back together.');
@@ -384,11 +391,12 @@ function onTheirHold(reason, active, time, name) {
 }
 
 function holdPlayback(message, time) {
-  // Only auto-resume later if it was actually playing (don't override someone who'd paused on purpose).
+  // Only auto-resume later if it was playing; don't override someone who paused on purpose.
   if (!pausedForHold) pausedForHold = !!video && !video.paused;
   if (video && !video.paused) {
     applied = { paused: true, time: typeof time === 'number' ? time : video.currentTime, until: Date.now() + 1500 };
     video.pause();
+
     // Loading: wait at the spot they're stuck on, so we restart from the same moment.
     if (typeof time === 'number' && Math.abs(video.currentTime - time) > 1) seek(time);
   }
@@ -408,8 +416,8 @@ function clearTheirHolds() {
   pausedForHold = false;
 }
 
-// YouTube marks its player while an ad plays. Other services don't have a known marker, so we
-// look for the on-screen ad label they all show ("Ad", "Ad 1 of 3", "Ad · 0:15", …) inside the player.
+// YouTube marks its player during ads. Other services have no known marker, so we look for the
+// on-screen ad label ("Ad", "Ad 1 of 3", "Ad · 0:15", …) inside the player.
 const AD_LABELS = [
   /^(ad|ads|advertisement|sponsored)$/i,
   /^ads?\s*\d+\s*(of|\/)\s*\d+/i,
@@ -434,8 +442,7 @@ function detectAd() {
   return false;
 }
 
-// The player = the largest ancestor of the video that's still about the video's size
-// (so we search the player's own overlays, not the rest of the page).
+// The largest ancestor still about the video's size, so we search the player's overlays, not the whole page.
 function playerRoot() {
   const rect = video.getBoundingClientRect();
   const area = Math.max(1, rect.width * rect.height);
@@ -523,7 +530,7 @@ function showCount(n) {
   );
 }
 
-// A soft two-note chime every two seconds, made in the browser (no sound file needed).
+// A soft two-note chime every two seconds, synthesized so no sound file is needed.
 function makeRinger() {
   let ctx = null;
   let timer = null;
@@ -565,8 +572,8 @@ function makeRinger() {
   };
 }
 
-// "narp is calling" on the video: when the sidebar is closed (we ring here), or in fullscreen (the
-// sidebar rings but is hidden). Answer opens the sidebar, which picks the call up.
+// "<name> is calling" on the video, when the sidebar is closed (we ring here) or hidden by fullscreen
+// (it rings there). Answer opens the sidebar, which picks the call up.
 const tabRinger = makeRinger();
 let callEl = null;
 function callBanner(name, ring) {
@@ -611,7 +618,7 @@ function callBannerOff() {
 }
 
 // ---- Stop for tonight ----
-// Pause both of you where you are; the spot is saved (by the background) for next time.
+// Pause both of you where you are; the background saves the spot for next time.
 function goodnight(time, name) {
   if (!video) return;
   if (myBreak) {
@@ -627,6 +634,7 @@ function goodnight(time, name) {
     `${name ? `${name} stopped for tonight. ` : 'Goodnight. '}Saved at ${clock(typeof time === 'number' ? time : video.currentTime)}.`,
   );
 }
+
 // Opened from "Pick up where you left off": go to the saved spot, paused, once the player is ready.
 function checkResume() {
   setTimeout(() => {
@@ -666,7 +674,6 @@ function toggleBreak() {
 const breakBar = topBar(16);
 function breakBanner(text, mine = false) {
   if (!text) return breakBar.hide();
-  // Bantay naps while you're away.
   breakBar.show(text, mine ? { label: 'I’m back', onClick: () => myBreak && toggleBreak() } : null, 'head-asleep');
 }
 
@@ -722,8 +729,8 @@ function topBar(top) {
 }
 
 // ---- Dropped connections ----
-// Losing the connection (ours or theirs) pauses the show with a bar that stays until it's back. Then we
-// line up again, and if the show was playing, the one who stayed connected counts you both back in.
+// Losing either connection pauses the show with a bar until it's back. Then we line up again and, if it
+// was playing, whoever stayed connected counts you both back in.
 const netBar = topBar(62);
 let dropped = null; // 'me' | 'them' while waiting for the connection to come back
 let dropResume = null; // { at } if the show was playing when it dropped
@@ -741,7 +748,8 @@ function connectionDropped(who) {
     'head-tilt',
   );
   clearTimeout(dropGiveUp);
-  // They may not be coming back soon: stop the bar after two minutes (we still count you in if they do).
+
+  // Drop the bar after two minutes; we still count you in if they come back.
   dropGiveUp = setTimeout(() => {
     if (dropped !== 'them') return;
     netBar.hide();
@@ -779,9 +787,10 @@ function pagePicture() {
     return '';
   }
 }
+
 // Netflix's player page has no preview picture and its tab title is just "Netflix". We try, in order:
-// the title's public page (as a logged-out visitor, which carries its name and artwork), Netflix's own
-// player data, then the title shown in the player. Results are kept per title; misses retry later.
+// the title's public page (fetched logged-out, it carries name and artwork), Netflix's player data,
+// then the title shown in the player. Results are cached per title; misses retry later.
 const netflixInfo = new Map(); // watch id -> { image, title, at } (or a pending promise)
 async function netflixLookup(id) {
   let title = '';
@@ -796,7 +805,8 @@ async function netflixLookup(id) {
         .replace(/\s*[|\-–]\s*Netflix.*$/i, '')
         .trim();
       image = /^https:\/\//.test(meta('og:image')) ? meta('og:image') : '';
-      // Today's public title page: the show's name is the page heading, its artwork is the hero image.
+
+      // Without usable og tags, the name is the page heading and the artwork is the hero image.
       if (!title || title === 'Netflix') title = doc.querySelector('h1')?.textContent.trim().slice(0, 120) || '';
       if (!image) {
         const hero =
@@ -836,6 +846,7 @@ function showInfo() {
   const id = isNetflix && location.pathname.match(/^\/watch\/(\d+)/)?.[1];
   if (id) {
     const info = netflixInfo.get(id);
+
     // Look up once; if it came back empty (player still loading), try again after a while.
     if (!info || (!(info instanceof Promise) && !info.title && Date.now() - info.at > 20000)) {
       const pending = netflixLookup(id).then((r) => netflixInfo.set(id, r));
@@ -845,8 +856,8 @@ function showInfo() {
   }
   return { image: pagePicture(), title: '' };
 }
-// Last resort for invites when the page publishes no picture (Prime Video): the biggest image on
-// the page, which on a show's page is its artwork.
+
+// Fallback when the page publishes no picture (Prime Video): the biggest image, usually the show's artwork.
 function biggestPicture() {
   let best = null;
   let bestArea = 0;
@@ -886,6 +897,7 @@ function showKey(url) {
 let bannerEl = null;
 function showFollowBanner(url, title, from) {
   if (!/^https?:\/\//.test(url || '') || showKey(url) === showKey(location.href)) return; // already here
+
   // We were watching the same thing and they moved on (clicked another video, next episode): follow.
   if (from && showKey(from) === showKey(location.href)) {
     toast(`Following them to ${title ? `“${title}”` : 'the next video'}`);
@@ -924,6 +936,7 @@ let camPc = null;
 
 document.addEventListener('fullscreenchange', () => {
   const fs = document.fullscreenElement;
+
   // Only the show's player draws the overlay (and never inside a bare <video>).
   if (isWatchTab && fs && video && fs !== video && fs.contains(video)) {
     overlay?.destroy();
@@ -987,9 +1000,8 @@ async function onLocal(msg) {
 }
 
 // ---- Turning the show down while they talk ----
-// The sidebar hears them on the call and says when to duck. We fade the show's own volume down and
-// back up, and leave it alone if you changed the volume yourself in the meantime. If the sidebar goes
-// quiet (closed mid-sentence), the volume comes back by itself.
+// The sidebar hears them on the call and says when to duck. We fade the show's volume down and back up,
+// unless you changed it yourself meanwhile. If the sidebar goes quiet, the volume comes back on its own.
 let duck = null; // { video, from } while turned down
 let volumeSet = null; // the last volume we set
 let rampTimer = null;
@@ -1016,6 +1028,7 @@ function rampVolume(v, to) {
   let i = 0;
   rampTimer = setInterval(() => {
     i += 1;
+
     // You moved the volume yourself mid-fade: stop and keep yours.
     if (volumeSet != null && Math.abs(v.volume - volumeSet) > 0.02) {
       clearInterval(rampTimer);
@@ -1040,7 +1053,8 @@ function buildOverlay(fsHost) {
   const host = document.createElement('div');
   host.dataset.sinehan = '';
   host.style.cssText = 'position:fixed;inset:0;z-index:2147483646;pointer-events:none;';
-  // Shadow DOM so the site's CSS can't touch ours (and vice versa). The template is static markup.
+
+  // Shadow DOM so the site's CSS and ours don't mix. The template is static markup.
   const root = host.attachShadow({ mode: 'open' });
   root.innerHTML = `
     <style>
@@ -1158,8 +1172,8 @@ function buildOverlay(fsHost) {
     $('.cam').hidden = true;
   };
 
-  // Her camera: drag it anywhere (remembered), it grows toward the middle of the screen on hover,
-  // and its controls work your mic/camera in the call (which runs in the sidebar).
+  // Her camera: draggable (position remembered), grows inward on hover, and its controls work your
+  // mic/camera in the call, which runs in the sidebar.
   const cam = $('.cam');
   function placeCam(x, y) {
     const w = cam.offsetWidth || 240;
@@ -1168,6 +1182,7 @@ function buildOverlay(fsHost) {
     const top = Math.min(Math.max(8, y), innerHeight - h - 8);
     cam.style.left = `${left}px`;
     cam.style.top = `${top}px`;
+
     // Zoom from the corner nearest the screen edge, so it grows inward and never off-screen.
     cam.style.setProperty(
       '--origin',
@@ -1285,7 +1300,7 @@ function buildOverlay(fsHost) {
       $('.c-mic').title = mic ? 'Mute your mic' : 'Unmute your mic';
       $('.c-cam').classList.toggle('off', !camOn);
       $('.c-cam').title = camOn ? 'Turn your camera off' : 'Turn your camera on';
-      $('.c-mic').hidden = $('.c-cam').hidden = !hasCamera; // (watching her without your own camera on)
+      $('.c-mic').hidden = $('.c-cam').hidden = !hasCamera; // hidden when you're watching without your own camera
     },
     destroy() {
       for (const type of keyEvents) window.removeEventListener(type, swallow, true);
@@ -1315,9 +1330,8 @@ function toast(text) {
   toastTimer = setTimeout(() => (toastEl.style.opacity = '0'), 2500);
 }
 
-// Inter for our overlays, under a private name so we never change the site's own fonts.
-// Pages can't load chrome-extension:// URLs as fonts, so we hand the font over as bytes instead,
-// and only once something is actually about to be shown.
+// Inter for our overlays, under a private name so the site's fonts are untouched. Pages can't load
+// chrome-extension:// URLs as fonts, so we load it from bytes, and only once something is shown.
 const FONT = "'WatchPartyInter',system-ui,sans-serif";
 let fontRequested = false;
 function ensureFont() {

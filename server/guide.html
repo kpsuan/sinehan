@@ -25,8 +25,10 @@
     .backdrop { position: absolute; inset: 0 0 0 auto; width: min(100%, 1100px); z-index: -2; background: center 20% / cover no-repeat; opacity: 0; transition: opacity 1s;
       -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 45%); mask-image: linear-gradient(to right, transparent 0%, #000 45%); }
     .backdrop.on { opacity: .9; }
+
     /* Only a poster to go on (films): blur it across the whole header instead */
     .backdrop.soft { inset: -40px; width: auto; filter: blur(30px) saturate(1.3) brightness(.55); -webkit-mask-image: none; mask-image: none; }
+
     /* Films: their posters lined up on the right, like a shelf */
     .shelf { position: absolute; inset: 0 0 0 auto; width: min(100%, 980px); z-index: -2; display: flex; align-items: center; justify-content: flex-end; gap: 14px;
       padding: 40px 24px; opacity: 0; transition: opacity 1s; -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 55%); mask-image: linear-gradient(to right, transparent 0%, #000 55%); }
@@ -40,7 +42,7 @@
     .hero .wrap { flex: 1; display: flex; flex-direction: column; }
     .brand { display: inline-flex; align-items: center; gap: 8px; color: var(--text); font-size: 15px; font-weight: 600; }
     .brand img { width: 24px; height: 24px; }
-    /* The poster is as tall as the text beside it: its top meets the kicker, its bottom the button */
+
     /* The poster sits at the top of the row, level with the kicker */
     .head { display: flex; align-items: flex-start; gap: 28px; margin-top: auto; padding-top: 48px; }
     .poster-wrap { position: relative; flex: none; width: 200px; }
@@ -49,6 +51,7 @@
       font-size: 12px; font-weight: 600; opacity: 0; transition: opacity .15s; }
     .poster-wrap:hover .art-btn, .art-btn:focus-visible { opacity: 1; }
     @media (hover: none) { .art-btn { opacity: 1; } }
+
     /* Picking another poster or background */
     .picker-panel { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; background: rgba(8, 6, 10, .92); backdrop-filter: blur(10px); }
     .picker-head { display: flex; align-items: center; gap: 12px; padding: max(16px, env(safe-area-inset-top)) 20px 12px; }
@@ -110,6 +113,7 @@
     .ep:hover .shot img { transform: scale(1.03); }
     .shot .no { position: absolute; inset: 0; display: grid; place-items: center; color: var(--faint); font-size: 22px; font-weight: 600; }
     .ep.done .shot img { opacity: .45; filter: grayscale(.5); }
+
     /* The line under the picture: full once you've watched it */
     .shot::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 5px; background: rgba(255, 255, 255, .14); }
     .ep.done .shot::after { background: var(--accent); }
@@ -145,6 +149,7 @@
       .head { gap: 16px; padding-top: 28px; align-items: flex-end; }
       .poster-wrap { width: 96px; align-self: flex-end; }
       .summary { display: none; }
+
       /* Phones: the key art as a banner on top, the name and button below it */
       .backdrop { inset: 0 0 auto 0; width: 100%; height: 230px; -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); }
       .backdrop.soft { inset: -40px; height: auto; }
@@ -225,6 +230,7 @@
       const CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>';
       const norm = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
       const flat = (s) => norm(s).replace(/^the /, '').replace(/ /g, '');
+
       // Text from a guide post, readable (same as the sidebar's).
       function cleanReason(text, title = '') {
         let t = String(text || '')
@@ -236,6 +242,7 @@
           .replace(/^\s*(#{1,6}|>+)\s*/gm, '')
           .replace(/\s+/g, ' ')
           .trim();
+
         // The card already shows the episode and its title: drop them from the front.
         t = t.replace(/^[\s*>•·\-–—]*(s\d+\s*e\d+|\d{1,2}\s*[x×]\s*\d{1,3}|ep(isode)?\.?\s*\d+)\s*[-–—:|.]*\s*/i, '');
         const flat = (x) => String(x || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
@@ -264,6 +271,7 @@
       }
 
       const KEY = /^(S\d+E\d+|T:[\p{L}\p{N} ]{1,100})$/u;
+
       // Compact links (v2) carry only which episodes; older ones carry titles and descriptions too.
       const KINDS = { F: 'Films', S: 'Series', X: 'Short films' };
       const rows = Array.isArray(g.e) ? g.e
@@ -282,6 +290,7 @@
       for (const k of ticked) if (k) done[k] = { v: true, at: 0 };
       try { Object.assign(done, JSON.parse(localStorage.getItem(store) || '{}')); } catch {}
       const save = () => { try { localStorage.setItem(store, JSON.stringify(done)); } catch {} };
+
       // The artwork someone picked: { poster, background, at } (URLs; '' = the newest). From the link, then
       // this device, then live from the party; the newest choice wins.
       const ART_URL = /^(https:\/\/static\.tvmaze\.com\/uploads\/images\/[\w/.-]+|data:image\/jpeg;base64,[A-Za-z0-9+/=]+)$/;
@@ -311,6 +320,7 @@
 
       const addedStore = `sinehan-guide-added:${id}`;
       const ADD_KEY = /^(S\d+E\d+|T:[\p{L}\p{N} ]{1,100})$/u;
+
       // Put an episode into the list, in order (from this page, or added by someone in the party).
       function insertEpisode(e) {
         if (!ADD_KEY.test(e.key || '') || episodes.some((x) => x.key === e.key)) return false;
@@ -474,11 +484,12 @@
 
       // ---- Pictures and details ----
       const longDate = (d) => (d ? new Date(`${d}T12:00:00`).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '');
-      // ---- Artwork (a TVmaze show, or none: then just your own pictures) ----
+
+      // ---- Artwork ----
       const art = (x) => String(x || '').replace(/^http:/, 'https:');
       function setupArt(show) {
-      // Artwork: the newest by default, or what someone picked. The choice is shared: with the party
-      // (live), and in the guide's link (pictures from TVmaze; uploads go to the party only).
+      // The newest artwork by default, or what someone picked. The choice is shared live with the party and
+      // in the guide's link (TVmaze pictures only; uploads go to the party only).
       let posters = [];
       let backgrounds = [];
       const newest = (list) => [...list].sort((a, b) => b.id - a.id)[0];
@@ -526,6 +537,7 @@
         $('pickPosters').setAttribute('aria-pressed', String(pickKind === 'poster'));
         $('pickBackgrounds').setAttribute('aria-pressed', String(pickKind !== 'poster'));
         $('pickerGrid').classList.toggle('wide', pickKind !== 'poster');
+
         // First tile: your own picture, shrunk so it can be sent to your party.
         const own = document.createElement('label');
         own.className = 'own';
@@ -542,6 +554,7 @@
             c.getContext('2d').drawImage(bitmap, 0, 0, c.width, c.height);
             return c.toDataURL('image/jpeg', q);
           };
+
           // Small enough to send (the relay takes messages up to 64 KB).
           let url = pickKind === 'poster' ? shrink(360, 0.8) : shrink(960, 0.72);
           if (url.length > 56000) url = pickKind === 'poster' ? shrink(260, 0.7) : shrink(720, 0.6);
@@ -624,6 +637,7 @@
         await Promise.all(Array.from({ length: 4 }, async () => {
           while (queue.length) await one(queue.shift());
         }));
+
         // The films' posters, lined up in the header.
         const posters = list.map((e) => info.get(e.key)?.img).filter(Boolean).slice(0, window.innerWidth < 560 ? 4 : 5);
         if (posters.length) {

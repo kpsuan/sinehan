@@ -29,7 +29,7 @@
     .brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 17px; }
     .brand img { width: 24px; height: 24px; }
     .nav-links { display: flex; align-items: center; gap: 26px; font-size: 14px; color: var(--muted); }
-    .nav-links a:not(.pill):hover { color: var(--text); } /* (the Download pill keeps its dark text on hover) */
+    .nav-links a:not(.pill):hover { color: var(--text); } /* The Download pill keeps its dark text on hover */
     .pill { display: inline-flex; align-items: center; gap: 8px; padding: 9px 18px; border-radius: 999px; font-size: 14px; font-weight: 500; transition: background .15s, opacity .15s; }
     .pill.light { background: var(--text); color: var(--bg); }
     .pill.light:hover { opacity: .88; }
@@ -79,6 +79,7 @@
     .set { display: flex; align-items: center; gap: 48px; padding-right: 48px; }
     .marquee:hover .track { animation-play-state: paused; }
     .mask-logo.pv { height: 38px; margin-top: 6px; }
+
     /* Four copies: moving by one copy (25%) loops seamlessly, and there's always enough to fill wide screens. */
     @keyframes marquee { to { transform: translateX(-25%); } }
 
@@ -147,7 +148,7 @@
     .invite .site { display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 5px; background: rgba(255, 255, 255, .07); color: #9a90aa; font-size: 12px; }
     .invite .join { display: block; margin-top: 18px; padding: 10px; border-radius: 8px; background: #c9b6f2; color: #1b1325; font-weight: 600; text-align: center; font-size: 14px; }
 
-    /* Install + end */
+    /* Install */
     .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
     .step { padding: 24px; border-radius: 14px; background: var(--panel); color: var(--muted); font-size: 15px; }
     .step .n { display: block; margin-bottom: 10px; color: var(--accent); font-weight: 600; }
@@ -181,12 +182,14 @@
     .step b { color: var(--text); font-weight: 500; }
     code { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--panel-2); color: var(--text); padding: 2px 6px; border-radius: 5px; }
     .end { position: relative; isolation: isolate; overflow: hidden; margin: 120px 0 0; padding: 88px 24px 92px; border-radius: 16px; text-align: center; background: var(--panel); }
+
     /* A still from the movie, dimmed like the lights just went down. */
     .end::before { content: ''; position: absolute; inset: -20px; z-index: -2; background: url(/static/film-bridge.webp) center 60% / cover;
       filter: blur(5px) saturate(1.25) brightness(.5); }
     .end::after { content: ''; position: absolute; inset: 0; z-index: -1;
       background: radial-gradient(75% 85% at 50% 50%, rgba(16, 14, 14, .55), rgba(16, 14, 14, .92)); }
-    /* Bantay, perched on the edge of things (a zero-height row; he sits on what follows) */
+
+    /* Bantay perched on a section's edge: a zero-height row, so he sits on what follows */
     .bantay-perch { position: relative; height: 0; z-index: 3; pointer-events: none; }
     .bantay-perch svg { position: absolute; display: block; height: auto; }
     .bantay-perch.hero svg { right: 6%; bottom: -16px; width: 92px; }
@@ -267,6 +270,7 @@
     .bp-go.tap { transform: scale(.94); filter: brightness(1.15); }
     .bp-pane { display: flex; flex-direction: column; gap: 6px; min-height: 410px; } /* same height for both tabs, so the panel doesn't jump */
     .bp-pane[hidden] { display: none; }
+
     /* Rows start as soft loading placeholders, then fill in */
     .bp-ep, .bp-g { position: relative; display: flex; gap: 10px; padding: 9px 10px; border-radius: 8px; background: rgba(255, 255, 255, .045); transition: background .3s; }
     .bp-ep > *, .bp-g > * { transition: opacity .35s; }
@@ -298,7 +302,7 @@
     .bp-g.next { background: rgba(201, 182, 242, .1); }
     .bp-g em { align-self: flex-start; margin-top: 2px; padding: 1px 6px; border-radius: 4px; background: rgba(201, 182, 242, .14); color: #c9b6f2; font-style: normal; font-size: 10.5px; }
 
-    /* ---------- Motion ---------- */
+    /* Motion */
     .reveal { opacity: 0; transform: translateY(26px); transition: opacity .9s ease, transform .9s cubic-bezier(.2, .7, .2, 1); }
     .reveal.in { opacity: 1; transform: none; }
     h1 .w { display: inline-block; opacity: 0; transform: translateY(.35em); animation: rise .8s cubic-bezier(.2, .7, .2, 1) forwards; }
@@ -748,12 +752,14 @@
           await wait(1100); await reveal(eps);
           await wait(1000); eps[0].classList.add('picked'); shared.classList.add('on');
           await wait(2600);
+
           // Watch guide
           tab('guide');
           rows.forEach((r) => r.classList.add('skel')); tick(0); rows.forEach((r) => r.classList.remove('next'));
           save.className = 'bp-save'; save.textContent = 'Save & share'; sent.classList.remove('on');
           await type('Midnight Harbor · the Keeper'); await wait(350); await tap();
           await wait(1100); await reveal(rows); tick(0);
+
           // Save it: it's sent to them, then you both tick episodes off.
           save.classList.add('on'); await wait(700);
           save.classList.add('tap'); await wait(160); save.classList.remove('tap');
@@ -795,7 +801,6 @@
   </script>
   <script src="/static/bantay.js"></script>
   <script>
-    // Bantay, Sinehan's mascot, on the end card.
     // Bantay, Sinehan's mascot, around the page: each spot names his pose.
     if (window.Bantay) document.querySelectorAll('[data-bantay]').forEach((el) => (el.innerHTML = Bantay.svg(el.dataset.bantay))); // fixed markup
   </script>

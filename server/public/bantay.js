@@ -1,6 +1,6 @@
-// Bantay, Sinehan's mascot: a cream-white aspin. One place draws him for the sidebar, the show's tab and
-// the website (copied to server/public by build-zip.py). Bantay.svg(pose) gives inline SVG markup; colours
-// can be changed with --b-coat and friends; Bantay.dataUri(pose) gives an image URL for CSS.
+// Bantay, Sinehan's mascot: a cream-white aspin, drawn for the sidebar, the show's tab and the website
+// (copied to server/public by build-zip.py). Bantay.svg(pose) gives inline SVG, recoloured via the
+// --b-* variables; Bantay.dataUri(pose) gives an image URL for CSS.
 (function (root) {
   const coat = 'var(--b-coat, #f7f0e7)';
   const shade = 'var(--b-shade, #e0d0bd)';
@@ -19,6 +19,7 @@
     `<ellipse cx="100" cy="84" rx="7.5" ry="5.8" fill="${nose}"/>` +
     '<ellipse cx="97.8" cy="82.4" rx="2.2" ry="1.2" fill="#fff" opacity=".4"/>';
   const MOUTH = `<path d="M100 90 L100 93 M100 93 C 98.5 96, 95.5 96.5, 93.5 95 M100 93 C 101.5 96, 104.5 96.5, 106.5 95" fill="none" stroke="${nose}" stroke-width="1.8" stroke-linecap="round"/>`;
+
   // Two big ears straight up.
   const EARS =
     '<g class="snb-ear-l">' +
@@ -30,6 +31,7 @@
     `<path d="M127 61 C 137 45, 138 25, 133 13 C 120 21, 109 35, 105 50 Z" fill="${coat}"/>` +
     `<path d="M124 55 C 131 43, 132 29, 129 20 C 120 27, 113 37, 110 48 Z" fill="${earIn}"/>` +
     '</g>';
+
   // Ears laid back, for sleeping.
   const EARS_BACK =
     `<path d="M74 56 C 58 50, 46 40, 42 30 C 58 30, 72 38, 82 48 Z" fill="${shade}"/>` +
@@ -74,7 +76,6 @@
     `<rect x="30" y="163" width="62" height="12" rx="6" fill="${shade}"/><rect x="31" y="162" width="60" height="11" rx="5.5" fill="${coat}"/>`;
 
   const POSES = {
-    // Sitting up, looking at you.
     sit: {
       box: '40 0 130 200',
       label: 'Bantay sitting up',
@@ -101,6 +102,7 @@
         `<g transform="translate(-28 72) rotate(-10 100 72)">${EARS_BACK + FACE + EYES_SHUT}</g>` +
         `<path d="M172 170 C 168 186, 124 192, 84 184 C 78 183, 79 176, 85 177 C 120 182, 156 178, 162 162 Z" fill="${shade}"/></g>`,
     },
+
     // Just the head, for small places (a status chip, an icon).
     head: { box: '56 4 88 98', label: 'Bantay', art: HEAD + MOUTH + EYES },
     'head-tilt': {
@@ -111,8 +113,8 @@
     'head-asleep': { box: '38 18 124 88', label: 'Bantay, asleep', art: EARS_BACK + FACE + EYES_SHUT },
   };
 
-  // Small, occasional movements: a tail wag every few seconds, an ear twitch, a blink, a look around,
-  // breathing while asleep. Off for anyone who asks their system for less motion.
+  // Small, occasional movements (tail wag, ear twitch, blink, look around, breathing while asleep);
+  // off under prefers-reduced-motion.
   const MOTION =
     '<style>' +
     '.snb-tail{transform-box:fill-box;transform-origin:0% 100%;animation:snb-wag 3.4s ease-in-out infinite}' +
@@ -130,7 +132,7 @@
     '@media (prefers-reduced-motion:reduce){.snb-tail,.snb-ear-r,.snb-ear-l,.snb-blink,.snb-look,.snb-breathe{animation:none}}' +
     '</style>';
 
-  // Coats you can pick (Settings). Each sets the colours the drawing reads.
+  // Coats picked in Settings; each overrides the --b-* colours the drawing reads.
   const COATS = {
     white: { name: 'White' },
     cream: { name: 'Cream', coat: '#f1dfc6', shade: '#d6bd9b', warm: '#e6c49c', light: '#fbf0e1' },
@@ -157,10 +159,12 @@
     const p = POSES[pose] || POSES.sit;
     const dims = size ? ` width="${Number(size)}" height="${Number(size)}"` : '';
     const name = String(label ?? p.label).replace(/[<>&"]/g, '');
-    // stroke:none keeps page or app styles for icons from outlining him.
+
+    // stroke:none stops page or app icon styles from outlining him.
     const style = `stroke:none;${coatStyle(coat)}`;
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${p.box}"${dims} class="${className}" style="${style}" role="img" aria-label="${name}" overflow="visible">${MOTION}${p.art}</svg>`;
   }
+
   // As an image URL (for CSS backgrounds), in a given coat.
   function dataUri(pose, coat) {
     const c = COATS[coat] || {};

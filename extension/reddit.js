@@ -1,6 +1,5 @@
-// "Best episodes": what Reddit says about the show you're watching. We search Reddit for threads like
-// "best episodes of <show>", read their top comments, and count which episodes people name
-// (S4E4, 2x05, "season 3 episode 7", "episode 5"), weighting upvoted comments more.
+// "Best episodes": search Reddit for "best episodes of <show>" threads, read their top comments and count
+// which episodes people name (S4E4, 2x05, "season 3 episode 7"), weighting upvoted comments more.
 // Requests go from your own browser, like visiting Reddit; nothing passes through our server.
 (function () {
   const HOSTS = ['https://www.reddit.com', 'https://old.reddit.com'];
@@ -88,7 +87,7 @@
     let lastError = null;
     for (const host of HOSTS) {
       try {
-        // With your Reddit sign-in (if any), since Reddit turns away anonymous requests more and more.
+        // Send your Reddit sign-in, if any: Reddit turns away more and more anonymous requests.
         const r = await fetch(host + path, { headers: { Accept: 'application/json' }, credentials: 'include' });
         if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) throw new Error(`reddit ${r.status}`);
         return await r.json();
@@ -99,8 +98,7 @@
     throw lastError;
   }
 
-  // Reddit's formatting marks (**bold**, __underline__, ~~strike~~, `code`, # headings, > quotes, [text](link))
-  // as plain text, for showing.
+  // Reddit's markdown (bold, underline, strike, code, headings, quotes, links) as plain text.
   const unmark = (t) =>
     String(t || '')
       .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
@@ -114,9 +112,8 @@
       .replace(/[^\p{L}\p{N}]+/gu, ' ')
       .trim();
 
-  // ---- The episode guide ----
-  // Gives each episode its real title, and lets us recognize episodes people describe instead of
-  // numbering ("the one where the hospitals merged and they investigate who let her die").
+  // ---- Episode guide ----
+  // Real titles, and a way to recognize episodes people describe instead of numbering ("the one where the hospitals merged").
   // TVmaze (free, no key) lists the episodes; Wikipedia's season pages add fuller plot summaries.
   const guides = new Map(); // normalized show name -> guide or null
   async function episodeGuide(show) {
@@ -134,6 +131,7 @@
         if (r.ok) {
           const data = await r.json();
           const wiki = await wikiSummaries(data);
+
           // Only what we use: titles and summaries.
           raw = {
             at: Date.now(),
@@ -213,6 +211,7 @@
       'characters actually literally always never ever still though tension stress stressed cried crying sad happy funny amazing favorit favourit episod'
     ).split(/\s+/),
   );
+
   // The same plot event, worded the way a viewer would vs. the way a summary would.
   const SAME = [
     [/^(death|dead|dies|died|dying|kill|killed|kills|killing)$/, 'die'],
@@ -223,6 +222,7 @@
     [/^(merge|merged|merger|merging)$/, 'merg'],
     [/^(crash|crashed|crashes)$/, 'crash'],
   ];
+
   // Rough word stems, so "merged"/"merger" and "died"/"dies" meet.
   function stems(text) {
     const out = new Set();
@@ -263,6 +263,7 @@
         words: stems(`${e.name} ${e.summary || ''} ${wiki.get(`S${e.season}E${e.number}`) || ''}`),
       }));
     if (!eps.length) return null;
+
     // How rare each word is across the show: "bomb" says a lot, the main characters' names don't.
     const df = new Map();
     for (const e of eps) for (const w of e.words) df.set(w, (df.get(w) || 0) + 1);
@@ -270,6 +271,7 @@
     const idf = (w) =>
       !df.has(w) || showWords.has(w) || df.get(w) > eps.length * 0.12 ? 0 : Math.log(eps.length / df.get(w));
     const byKey = new Map(eps.map((e) => [e.key, e]));
+
     // Titles worth looking for in comments: several words, or one long distinctive word, and not a
     // phrase the show's summaries use all the time ("Red John" is The Mentalist's villain, not just S6E8).
     const texts = (data?._embedded?.episodes || []).map(
@@ -317,6 +319,7 @@
     if (!scored.length) return null;
     scored.sort((a, b) => b.score - a.score);
     const best = scored[0];
+
     // Two-parters and story arcs share details: the episodes right next to the best one aren't rivals.
     const near = (x) => x.e.season === best.e.season && Math.abs(x.e.number - best.e.number) <= 1;
     const second = scored.slice(1).find((x) => !near(x))?.score || 0;
@@ -326,9 +329,6 @@
     return clear ? best.key : null;
   }
 
-  // Count episode mentions across comments. Each comment counts once per episode; its upvotes add
-  // weight, and so do its thread's (a pick in a 5k-upvote thread counts more than one in a quiet thread).
-  // With the episode guide, comments that describe or name an episode by title count too.
   // Which episode a thread is about, from its title ("Blinking Red Light is the best episode imo").
   function threadEpisode(title, guide) {
     const [first] = episodesIn(title).keys();
@@ -336,6 +336,8 @@
     return guide ? titleIn(title, guide) : null;
   }
 
+  // Count episode mentions across comments. Each comment counts once per episode; its upvotes add
+  // weight, and so do its thread's. With the guide, comments naming or describing an episode count too.
   function rank(comments, guide = null) {
     const tally = new Map(); // key -> { key, mentions, described, upvotes, weight, best }
     const about = new Map(); // thread url -> the episode it's about
@@ -350,16 +352,19 @@
         const named = !found.length && titleIn(c.body, guide);
         if (named) found = [{ key: named, at: 0, described: false }];
       }
+
       // In a thread about one episode, comments that don't name another are about that one
       // ("This episode was also the one Simon Baker directed!"); the thread's own upvotes back it too.
       const topic = about.get(c.threadUrl || c.url);
       if (!found.length && topic && (c.isPost || c.topLevel))
         found = [{ key: topic, at: 0, described: false, fromThread: true }];
+
       // Otherwise, maybe it describes one ("the one where the hospitals merged…").
       if (!found.length && guide) {
         const key = describedIn(c.body, guide);
         if (key) found = [{ key, at: 0, described: true }];
       }
+
       // Still nothing: a reply often says which episode it was ("that's S2E16!").
       if (!found.length && DESCRIBES.test(c.body)) {
         for (const r of c.replies || []) {
@@ -376,9 +381,11 @@
         t.mentions += 1;
         if (described) t.described += 1;
         t.upvotes += Math.max(0, c.score || 0);
+
         // Upvotes lead: a 400-upvote comment naming an episode outweighs a dozen unnoticed ones.
         // A guess from a description counts a bit less than a clear "S4E4".
         t.weight += (1 + Math.sqrt(Math.max(0, c.score || 0))) * threadBoost * (described ? 0.8 : 1);
+
         // Quote someone praising the episode by name when we can, rather than a passing "this episode".
         const better =
           !t.best ||
@@ -427,11 +434,13 @@
         url: `https://www.reddit.com${d.permalink}`,
         permalink: d.permalink,
         selftext: d.selftext || '',
-        // Threads that name the show (and ask about episodes) first, then the busiest.
+
+        // Naming the show counts most, then asking about episodes.
         fit:
           (norm(d.title).includes(want) || norm(d.subreddit).includes(want.replace(/ /g, '')) ? 2 : 0) +
           (/episode/i.test(d.title) ? 1 : 0),
       }))
+
       // Best fit first; among those, the most upvoted and busiest.
       .sort(
         (a, b) =>
@@ -494,8 +503,8 @@
   }
 
   // ---- Watch guide ----
-  // "Which episodes do we actually need?" (optionally for one story: "Red John"). Built from a guide
-  // thread you trust, Reddit's own guide threads, and episode summaries that mention the topic.
+  // "Which episodes do we need?", optionally for one story ("Red John"), from a pasted guide thread,
+  // Reddit's guide threads, episode summaries and the fan wiki.
 
   // Episodes listed in a guide's text, in order: "S1E2", "1x02", "Season 2" headings with "Ep 4"
   // under them, or a line that starts with an episode's title.
@@ -503,7 +512,7 @@
     const out = [];
     let season = null;
     for (const raw of String(text || '').split(/\n+/)) {
-      // (Reddit's bold/underline/strike/code marks off; a leading "*" bullet stays for the list check.)
+      // Strip bold/underline/strike/code marks but keep a leading "*" bullet for the list check.
       const line = raw
         .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
         .replace(/(\*\*|__|~~|`)/g, '')
@@ -513,6 +522,7 @@
       const heading = line.match(/^[#*_\s]*season\s+(\d{1,2})\b/i);
       if (heading && !keys.some((k) => k.startsWith('S'))) season = Number(heading[1]);
       if (season) keys = keys.map((k) => (k.startsWith('E') ? `S${season}${k}` : k));
+
       // "4. Red John's Friends – where it starts" under a season heading, or a bare title line
       const bare = line.replace(/^[\s>*\-+#|•·]*(\d{1,3}[.)]\s+)?/, '');
       if (!keys.length && season && /^(\d{1,3})[.)]\s/.test(line.replace(/^[\s>*\-+•·]*/, ''))) {
@@ -525,6 +535,7 @@
         for (const e of guide.eps) {
           const t = norm(e.name);
           if (t.length < 4 || !b.startsWith(` ${t} `) || (match && t.length <= norm(match.name).length)) continue;
+
           // The title has to stand alone ("Red John – the finale"), not open a sentence ("Red John watch guide").
           const after = bare.slice(e.name.length).trim();
           if (!after || /^[-–—:|(,.]/.test(after)) match = e;
@@ -533,6 +544,7 @@
       }
       for (const key of keys) {
         if (!/^S\d+E\d+$/.test(key)) continue;
+
         // Why it's on the list: the line minus its numbering and the episode's title.
         let reason = bare
           .replace(/^season\s*\d+\s*[:\-–—]?\s*/i, '')
@@ -546,9 +558,8 @@
     return out;
   }
 
-  // A Reddit thread from any of its link forms: reddit.com/r/x/comments/id/…, old.reddit, redd.it/id.
-  // -> { id, path } where path is the link's own path (with its title part, which Reddit's data
-  // address needs), or { share } for the app's /s/ share links, which have to be followed first.
+  // Any Reddit thread link (reddit.com/r/x/comments/id/…, old.reddit, redd.it/id) -> { id, path }, where path
+  // keeps the title part Reddit's data address needs, or { share } for /s/ share links, which must be followed first.
   function threadPath(link) {
     try {
       const u = new URL(String(link || '').trim());
@@ -612,9 +623,8 @@
   }
 
   // ---- Fandom wikis ----
-  // Most shows have a fan wiki with full episode pages and pages for big story events ("Ferry Crash",
-  // "Hospital Shooting") that list the episodes they happen in. Its search understands topics like
-  // "mass casualty" that episode summaries never spell out.
+  // Fan wikis have pages for story events ("Ferry Crash") listing their episodes, and their search
+  // understands topics like "mass casualty" that episode summaries never spell out.
   const wikis = new Map(); // show -> { host, name } or null
   async function fandomJson(host, params) {
     const r = await fetch(`https://${host}/api.php?${params}&format=json&formatversion=2&origin=*`, {
@@ -662,6 +672,7 @@
       .replace(/&#0?39;/g, "'")
       .replace(/\s+/g, ' ')
       .trim();
+
   // "Walk on Water", "The Other Side of This Life, Part 1", "Flight (episode)" -> the guide's episodes
   function episodesNamed(title, guide) {
     const base = (t) =>
@@ -673,6 +684,7 @@
     const want = base(title);
     return want ? guide.eps.filter((e) => base(e.name) === want) : [];
   }
+
   // -> [{ key, reason }] for a topic, from the wiki's search
   async function fandomTopic(wiki, topic, guide) {
     const found = [];
@@ -693,6 +705,7 @@
           });
       else others.push(r.title);
     }
+
     // Event and story pages: the episodes their infobox lists.
     if (others.length) {
       const pages = await fandomJson(
@@ -760,9 +773,9 @@
     return !!flat(a) && flat(a) === flat(b);
   }
 
-  // ---- Watch order for a franchise (films and series) ----
-  // The franchise's fan wiki has pages for sagas and phases whose infobox lists their films, series
-  // and shorts in release order. Reddit watch-order threads add titles written like "Iron Man (2008)".
+  // ---- Franchise watch order ----
+  // Fan wiki saga/phase infoboxes list films, series and shorts in release order; Reddit watch-order
+  // threads add titles written like "Iron Man (2008)".
   const LIST_FIELDS = [
     [/^(films?|movies?)$/i, 'Films'],
     [/^(series|shows?|television|tv series|television series|disney\+ series|netflix series)$/i, 'Series'],
@@ -785,6 +798,7 @@
     }
     return out;
   }
+
   // "1. Iron Man (2008)", "- Captain America: The First Avenger (2011) – set in WWII"
   function titlesIn(text) {
     const out = [];
@@ -805,8 +819,8 @@
     }
     return out;
   }
-  // Wikidata: a saga or film series and its parts (expanding trilogies and phases), by release date.
-  // Wikimedia asks apps to say who they are.
+
+  // Wikimedia asks apps to identify themselves.
   const WIKI_AGENT = { 'Api-User-Agent': 'Sinehan/2.12 (https://sinehan.live)' };
   const FILM_TYPES = new Set(['Q11424', 'Q24869', 'Q202866', 'Q506240', 'Q1054574', 'Q93204', 'Q229390', 'Q20650540']);
   const SERIES_TYPES = new Set([
@@ -843,12 +857,15 @@
   }
   const wdVals = (e, p) => (e?.claims?.[p] || []).map((c) => c.mainsnak?.datavalue?.value).filter(Boolean);
   const wdLabel = (e) => e?.labels?.en?.value || e?.labels?.mul?.value || '';
+
+  // Wikidata: a saga or film series and its parts (expanding trilogies and phases), by release date.
   async function wikidataParts(queries) {
     for (const q of queries) {
       const found = await wikidata(`action=wbsearchentities&language=en&limit=6&search=${encodeURIComponent(q)}`);
       const ids = (found.search || []).map((x) => x.id);
       if (!ids.length) continue;
       const cands = await wdEntities(ids);
+
       // The first match whose parts are mostly films and series (not, say, the novel's six books).
       for (const root of ids.map((id) => cands[id]).filter((e) => wdVals(e, 'P527').length >= 2)) {
         let level = wdVals(root, 'P527').map((v) => v.id);
@@ -1045,6 +1062,7 @@
       .trim()
       .slice(0, 100);
     const terms = topicTerms(topic);
+
     // A single TV series has an episode list; a franchise ("MCU") gets a watch order of films and series.
     const found = await episodeGuide(name);
     const guide = found && sameShow(found.name, name) ? found : null;
@@ -1162,9 +1180,8 @@
       try {
         const wiki = await findWiki(name, guide);
         if (wiki) {
-          // What you typed first, then (for "mass casualty") the disaster words; a few searches at most.
-          // Words you typed count any wiki page that mentions them; the extra disaster words only count
-          // event pages' episode lists (an episode page just mentioning "the earthquake" isn't about it).
+          // Typed words count any wiki page that mentions them; the added disaster words only count event
+          // pages' episode lists (an episode page just mentioning "the earthquake" isn't about it).
           const typed = topicTerms(topic.replace(/mass casualt\w*|mci|disasters?/gi, '')).length
             ? terms.filter((t) => !DISASTER.includes(t))
             : terms.filter((t) => !DISASTER.includes(t));
@@ -1219,11 +1236,13 @@
         };
       })
       .sort((a, b) => a.season - b.season || a.number - b.number);
+
     // Nothing as a TV series ("Harry Potter" is also a TV special): try it as films instead.
     if (!episodes.length && !link) {
       const films = await franchiseGuide(name, topic, link);
       if (films.episodes.length) return films;
     }
+
     // The show's fan wiki, so a guide's episodes can link to their pages.
     const wikiHost = (await findWiki(name, guide).catch(() => null))?.host || '';
     return { show: name, topic, episodes, threads, problems, hasGuide: !!guide, wiki: wikiHost };
@@ -1241,6 +1260,7 @@
       .replace(/^\s*(#{1,6}|>+)\s*/gm, '')
       .replace(/\s+/g, ' ')
       .trim();
+
     // The card already shows the episode and its title: drop them from the front.
     t = t.replace(/^[\s*>•·\-–—]*(s\d+\s*e\d+|\d{1,2}\s*[x×]\s*\d{1,3}|ep(isode)?\.?\s*\d+)\s*[-–—:|.]*\s*/i, '');
     const flat = (x) =>
