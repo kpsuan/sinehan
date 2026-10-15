@@ -458,6 +458,9 @@
     .tn-votes button svg { width: 18px; height: 18px; }
     .tn-votes .no { color: var(--danger); }
     .tn-votes .yes { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+    .tn-votes .yes:hover:not(:disabled) { background: #d8c9f7; }
+    :root[data-theme='light'] .tn-votes .yes:hover:not(:disabled) { background: #5b3ef0; }
+    .tn-votes .no:hover:not(:disabled) { background: rgba(229, 134, 143, .14); }
     .tn-match { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 12px; border-radius: 12px; background: rgba(201, 182, 242, .12); text-align: center; }
     .tn-match svg.bantay { width: 92px; height: auto; }
     .tn-match b { font-size: 18px; }
