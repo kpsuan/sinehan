@@ -139,7 +139,7 @@
       const episodes = g.e.filter((e) => Array.isArray(e) && KEY.test(e[0])).slice(0, 200)
         .map(([key, title, reason, kind]) => ({ key, title: String(title || '').slice(0, 120), reason: String(reason || '').slice(0, 160), kind: String(kind || '').slice(0, 20) }));
       const id = String(g.id || `${g.s}|${g.t || ''}`).slice(0, 200);
-      const wiki = /^[a-z0-9-]+(\.[a-z0-9-]+)*\.fandom\.com$/.test(g.f || '') ? g.f : '';
+      let wiki = /^[a-z0-9-]+(\.[a-z0-9-]+)*\.fandom\.com$/.test(g.f || '') ? g.f : '';
       const info = new Map(); // key -> { img, portrait, meta, url }
 
       // Ticks: what the link carried, then this device's own, then live ones (newest wins).
@@ -263,7 +263,7 @@
           if (!r.ok) return;
           const show = await r.json();
           if (flat(show.name) !== flat(g.s)) return; // not sure it's the same show: no pictures rather than wrong ones
-          $('show').textContent = show.name; // its official name ("911" -> "9-1-1")
+          $('show').textContent = officialName = show.name; // its official name ("911" -> "9-1-1")
           const art = (x) => String(x || '').replace(/^http:/, 'https:');
           if (show.image?.medium) {
             $('poster').src = art(show.image.medium);
@@ -306,6 +306,28 @@
           $('backdrop').classList.add('on');
         }
         render();
+      }
+
+      // Older links don't name the fan wiki: find it from the show's name ("9-1-1" -> 9-1-1.fandom.com).
+      async function findWiki(names) {
+        const slugs = [...new Set(names.filter(Boolean).flatMap((n) => {
+          const flatName = norm(n).replace(/ /g, '');
+          const dashed = norm(n).replace(/ /g, '-');
+          return [flatName, flatName.replace(/^the/, ''), dashed, dashed.replace(/^the-/, '')];
+        }))].filter((x) => x.length >= 3);
+        for (const slug of slugs.slice(0, 6)) {
+          try {
+            const r = await fetch(`https://${slug}.fandom.com/api.php?action=query&meta=siteinfo&format=json&origin=*`);
+            if (r.ok && (r.headers.get('content-type') || '').includes('json') && (await r.json())?.query?.general) return new URL(r.url).host;
+          } catch {}
+        }
+        return '';
+      }
+      let officialName = '';
+      async function linkToWiki() {
+        if (wiki) return;
+        wiki = await findWiki([g.s, officialName]);
+        if (wiki) render();
       }
 
       // ---- Live ticks with the party ----
@@ -352,8 +374,8 @@
 
       render();
       connect();
-      if (episodes.some((e) => e.kind)) filmDetails();
-      else seriesDetails();
+      if (episodes.some((e) => e.kind)) filmDetails().then(linkToWiki);
+      else seriesDetails().then(linkToWiki);
     })();
   </script>
 </body>

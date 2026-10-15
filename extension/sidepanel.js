@@ -921,6 +921,8 @@ const short = (text, n) => {
 // sinehan.live/guide#g=… : the guide packed into the link (squeezed, then base64url), with the party's
 // room when it's saved and you're in one, so ticks on that page sync live.
 async function guidePageLink(g) {
+  // Guides saved before they remembered their fan wiki: look it up now.
+  if (!g.wiki) g.wiki = (await Reddit.findWiki(g.show, null).catch(() => null))?.host || '';
   const data = {
     v: 1,
     id: g.id,
