@@ -423,20 +423,56 @@
   }
 
   // A Reddit thread from any of its link forms: reddit.com/r/x/comments/id/…, old.reddit, redd.it/id.
+  // -> { id, path } where path is the link's own path (with its title part, which Reddit's data
+  // address needs), or { share } for the app's /s/ share links, which have to be followed first.
   function threadPath(link) {
     try {
       const u = new URL(String(link || '').trim());
-      if (/(^|\.)redd\.it$/.test(u.hostname)) return `/comments/${u.pathname.split('/')[1]}`;
+      if (/(^|\.)redd\.it$/.test(u.hostname)) return { id: u.pathname.split('/')[1], path: null };
       if (!/(^|\.)reddit\.com$/.test(u.hostname)) return null;
-      const m = u.pathname.match(/^(\/r\/[^/]+)?\/comments\/([a-z0-9]+)/i);
-      return m ? `${m[1] || ''}/comments/${m[2]}` : null;
+      if (/^\/r\/[^/]+\/s\/\w+/.test(u.pathname)) return { share: u.href };
+      const m = u.pathname.match(/^((?:\/r\/[^/]+)?\/comments\/([a-z0-9]+)(?:\/[^/?#]+)?)/i);
+      return m ? { id: m[2], path: m[1] } : null;
     } catch {
       return null;
     }
   }
 
-  async function readThread(path) {
-    const [post, list] = await getJson(`${path}.json?sort=top&limit=200&depth=1&raw_json=1`);
+  // Find a thread's full address: follow a share link, or ask Reddit for it by id.
+  async function resolveThread(ref) {
+    if (ref.share) {
+      const r = await fetch(ref.share, { credentials: 'include' });
+      const real = threadPath(r.url);
+      if (!real?.path) throw new Error(`reddit share ${r.status}`);
+      return real;
+    }
+    const data = await getJson(`/by_id/t3_${ref.id}.json?raw_json=1`);
+    const permalink = data?.data?.children?.[0]?.data?.permalink;
+    if (!permalink) throw new Error('reddit: no such thread');
+    return { id: ref.id, path: permalink.replace(/\/$/, '') };
+  }
+
+  async function readThread(ref) {
+    if (typeof ref === 'string') ref = { path: ref };
+    let data = null;
+    let firstError = null;
+    if (ref.path) {
+      try {
+        data = await getJson(`${ref.path}.json?sort=top&limit=200&depth=1&raw_json=1`);
+      } catch (e) {
+        firstError = e;
+      }
+    }
+    if (!Array.isArray(data) && (ref.id || ref.share)) {
+      const real = await resolveThread(ref).catch((e) => {
+        throw firstError || e;
+      });
+      data = await getJson(`${real.path}.json?sort=top&limit=200&depth=1&raw_json=1`);
+      ref = real;
+    }
+    if (!Array.isArray(data)) throw firstError || new Error('reddit: not a thread');
+    const path = ref.path;
+    const [post, list] = data;
     const d = post?.data?.children?.[0]?.data || {};
     const comments = (list?.data?.children || []).filter((c) => c.kind === 't1' && c.data?.body)
       .map((c) => ({ body: c.data.body, score: c.data.score || 0, url: `https://www.reddit.com${c.data.permalink}` }));
@@ -486,13 +522,13 @@
     };
 
     // 1. The thread you pasted.
-    const path = link ? threadPath(link) : null;
+    const path = link ? threadPath(link) : null; // { id, path } or { share }
     if (link && !path) problems.push('That link isn’t a Reddit thread.');
     if (path) {
       try {
         if (!useThread(await readThread(path), true)) problems.push('Your thread didn’t list episodes we could read, so other guides were used too.');
-      } catch {
-        problems.push('Reddit didn’t open your thread.');
+      } catch (e) {
+        problems.push(`Reddit didn’t open your thread (${String(e?.message || e).replace(/^reddit\s*/, '') || 'no answer'}). Open it once on reddit.com in this browser, then try again.`);
       }
     }
 
@@ -501,7 +537,7 @@
       const q = `${name} ${topic || 'essential'} episodes guide`;
       const search = await getJson(`/search.json?q=${encodeURIComponent(q)}&sort=relevance&t=all&type=link&limit=25&raw_json=1`);
       const want = norm(name);
-      const pastedId = path?.match(/comments\/([a-z0-9]+)/i)?.[1];
+      const pastedId = path?.id;
       const found = (search?.data?.children || []).map((c) => c.data)
         .filter((d) => d && !d.over_18 && d.id !== pastedId && /guide|essential|must|important|skip|list|order|arc|episodes|watch/i.test(d.title))
         .filter((d) => norm(d.title).includes(want) || norm(d.subreddit).includes(want.replace(/ /g, '')))

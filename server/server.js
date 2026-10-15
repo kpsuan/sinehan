@@ -107,7 +107,12 @@ function json(res, status, data) {
   res.writeHead(status, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
   res.end(JSON.stringify(data));
 }
-const wss = new WebSocketServer({ server });
+// Limits that keep one misbehaving client from hurting everyone else.
+const MAX_MESSAGE = 64 * 1024; // biggest real message is a call setup (a few KB)
+const MAX_PER_ROOM = 10; // two people, their phones, and room to spare
+const BURST = 120; // messages a connection may send at once (a call setup sends a few dozen)
+const PER_SECOND = 40; // ...refilled at this rate; beyond it, messages are dropped
+const wss = new WebSocketServer({ server, maxPayload: MAX_MESSAGE });
 
 // Notice dropped connections quickly (closed laptop, lost Wi-Fi) so the other side can pause:
 // every 10s we ping; anyone who didn't answer the previous ping is dropped.
@@ -126,8 +131,22 @@ wss.on('connection', (ws) => {
   let room = null;
   ws.isAlive = true;
   ws.on('pong', () => (ws.isAlive = true));
+  // A bad message (too big, malformed frame) errors this connection only; never the whole relay.
+  ws.on('error', () => ws.terminate());
+  let tokens = BURST;
+  let refilled = Date.now();
+  let dropped = 0;
 
   ws.on('message', (raw) => {
+    // Flood control: a token per message, refilled over time. Someone who keeps flooding is cut off.
+    const now = Date.now();
+    tokens = Math.min(BURST, tokens + ((now - refilled) / 1000) * PER_SECOND);
+    refilled = now;
+    if (tokens < 1) {
+      if (++dropped > 1000) ws.close(1008, 'too many messages');
+      return;
+    }
+    tokens -= 1;
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
 
@@ -144,7 +163,12 @@ wss.on('connection', (ws) => {
       ws.leftOnPurpose = true; // switching rooms counts as leaving the old one
       leave();
       ws.leftOnPurpose = false;
-      room = String(msg.room).slice(0, 64);
+      const wanted = String(msg.room).slice(0, 64);
+      if ((rooms.get(wanted)?.size || 0) >= MAX_PER_ROOM) {
+        send(ws, { type: 'room-full', max: MAX_PER_ROOM });
+        return;
+      }
+      room = wanted;
       // A phone companion (chat + remote) doesn't count as a person watching, and comes and goes quietly.
       ws.companion = msg.companion === true;
       if (!rooms.has(room)) rooms.set(room, new Set());

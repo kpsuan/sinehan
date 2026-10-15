@@ -227,6 +227,7 @@
 
       function onMessage(m) {
         if (m.type === 'joined' || m.type === 'peer') { watchers = m.count; renderStatus(true); }
+        if (m.type === 'room-full') note('This party is full. Ask for a new invite link.');
         else if (['play', 'pause', 'seeked', 'state'].includes(m.type) && typeof m.time === 'number') {
           clearTimeout(ackTimer);
           show = { time: m.time, paused: !!m.paused, at: Date.now() }; renderShow();

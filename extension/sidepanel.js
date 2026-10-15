@@ -68,6 +68,9 @@ function onMessage(msg) {
   } else if (msg.type === 'now-watching') {
     theirShow = { url: msg.url, title: msg.title };
     renderWatch();
+  } else if (msg.type === 'room-full') {
+    $('wlError').textContent = `That party is full (${msg.max || 10} people at most). Ask them for a new invite link.`;
+    $('wlError').hidden = false;
   } else if (msg.type === 'goodnight') {
     addChat('', `${msg.name || peer?.name || 'They'} stopped for tonight${typeof msg.time === 'number' ? ` at ${clock(msg.time)}` : ''}`, 'system');
     setTimeout(loadResume, 400);
@@ -235,6 +238,10 @@ function showStatus(s) {
     : s.peers > 1 ? 'Together'
     : 'Waiting for them to join';
   $('status').dataset.state = !s.connected ? 'off' : s.peers > 1 ? 'live' : 'waiting';
+  $('partyNow').textContent = !s.room ? 'Not in a party. Start one from the home screen.'
+    : !s.connected ? 'In a party, reconnecting…'
+    : s.peers > 1 ? 'In a party, together.' : 'In a party, waiting for them.';
+  if (!leaving) $('disconnect').disabled = !s.room;
   if (!wasConnected && s.connected) $('settings').open = false;
   if (s.connected && s.peers > 1 && !peer && !askedPeer) {
     askedPeer = true;
@@ -250,17 +257,23 @@ pollStatus();
 setInterval(pollStatus, 1000);
 
 // ---- Invite link ----
+// A new party's name: 20 random letters and digits, so nobody can stumble into your room by guessing.
+function newRoomId() {
+  const abc = 'abcdefghijkmnpqrstuvwxyz23456789';
+  return `party-${[...crypto.getRandomValues(new Uint8Array(20))].map((b) => abc[b % abc.length]).join('')}`;
+}
 // Points at the relay's /join page; the extension picks it up there, joins the room
 // and forwards them to whatever you're watching.
 $('invite').onclick = async () => {
   const server = $('server').value.trim();
   if (!server) {
     $('settings').open = true;
+    $('advanced').open = true;
     $('server').focus();
     return;
   }
   let room = $('room').value.trim();
-  if (!room) room = $('room').value = `party-${crypto.randomUUID().slice(0, 6)}`;
+  if (!room) room = $('room').value = newRoomId();
   if (!status.connected || status.room !== room) {
     ask({ type: 'connect', server, room }, showStatus);
   }

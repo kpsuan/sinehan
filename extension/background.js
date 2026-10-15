@@ -404,6 +404,13 @@ function connect(server, room) {
       answersPings = true;
       return;
     }
+    // The room already has as many people as it allows: tell the sidebar and stop trying.
+    if (msg.type === 'room-full') {
+      for (const port of ports) if (port.name === 'panel') postTo(port, msg);
+      chrome.storage.local.set({ active: false });
+      disconnect();
+      return;
+    }
     if (msg.type === 'joined' || msg.type === 'peer') status.peers = msg.count;
     if (msg.type === 'joined' && msg.count > 1) setTimeout(announceShow, 500); // let a returning partner know
     if (msg.type === 'peer' && msg.joined) setTimeout(announceShow, 500);

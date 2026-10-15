@@ -137,6 +137,7 @@ async function openVideo(user) {
 }
 async function connect(panel, name, room, server = RELAY) {
   if (!(await panel.$eval('#settings', (d) => d.open))) await panel.click('#settingsBtn');
+  await panel.$eval('#advanced', (d) => (d.open = true));
   await panel.fill('#name', name);
   await panel.fill('#server', server);
   await panel.fill('#room', room);
@@ -660,9 +661,11 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     await leave(pC);
     await until(async () => (await text(pC, '#status')) === 'Not connected');
     if (!(await pC.$eval('#settings', (d) => d.open))) await pC.click('#settingsBtn');
+    check('server and room are tucked under Advanced', await pC.$eval('#advanced', (d) => !d.open && !d.querySelector('#server').checkVisibility()));
+    await pC.click('#advanced summary');
     await pC.fill('#room', '');
     await pC.click('#invite');
-    check('invite with no room creates one', await until(async () => /^party-[0-9a-f]{6}$/.test(await pC.inputValue('#room'))));
+    check('invite with no room creates a hard-to-guess one', await until(async () => /^party-[a-z2-9]{20}$/.test(await pC.inputValue('#room'))));
     check('…and connects to it', await until(async () => (await text(pC, '#status')) === 'Waiting for them to join'));
     check('third person leaving is announced as "left"', await until(async () => (await logLines(pA)).some((l) => l.cls.includes('system') && l.text.includes('left'))));
     check('…and does not drop the remaining partner', (await text(pA, '#names')).includes('Bob'));
