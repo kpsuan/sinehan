@@ -15,7 +15,10 @@
   <style>
     :root { color-scheme: dark; --bg: #100e0e; --panel: #181515; --panel-2: #211d1c; --text: #fdfff0; --muted: #969692; --faint: #64625e; --accent: #b49cff; }
     * { box-sizing: border-box; }
-    html { overflow-x: clip; }
+    html { overflow-x: clip; scroll-behavior: smooth; }
+    html.lenis, html.lenis body { height: auto; }
+    .lenis.lenis-smooth { scroll-behavior: auto !important; }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
     body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 'Geist', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
     a { color: inherit; text-decoration: none; }
     .wrap { max-width: 1120px; margin: 0 auto; padding: 0 28px; }
@@ -359,6 +362,22 @@
       <p class="credits">Film stills from Blender open movies: <a href="https://mango.blender.org">Tears of Steel</a> and <a href="https://durian.blender.org">Sintel</a> (CC BY 3.0), <a href="https://gooseberry.blender.org">Cosmos Laundromat</a> (CC BY-SA 4.0), © Blender Foundation. Cropped and compressed.</p>
     </footer>
   </div>
+  <script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js"></script>
+  <script>
+    // Smooth, eased scrolling (skipped for people who prefer reduced motion), and smooth jumps for in-page links.
+    (() => {
+      if (matchMedia('(prefers-reduced-motion: reduce)').matches || typeof Lenis === 'undefined') return;
+      const lenis = new Lenis({ duration: 1.15, easing: (t) => 1 - Math.pow(1 - t, 3) });
+      const raf = (time) => { lenis.raf(time); requestAnimationFrame(raf); };
+      requestAnimationFrame(raf);
+      document.querySelectorAll('a[href^="#"]').forEach((a) => a.addEventListener('click', (e) => {
+        const target = document.querySelector(a.getAttribute('href'));
+        if (!target) return;
+        e.preventDefault();
+        lenis.scrollTo(target, { offset: -20 });
+      }));
+    })();
+  </script>
   <script>
     // Small motion layer: scroll reveals and the little product demos. Nothing loads; it's all in this page.
     (() => {

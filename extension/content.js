@@ -541,29 +541,58 @@ function pagePicture() {
     return '';
   }
 }
-// Netflix's player page has no preview picture and its tab title is just "Netflix", but each title's
-// own page (/title/<id>) does. We read that page once per title, as you, from inside Netflix.
-const netflixInfo = new Map(); // watch id -> { image, title } (or a pending promise)
-function netflixLookup(id) {
-  if (netflixInfo.has(id)) return netflixInfo.get(id);
-  const pending = fetch(`/title/${id}`, { credentials: 'include' })
-    .then((r) => (r.ok ? r.text() : ''))
-    .then((html) => {
-      const doc = new DOMParser().parseFromString(html, 'text/html');
+// Netflix's player page has no preview picture and its tab title is just "Netflix". We try, in order:
+// the title's public page (as a logged-out visitor, which carries its name and artwork), Netflix's own
+// player data, then the title shown in the player. Results are kept per title; misses retry later.
+const netflixInfo = new Map(); // watch id -> { image, title, at } (or a pending promise)
+async function netflixLookup(id) {
+  let title = '';
+  let image = '';
+  try {
+    const r = await fetch(`/title/${id}`, { credentials: 'omit' });
+    if (r.ok) {
+      const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
       const meta = (p) => doc.querySelector(`meta[property="${p}"], meta[name="${p}"]`)?.content || '';
-      const title = meta('og:title').replace(/^Watch\s+/i, '').replace(/\s*[|\-–]\s*Netflix.*$/i, '').trim();
-      const image = /^https:\/\//.test(meta('og:image')) ? meta('og:image') : '';
-      netflixInfo.set(id, { image, title });
-    })
-    .catch(() => netflixInfo.set(id, { image: '', title: '' }));
-  netflixInfo.set(id, pending);
-  return pending;
+      title = meta('og:title').replace(/^Watch\s+/i, '').replace(/\s*[|\-–]\s*Netflix.*$/i, '').trim();
+      image = /^https:\/\//.test(meta('og:image')) ? meta('og:image') : '';
+      // Today's public title page: the show's name is the page heading, its artwork is the hero image.
+      if (!title || title === 'Netflix') title = doc.querySelector('h1')?.textContent.trim().slice(0, 120) || '';
+      if (!image) {
+        const hero = doc.querySelector('[data-uia="hero"] img[src^="https://"]') || doc.querySelector('img[src*="nflxso.net"][src*=".jpg"]');
+        image = hero?.getAttribute('src') || '';
+      }
+    }
+  } catch {}
+  if (!title || !image) {
+    const fromPlayer = await askNetflixPlayer(id);
+    title ||= fromPlayer.title || '';
+    image ||= fromPlayer.image || '';
+  }
+  if (!title) {
+    const shown = document.querySelector('[data-uia="video-title"] h4, [data-uia="video-title"]');
+    title = shown?.textContent.trim().slice(0, 120) || '';
+  }
+  return { title, image, at: Date.now() };
+}
+function askNetflixPlayer(id) {
+  return new Promise((resolve) => {
+    const nonce = Math.random().toString(36).slice(2);
+    const done = (meta) => { window.removeEventListener('message', onReply); resolve(meta || {}); };
+    const onReply = (e) => { if (e.source === window && e.data?.source === 'watch-party-reply' && e.data.nonce === nonce) done(e.data.meta); };
+    window.addEventListener('message', onReply);
+    window.postMessage({ source: 'watch-party', want: 'meta', id, nonce }, '*');
+    setTimeout(() => done({}), 1500);
+  });
 }
 function showInfo() {
   const id = isNetflix && location.pathname.match(/^\/watch\/(\d+)/)?.[1];
   if (id) {
     const info = netflixInfo.get(id);
-    if (!info) netflixLookup(id);
+    // Look up once; if it came back empty (player still loading), try again after a while.
+    if (!info || (!(info instanceof Promise) && !info.title && Date.now() - info.at > 20000)) {
+      const pending = netflixLookup(id).then((r) => netflixInfo.set(id, r));
+      netflixInfo.set(id, pending);
+    }
     return info && !(info instanceof Promise) ? info : { image: '', title: '' };
   }
   return { image: pagePicture(), title: '' };
