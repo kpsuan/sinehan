@@ -186,7 +186,16 @@
       filter: blur(5px) saturate(1.25) brightness(.5); }
     .end::after { content: ''; position: absolute; inset: 0; z-index: -1;
       background: radial-gradient(75% 85% at 50% 50%, rgba(16, 14, 14, .55), rgba(16, 14, 14, .92)); }
-    .end-logo { display: block; width: 44px; height: 44px; margin: 0 auto 22px; }
+    /* Bantay, perched on the edge of things (a zero-height row; he sits on what follows) */
+    .bantay-perch { position: relative; height: 0; z-index: 3; pointer-events: none; }
+    .bantay-perch svg { position: absolute; display: block; height: auto; }
+    .bantay-perch.hero svg { right: 6%; bottom: -16px; width: 92px; }
+    .bantay-perch.guard svg { right: 30px; top: -24px; width: 72px; }
+    .bantay-perch.nap svg { right: 2%; top: 38px; width: 150px; }
+    .bantay-wait { position: absolute; left: 14px; bottom: 6px; width: 170px; z-index: 2; pointer-events: none; }
+    .bantay-wait svg { display: block; width: 100%; height: auto; }
+    .end-bantay { width: 110px; min-height: 160px; margin: -24px auto 14px; }
+    .end-bantay svg { display: block; width: 100%; height: auto; }
     .end h2 { margin: 0 0 10px; font-size: clamp(34px, 4vw, 48px); line-height: 1.12; }
     .end p { margin: 0 0 30px; color: var(--muted); font-size: 18px; }
     footer { margin-top: 20px; padding: 56px 0 40px; color: var(--muted); font-size: 14px; }
@@ -338,6 +347,10 @@
       .f-top { grid-template-columns: 1fr; gap: 36px; }
       .f-cols { grid-template-columns: repeat(2, 1fr); }
       .f-word { margin-top: 48px; }
+      .bantay-perch.hero svg { width: 64px; bottom: -10px; }
+      .bantay-perch.guard svg { width: 54px; top: -20px; right: 18px; }
+      .bantay-perch.nap svg { width: 100px; top: 26px; }
+      .bantay-wait { width: 120px; }
       .phones { gap: 16px; padding: 24px 12px; }
       .couch-frame { min-height: 300px; }
       .visual .best-frame { min-height: 260px; }
@@ -383,6 +396,7 @@
 
   <div class="wrap">
 
+    <div class="bantay-perch hero" data-bantay="happy" aria-hidden="true"></div>
     <div class="window" aria-label="Sinehan running next to a show in Chrome">
       <div class="chrome"><span class="dots"><i></i><i></i><i></i></span><span class="url">youtube.com/watch</span></div>
       <div class="stage">
@@ -413,6 +427,7 @@
       <div class="visual holds" id="holds">
         <div class="frame dim" style="--img:url(/static/film-action.webp)">
           <span class="toast">They're watching an ad. Paused until it's over.</span>
+          <span class="bantay-wait" data-bantay="lying" aria-hidden="true"></span>
           <span class="paused"><i></i><i></i></span>
         </div>
       </div>
@@ -520,6 +535,7 @@
         <p>No sign-up, no email, no location. You pick <b>a name and a picture</b>, and they stay in your browser.</p>
         <span class="tag">Private</span>
       </div>
+      <div class="bantay-perch guard" data-bantay="guard" aria-hidden="true"></div>
       <div class="promises">
         <div class="promise"><span class="p-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5" /><path d="M5 20a7 7 0 0 1 14 0" /><path d="M4 4l16 16" /></svg></span><b>No account</b><p>A name and a link is all it takes to start or join. Nothing to sign up for, no password to forget.</p></div>
         <div class="promise"><span class="p-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6-5.3-6-11a6 6 0 0 1 12 0c0 5.7-6 11-6 11z" /><circle cx="12" cy="10" r="2" /><path d="M4 4l16 16" /></svg></span><b>No location</b><p>Nobody sees where you are. Sinehan never asks for your location or contacts, and there's no ad profile.</p></div>
@@ -542,7 +558,7 @@
     </section>
 
     <section class="end">
-      <img class="end-logo" src="/static/logo.png" alt="" />
+      <div class="end-bantay" data-bantay="sit" aria-hidden="true"></div>
       <h2 class="display">Tonight's showing is for two.</h2>
       <p>Free, for Chrome and Edge.</p>
       <a class="pill light big" href="/download">Download Sinehan</a>
@@ -579,6 +595,7 @@
           </div>
         </div>
       </div>
+      <div class="bantay-perch nap" data-bantay="asleep" aria-hidden="true"></div>
       <div class="f-word" aria-hidden="true">sinehan</div>
       <div class="f-bottom">
         <span>© 2026 sinehan · made for long-distance movie nights</span>
@@ -775,6 +792,12 @@
         }
       })();
     })();
+  </script>
+  <script src="/static/bantay.js"></script>
+  <script>
+    // Bantay, Sinehan's mascot, on the end card.
+    // Bantay, Sinehan's mascot, around the page: each spot names his pose.
+    if (window.Bantay) document.querySelectorAll('[data-bantay]').forEach((el) => (el.innerHTML = Bantay.svg(el.dataset.bantay))); // fixed markup
   </script>
 </body>
 </html>

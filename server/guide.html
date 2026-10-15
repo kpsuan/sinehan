@@ -104,7 +104,8 @@
 
     .foot { margin: 30px 4px 0; color: var(--faint); font-size: 13px; }
     .foot a { color: var(--muted); text-decoration: underline; text-decoration-color: rgba(255, 255, 255, .2); }
-    .empty { max-width: 760px; margin: 60px auto; padding: 0 16px; color: var(--muted); }
+    .empty { max-width: 460px; margin: 60px auto; padding: 0 16px; color: var(--muted); text-align: center; }
+    .empty svg { display: block; width: 150px; height: auto; margin: 0 auto 18px; }
 
     @media (max-width: 560px) {
       .hero { min-height: 0; }
@@ -160,6 +161,7 @@
 
   <p class="empty" id="empty" hidden>This link doesn't have a watch guide in it. Ask for a new link, or make one in the Sinehan sidebar.</p>
 
+  <script src="/static/bantay.js"></script>
   <script>
     // The guide travels in the link itself (after #, which browsers never send to the server). Ticks are
     // kept on this device, and if the link came from a party, they sync live with it through the relay.
@@ -200,23 +202,30 @@
       let g;
       try {
         g = await decode(new URLSearchParams(location.hash.slice(1)).get('g') || '');
-        if (!g?.s || !Array.isArray(g.e)) throw new Error('no guide');
+        if (!g?.s || !(Array.isArray(g.e) || typeof g.k === 'string')) throw new Error('no guide');
       } catch {
         $('empty').hidden = false;
+        if (window.Bantay) $('empty').insertAdjacentHTML('afterbegin', Bantay.svg('tilt')); // fixed markup
         return;
       }
 
       const KEY = /^(S\d+E\d+|T:[\p{L}\p{N} ]{1,100})$/u;
-      const episodes = g.e.filter((e) => Array.isArray(e) && KEY.test(e[0])).slice(0, 200)
+      // Compact links (v2) carry only which episodes; older ones carry titles and descriptions too.
+      const KINDS = { F: 'Films', S: 'Series', X: 'Short films' };
+      const rows = Array.isArray(g.e) ? g.e
+        : /^\d+\.\d+( \d+\.\d+)*$/.test(g.k.trim()) ? g.k.trim().split(' ').map((x) => [`S${x.replace('.', 'E')}`, '', '', ''])
+        : g.k.split('\n').filter(Boolean).map((x) => [`T:${norm(x.slice(1)).slice(0, 100)}`, x.slice(1), '', KINDS[x[0]] || 'Films']);
+      const episodes = rows.filter((e) => Array.isArray(e) && KEY.test(e[0])).slice(0, 200)
         .map(([key, title, reason, kind]) => ({ key, title: String(title || '').slice(0, 120), reason: String(reason || '').slice(0, 160), kind: String(kind || '').slice(0, 20) }));
-      const id = String(g.id || `${g.s}|${g.t || ''}`).slice(0, 200);
+      const id = String(g.id || `${norm(g.s)}|${norm(g.t)}`).slice(0, 200); // same id the sidebar gives it
       let wiki = /^[a-z0-9-]+(\.[a-z0-9-]+)*\.fandom\.com$/.test(g.f || '') ? g.f : '';
       const info = new Map(); // key -> { img, portrait, meta, url }
 
       // Ticks: what the link carried, then this device's own, then live ones (newest wins).
       const store = `sinehan-guide:${id}`;
       let done = {};
-      for (const k of Array.isArray(g.d) ? g.d : []) done[k] = { v: true, at: 0 };
+      const ticked = Array.isArray(g.d) ? g.d : String(g.d || '').split(' ').filter(Boolean).map((i) => episodes[Number(i)]?.key);
+      for (const k of ticked) if (k) done[k] = { v: true, at: 0 };
       try { Object.assign(done, JSON.parse(localStorage.getItem(store) || '{}')); } catch {}
       const save = () => { try { localStorage.setItem(store, JSON.stringify(done)); } catch {} };
 
@@ -262,7 +271,7 @@
         // The header's button: what's next, and a jump to it.
         $('cta').hidden = !next;
         if (next) {
-          const what = next.kind ? next.title : `${next.key.replace(/^S(\d+)E(\d+)$/, 'S$1 E$2')}${next.title ? ` · ${next.title}` : ''}`;
+          const what = next.kind ? next.title : `${next.key.replace(/^S(\d+)E(\d+)$/, 'S$1 E$2')}${(next.title || info.get(next.key)?.title) ? ` · ${next.title || info.get(next.key)?.title}` : ''}`;
           $('ctaText').innerHTML = '';
           $('ctaText').append('Up next ', Object.assign(document.createElement('small'), { textContent: what }));
           $('cta').onclick = () => {
@@ -330,7 +339,7 @@
           const title = linkTo(document.createElement('a'));
           title.className = 'ep-title';
           const n = e.key.match(/^S\d+E(\d+)$/)?.[1];
-          title.textContent = `${n ? `${n}. ` : ''}${e.title || e.key}`;
+          title.textContent = `${n ? `${n}. ` : ''}${e.title || extra.title || e.key.replace(/^S(\d+)E(\d+)$/, 'Season $1, episode $2')}`;
           card.append(shot, tick, title);
 
           const about = (e.reason && !/^\d{4}$/.test(e.reason) && cleanReason(e.reason, e.title)) || extra.summary;
@@ -395,6 +404,7 @@
           $('showMeta').hidden = false;
           for (const e of eps) {
             info.set(`S${e.season}E${e.number}`, {
+              title: e.name || '',
               img: art(e.image?.original || e.image?.medium),
               bits: [e.runtime && `${e.runtime} min`, longDate(e.airdate)].filter(Boolean),
               summary: String(e.summary || '').replace(/<[^>]+>/g, '').trim(),

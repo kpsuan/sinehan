@@ -23,6 +23,7 @@ const STATIC_FILES = new Map([
   ['film-canal.webp', 'image/webp'],
   ['film-laundromat.webp', 'image/webp'],
   ['sidebar-dark.webp', 'image/webp'],
+  ['bantay.js', 'text/javascript; charset=utf-8'],
 ]);
 const KLIPY_API_KEY = process.env.KLIPY_API_KEY;
 
@@ -41,8 +42,17 @@ const server = http.createServer((req, res) => {
       res.writeHead(404);
       return res.end();
     }
-    res.writeHead(200, { 'content-type': STATIC_FILES.get(name), 'cache-control': 'public, max-age=86400' });
-    return fs.createReadStream(path.join(__dirname, 'public', name)).pipe(res);
+    // A missing file is a 404 for that request, never a crash of the whole relay.
+    const stream = fs.createReadStream(path.join(__dirname, 'public', name));
+    stream.on('open', () => {
+      res.writeHead(200, { 'content-type': STATIC_FILES.get(name), 'cache-control': 'public, max-age=3600' });
+      stream.pipe(res);
+    });
+    stream.on('error', () => {
+      if (!res.headersSent) res.writeHead(404);
+      res.end();
+    });
+    return;
   }
   // The extension itself, for the landing page's Download button.
   if (url.pathname === '/download') {
@@ -51,7 +61,7 @@ const server = http.createServer((req, res) => {
       'content-disposition': 'attachment; filename="sinehan-extension.zip"',
       'cache-control': 'no-cache',
     });
-    return fs.createReadStream(path.join(__dirname, 'public', 'sinehan-extension.zip')).pipe(res);
+    return fs.createReadStream(path.join(__dirname, 'public', 'sinehan-extension.zip')).on('error', () => res.end()).pipe(res);
   }
   if (url.pathname === '/health') return res.end('watch-party relay ok');
   // The phone companion: chat, reactions and a remote for the show playing on a laptop.

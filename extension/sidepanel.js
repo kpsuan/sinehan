@@ -24,6 +24,38 @@ function avatarEl(index, size = 26) {
   return el;
 }
 
+// Bantay, the mascot (bantay.js): on the welcome screen, in an empty chat, on the resume card.
+// His coat is your pick (Settings → Bantay); the page's tab reads the same setting.
+let bantayCoat = 'white';
+function drawBantay() {
+  $('wlBantay').innerHTML = Bantay.svg('sit', { coat: bantayCoat }); // fixed markup from bantay.js
+  $('rbDog').innerHTML = Bantay.svg('asleep', { coat: bantayCoat });
+  document.querySelectorAll('.g-empty svg.bantay').forEach((el) => (el.outerHTML = Bantay.svg('lying', { coat: bantayCoat })));
+  document.documentElement.style.setProperty('--bantay-lying', `url("${Bantay.dataUri('lying', bantayCoat)}")`);
+  document.querySelectorAll('#bantayCoats button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.coat === bantayCoat)));
+}
+for (const [id, name] of Object.entries(Bantay.coats)) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.dataset.coat = id;
+  b.title = name;
+  b.innerHTML = Bantay.svg('head', { coat: id }); // fixed markup
+  b.append(Object.assign(document.createElement('span'), { textContent: name }));
+  b.onclick = () => {
+    bantayCoat = id;
+    chrome.storage.local.set({ bantayCoat });
+    drawBantay();
+  };
+  $('bantayCoats').append(b);
+}
+drawBantay();
+chrome.storage.local.get('bantayCoat').then(({ bantayCoat: saved }) => {
+  if (saved && Bantay.coats[saved]) {
+    bantayCoat = saved;
+    drawBantay();
+  }
+});
+
 // ---- Link to background (which owns the relay connection) ----
 function connectPort() {
   port = chrome.runtime.connect({ name: 'panel' });
@@ -843,7 +875,10 @@ async function listGuides() {
   const list = (await askP({ type: 'guides' })) || [];
   if (run !== bestRun || episodesMode !== 'guide') return;
   if (!list.length) {
-    $('bestResults').replaceChildren(note('Make a guide for a show or a franchise (and a story or saga, if you like). Saved guides show up here for both of you.'));
+    const empty = note('Make a guide for a show or a franchise (and a story or saga, if you like). Saved guides show up here for both of you.');
+    empty.classList.add('g-empty');
+    empty.insertAdjacentHTML('afterbegin', Bantay.svg('lying', { coat: bantayCoat })); // fixed markup from bantay.js
+    $('bestResults').replaceChildren(empty);
     return;
   }
   const h = document.createElement('h2');
@@ -960,13 +995,18 @@ const short = (text, n) => {
 // room when it's saved and you're in one, so ticks on that page sync live.
 async function guidePageLink(g) {
   // (Guides saved before they remembered their fan wiki: the page finds it by itself.)
+  // Compact: just which episodes (the page looks up titles, pictures and summaries itself), not the guide's
+  // descriptions, so the link stays short. A show: "1.1 1.11 2.8"; a franchise: its titles, F/S/X for
+  // film / series / short. Ticked ones as their positions.
+  const series = g.episodes.every((e) => /^S\d+E\d+$/.test(e.key));
   const data = {
-    v: 1,
-    id: g.id,
+    v: 2,
     s: g.show,
     t: g.topic || '',
-    e: g.episodes.map((e) => [e.key, e.title || '', short(e.reason, 110), e.kind || '']),
-    d: g.episodes.filter((e) => isDone(g, e.key)).map((e) => e.key),
+    k: series
+      ? g.episodes.map((e) => e.key.slice(1).replace('E', '.')).join(' ')
+      : g.episodes.map((e) => `${{ Films: 'F', Series: 'S' }[e.kind] || 'X'}${e.title}`).join('\n'),
+    d: g.episodes.map((e, i) => (isDone(g, e.key) ? i : -1)).filter((i) => i >= 0).join(' '),
     f: g.wiki || '', // the fan wiki, so the page can link each episode to its page
   };
   const server = ($('server').value.trim() || DEFAULT_SERVER).replace(/\/+$/, '');

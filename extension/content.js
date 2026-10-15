@@ -79,6 +79,11 @@ function ask(msg, then) {
   } catch {}
 }
 
+// Bantay's coat (picked in the sidebar's settings).
+let bantayCoat = 'white';
+chrome.storage.local.get('bantayCoat').then(({ bantayCoat: c }) => c && (bantayCoat = c));
+chrome.storage.onChanged.addListener((c) => c.bantayCoat && (bantayCoat = c.bantayCoat.newValue || 'white'));
+
 // Our name/picture, for reactions sent from this tab.
 let me = { name: 'Guest', avatar: 0 };
 chrome.storage.local.get(['name', 'avatar']).then(({ name, avatar }) => (me = { name: name || 'Guest', avatar }));
@@ -620,7 +625,8 @@ function toggleBreak() {
 const breakBar = topBar(16);
 function breakBanner(text, mine = false) {
   if (!text) return breakBar.hide();
-  breakBar.show(text, mine ? { label: 'I’m back', onClick: () => myBreak && toggleBreak() } : null);
+  // Bantay naps while you're away.
+  breakBar.show(text, mine ? { label: 'I’m back', onClick: () => myBreak && toggleBreak() } : null, 'head-asleep');
 }
 
 // A bar at the top of the video with how long it's been (CR breaks, dropped connections).
@@ -632,7 +638,7 @@ function topBar(top) {
     el?.remove();
     el = null;
   };
-  const show = (text, action) => {
+  const show = (text, action, icon) => {
     hide();
     ensureFont();
     const started = Date.now();
@@ -646,6 +652,12 @@ function topBar(top) {
     clockEl.style.cssText = 'font-variant-numeric:tabular-nums;color:#b9b0c7';
     label.textContent = text;
     el.append(label, clockEl);
+    if (icon && typeof Bantay !== 'undefined') {
+      const dog = document.createElement('span');
+      dog.style.cssText = 'display:block;width:26px;height:26px;margin:-4px -4px -4px -6px;flex:none';
+      dog.innerHTML = Bantay.svg(icon, { size: 26, coat: bantayCoat }); // fixed markup from bantay.js
+      el.prepend(dog);
+    }
     if (action) {
       const b = document.createElement('button');
       b.textContent = action.label;
@@ -680,7 +692,7 @@ function connectionDropped(who) {
     applied = { paused: true, time: video.currentTime, until: Date.now() + 1500 };
     video.pause();
   }
-  netBar.show(who === 'me' ? 'Connection lost. Reconnecting…' : 'Their connection dropped. Waiting for them…');
+  netBar.show(who === 'me' ? 'Connection lost. Reconnecting…' : 'Their connection dropped. Waiting for them…', null, 'head-tilt');
   clearTimeout(dropGiveUp);
   // They may not be coming back soon: stop the bar after two minutes (we still count you in if they do).
   dropGiveUp = setTimeout(() => {
