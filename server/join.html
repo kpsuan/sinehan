@@ -173,21 +173,53 @@
         .replace(/[\s\-–—:|·]+$/, '')
         .trim();
       if (showName) document.getElementById('show').textContent = showName;
-      // The show's picture as the background, only from a secure (https) image address.
+      // The show's picture as the background. For shows on streaming services, their own key art (TVmaze's
+      // wide backdrops, or a film's poster from Wikipedia) beats the page's preview picture, which is often a
+      // random crop; YouTube's thumbnail is the video itself.
+      const setBackdrop = (src) => {
+        const bg = document.getElementById('backdrop');
+        bg.style.backgroundImage = `url("${src}")`;
+        bg.classList.add('on');
+        document.body.classList.add('has-bg');
+      };
       const img = q.get('img') || '';
-      if (/^https:\/\/[^\s"'()<>]+$/.test(img) && img.length < 600) {
-        const show = (src) => {
-          const bg = document.getElementById('backdrop');
-          bg.style.backgroundImage = `url("${src}")`;
-          bg.classList.add('on');
-          document.body.classList.add('has-bg');
-        };
+      const linkPicture = /^https:\/\/[^\s"'()<>]+$/.test(img) && img.length < 600 ? img : '';
+      const usePicture = () => {
+        if (!linkPicture) return;
         // YouTube's standard thumbnail has black bars; try the full-size one first (tiny = not available).
-        const full = img.replace(/\/hqdefault\.jpg$/, '/maxresdefault.jpg');
+        const full = linkPicture.replace(/\/hqdefault\.jpg$/, '/maxresdefault.jpg');
         const probe = new Image();
-        probe.onload = () => (probe.naturalWidth > 200 ? show(full) : show(img));
-        probe.onerror = () => show(img);
+        probe.onload = () => setBackdrop(probe.naturalWidth > 200 ? full : linkPicture);
+        probe.onerror = () => setBackdrop(linkPicture);
         probe.src = full;
+      };
+      const flat = (x) => String(x || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '').replace(/^the/, '');
+      const timeout = () => AbortSignal.timeout?.(2500);
+      async function keyArt(name) {
+        try {
+          const r = await fetch(`https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(name)}`, { signal: timeout() });
+          const tv = r.ok ? await r.json() : null;
+          if (tv && flat(tv.name) === flat(name)) {
+            const images = await (await fetch(`https://api.tvmaze.com/shows/${tv.id}/images`, { signal: timeout() })).json();
+            const wide = images.filter((x) => x.type === 'background').sort((a, b) => (b.resolutions?.original?.width || 0) - (a.resolutions?.original?.width || 0))[0];
+            const url = wide?.resolutions?.original?.url || tv.image?.original;
+            if (url) return url.replace(/^http:/, 'https:');
+          }
+        } catch {}
+        try {
+          const r = await fetch('https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrlimit=1&prop=pageimages&piprop=thumbnail&pithumbsize=1280'
+            + `&pilicense=any&format=json&formatversion=2&origin=*&gsrsearch=${encodeURIComponent(name)}`, { signal: timeout() });
+          const page = (await r.json())?.query?.pages?.[0];
+          if (page?.thumbnail?.source && flat(page.title).startsWith(flat(name))) return page.thumbnail.source;
+        } catch {}
+        return '';
+      }
+      let toHost = '';
+      try { toHost = new URL(q.get('to')).hostname; } catch {}
+      if (showName && !/(^|\.)youtube\.com$|(^|\.)youtu\.be$/.test(toHost)) {
+        keyArt(showName).then((url) => (url ? setBackdrop(url) : usePicture()));
+      } else {
+        usePicture();
       }
       // Same party without the extension (chat + remote): keep the invite's details.
       document.getElementById('phoneLink').href = document.getElementById('remoteLink').href = `/party${location.search}`;
