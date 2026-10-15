@@ -22,5 +22,13 @@ shutil.copyfile(OUT, SITE_COPY)
 # Bantay (the mascot) is drawn by the same file on the website.
 shutil.copyfile(os.path.join(EXT, 'bantay.js'), os.path.join(ROOT, 'server', 'public', 'bantay.js'))
 
+# For the Chrome Web Store: the same files with manifest.json at the top of the zip (no folder).
+STORE = os.path.join(ROOT, 'sinehan-store.zip')
+with zipfile.ZipFile(STORE, 'w', zipfile.ZIP_DEFLATED) as z:
+    for folder, _, files in os.walk(EXT):
+        for name in files:
+            full = os.path.join(folder, name)
+            z.write(full, os.path.relpath(full, EXT).replace(os.sep, '/'))
+
 version = json.load(open(os.path.join(EXT, 'manifest.json'), encoding='utf-8'))['version']
-print(f'Built Sinehan {version}: {os.path.getsize(OUT) // 1024} KB -> sinehan-extension.zip and server/public/')
+print(f'Built Sinehan {version}: {os.path.getsize(OUT) // 1024} KB -> sinehan-extension.zip, server/public/, and sinehan-store.zip (for the Chrome Web Store)')
