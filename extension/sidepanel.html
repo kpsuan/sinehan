@@ -64,6 +64,7 @@
       --danger: #e5484d;
     }
     :root[data-theme='light'] select option { background: #fff; }
+    :root[data-theme='light'] select optgroup { background: #fff; color: #6b6878; }
     :root[data-theme='light'] button.primary:hover:not(:disabled) { background: #5b3ef0; }
     :root[data-theme='light'] .stamp { background: rgba(16, 16, 24, .06); }
     :root[data-theme='light'] .line.me .stamp { background: rgba(255, 255, 255, .22); }
@@ -116,6 +117,8 @@
     input, select { width: 100%; padding: 8px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--field); color: inherit; font: inherit; outline: none;
       transition: border-color .15s, box-shadow .15s; }
     select option { background: #17131d; }
+    select optgroup { background: #17131d; color: #a59fb0; font-style: normal; font-weight: 600; }
+    select optgroup option { color: var(--text); font-weight: 400; }
     input::placeholder { color: var(--faint); }
     input:focus, select:focus { border-color: rgba(201, 182, 242, .55); box-shadow: 0 0 0 3px rgba(201, 182, 242, .12); }
     #devicePerm { margin-top: 10px; width: 100%; font-size: 12px; }
