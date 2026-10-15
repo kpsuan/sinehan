@@ -434,6 +434,10 @@ function showStatus(s) {
   const prev = status;
   const wasConnected = prev.connected;
   status = s;
+  if (!rejoinTried && s.connected && s.peers > 1) {
+    rejoinTried = true;
+    tryRejoin();
+  }
   // Tonight's "start a party first" follows the connection (after load: those are declared further down).
   if ((prev.connected && prev.peers > 1) !== (s.connected && s.peers > 1))
     setTimeout(() => episodesMode === 'tonight' && !$('bestView').hidden && !tonight && renderTonight());
@@ -2509,6 +2513,56 @@ let ignoreOffer = false;
 let awaitingOffer = false;
 let myOffer = ''; // the id of the offer we're waiting on an answer to
 let attachOnOffer = null; // picking up: adds our camera and mic once their offer arrives
+// Chrome can close and reopen this sidebar (going fullscreen and back). The call is remembered for the
+// browser session and picks up again when the sidebar is back; the other side waits rather than hanging up.
+let peerAway = false;
+let awayTimer = null;
+let rejoinTried = false;
+// `at` is refreshed every few seconds while the call is on here, so another open window doesn't take over a
+// call that's still running in this one.
+const rememberCall = () =>
+  chrome.storage.session
+    ?.set({ callLive: { room: status.room, voice: !localStream?.getVideoTracks().length, at: Date.now() } })
+    .catch(() => {});
+setInterval(() => pc && localStream && rememberCall(), 3000);
+const forgetCall = () => chrome.storage.session?.remove('callLive').catch(() => {});
+window.addEventListener('pagehide', () => {
+  if (pc && localStream) signal({ away: true }); // "back in a moment", not a hang-up
+});
+// Our camera (by addTrack) and mic (by its own slot) into a fresh connection.
+// The reopened sidebar: once the party is back with them in it, rejoin the remembered call (if the window
+// that had it has gone quiet: check again shortly if it only just stopped).
+async function tryRejoin() {
+  const { callLive } = (await chrome.storage.session?.get('callLive').catch(() => null)) || {};
+  if (!callLive || callLive.room !== status.room || pc) return;
+  const age = Date.now() - (callLive.at || 0);
+  if (age < 7000) return void setTimeout(tryRejoin, 7000 - age + 300);
+  addChat('', 'Reconnecting your call…', 'system');
+  turnOnCamera(!!callLive.voice, true);
+}
+async function attachLocalTracks() {
+  for (const track of localStream.getVideoTracks()) pc.addTrack(track, localStream);
+  const tx = micTransceiver();
+  const mic = localStream.getAudioTracks()[0];
+  if (mic) await tx.sender.replaceTrack(mic);
+}
+// They're back after their sidebar reopened: start a new connection to that sidebar, keeping our camera and mic.
+async function restartFor(from) {
+  clearTimeout(awayTimer);
+  peerAway = false;
+  stopAllRelays();
+  stopVoiceMeter();
+  pc?.close();
+  audioTx = null;
+  myOffer = '';
+  attachOnOffer = null;
+  awaitingOffer = false;
+  createPeer();
+  callPeer = from;
+  $('remote').srcObject = remoteStream;
+  await attachLocalTracks(); // adding them starts our offer
+  render();
+}
 let restartedIce = false;
 let failTimer = null;
 const offerOut = () => {
@@ -2725,6 +2779,7 @@ function createPeer() {
   pc.onconnectionstatechange = () => {
     const state = pc?.connectionState;
     if (state === 'connected') clearTimeout(failTimer);
+    if (state === 'failed' && peerAway) return render(); // they're coming back; restartFor() reconnects
     if (state === 'failed') {
       // Try once more on a fresh route before giving up.
       if (!restartedIce) {
@@ -2743,8 +2798,22 @@ function createPeer() {
   };
 }
 
-async function onSignal({ description, candidate, bye, declined, want, from, name, oid, re, to }) {
+async function onSignal({ description, candidate, bye, declined, want, from, name, oid, re, to, away, rejoin }) {
   if (to && to !== myId) return; // for another of their sidebars
+  if (away && pc && from === callPeer) {
+    // Their sidebar closed (fullscreen, usually): keep our side of the call and wait for them.
+    peerAway = true;
+    clearTimeout(failTimer);
+    addChat('', `${name || 'They'} stepped out of the call view. It reconnects when they’re back.`, 'system');
+    clearTimeout(awayTimer);
+    awayTimer = setTimeout(() => peerAway && endCall('Call ended. They didn’t come back to it.', true), 60 * 60 * 1000);
+    render();
+    return;
+  }
+  if (want === 'offer' && rejoin && pc && localStream && from !== callPeer) {
+    addChat('', 'Reconnecting the call…', 'system');
+    return restartFor(from);
+  }
   if (callPeer && from !== callPeer && from !== 'tab') return; // a second sidebar of theirs joining in
   if (description && pc && !callPeer) callPeer = from;
   // They picked up and want our offer: resend the one still waiting (nobody answered it; it carries our
@@ -2826,7 +2895,7 @@ async function onSignal({ description, candidate, bye, declined, want, from, nam
 }
 
 // voice = start (or answer) with just the mic; the camera can still be turned on later.
-async function turnOnCamera(voice = false) {
+async function turnOnCamera(voice = false, rejoin = false) {
   let voiceTrack = null;
   await loadIce();
   try {
@@ -2875,7 +2944,7 @@ async function turnOnCamera(voice = false) {
     awaitingOffer = true;
     createPeer();
     attachOnOffer = attach;
-    signal({ want: 'offer' });
+    signal({ want: 'offer', ...(rejoin ? { rejoin: true } : {}) });
     setTimeout(async () => {
       if (!awaitingOffer || !pc || attachOnOffer !== attach) return;
       awaitingOffer = false;
@@ -2887,6 +2956,7 @@ async function turnOnCamera(voice = false) {
   }
   listDevices(); // names are visible now that we have permission
   if (!localStream) return false; // the call ended while it was starting
+  rememberCall();
   render();
   return true;
 }
@@ -2942,6 +3012,9 @@ function endCall(reason, notify = false) {
   attachOnOffer = null;
   myOffer = '';
   callPeer = null;
+  peerAway = false;
+  clearTimeout(awayTimer);
+  forgetCall();
   audioTx = null;
   theirMicOn = null;
   localStream?.getTracks().forEach((t) => t.stop());
@@ -2996,6 +3069,7 @@ async function addCamera() {
     localStream.addTrack(track);
     pc.addTrack(track, localStream);
     $('local').srcObject = localStream;
+    rememberCall();
   } catch (e) {
     addChat('', `Couldn’t start your camera: ${e.message || e.name}`, 'system');
   }

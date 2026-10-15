@@ -616,6 +616,14 @@ const vstate = (p) =>
       ),
     );
 
+    // Chrome reopening the sidebar (fullscreen and back) mid-call: it reconnects by itself.
+    await pA.close();
+    check('their side waits instead of hanging up', await until(async () => (await logLines(pB2)).some((l) => /stepped out of the call view/.test(l.text)), 8000));
+    pA = await openPanel(A);
+    check('the reopened sidebar reconnects the call', await until(async () => (await pA.$eval('#remote', (v) => v.videoWidth > 0)) && (await pB2.$eval('#remote', (v) => v.videoWidth > 0)), 30000),
+      JSON.stringify(await Promise.all([pA, pB2].map((p) => p.evaluate(() => ({ pc: pc?.connectionState, peerAway, cam: !!localStream, log: [...document.querySelectorAll('#log .line')].slice(-4).map((l) => l.textContent) }))))));
+    check('…with the mic still on', await until(() => pA.$eval('#mic', (b) => !b.hidden && !b.classList.contains('off'))));
+
     // Audio really flows (bytes arriving), in both directions.
     const audioIn = (p) =>
       p.evaluate(async () => {
