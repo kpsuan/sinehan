@@ -239,7 +239,7 @@ function applyTheme(t) {
   try {
     localStorage.setItem('theme', theme);
   } catch {}
-  if (theme === 'dark') $('backdrop').classList.remove('on');
+  if (theme !== 'glass') $('backdrop').classList.remove('on');
 }
 try {
   applyTheme(localStorage.getItem('theme'));
@@ -251,7 +251,7 @@ document.querySelectorAll('[data-theme-choice]').forEach((b) => {
   b.onclick = () => {
     applyTheme(b.dataset.themeChoice);
     chrome.storage.local.set({ theme });
-    if (theme !== 'dark') updateBackdrop(true);
+    if (theme === 'glass') updateBackdrop(true);
   };
 });
 
@@ -260,7 +260,7 @@ document.querySelectorAll('[data-theme-choice]').forEach((b) => {
 // show behind the cards, refreshed every few seconds while you're in a party.
 // Protected video (Netflix, Prime…) can capture as solid black; then we keep the plain dark background.
 async function updateBackdrop(force = false) {
-  if (theme === 'dark' || !status.connected || (!force && document.visibilityState === 'hidden')) return;
+  if (theme !== 'glass' || !status.connected || (!force && document.visibilityState === 'hidden')) return;
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }).catch(() => []);
   if (!tab || !/^https?:/.test(tab.url || '')) return;
   let shot;
