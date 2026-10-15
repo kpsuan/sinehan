@@ -21,7 +21,6 @@ const STATIC_FILES = new Map([
   ['film-canal.webp', 'image/webp'],
   ['film-laundromat.webp', 'image/webp'],
   ['sidebar-dark.webp', 'image/webp'],
-  ['hbomax.png', 'image/png'],
 ]);
 const KLIPY_API_KEY = process.env.KLIPY_API_KEY;
 
