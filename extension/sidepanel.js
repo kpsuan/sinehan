@@ -868,6 +868,7 @@ $('form').onsubmit = (e) => {
   const text = $('msg').value.trim();
   if (!text) return;
   $('msg').value = '';
+  $('cmdMenu').hidden = true;
   closeTrays();
   // Commands for Bantay: /spin, /paw… (and /tricks lists them). They aren't sent as chat.
   const trick = Bantay.trickFor(text);
@@ -881,6 +882,63 @@ $('form').onsubmit = (e) => {
 // Ask in chat and he does it for both of you: in the sidebar and on the video. One at a time.
 const TRICKS_HELP = `Bantay knows: ${Object.keys(Bantay.tricks).map((k) => `/${k}`).join(' ')}`;
 let trickUntil = 0;
+
+// Typing "/" shows the tricks; arrows to move, Enter or a click to do it, Tab to fill it in, Esc to close.
+let cmdPick = 0;
+const cmdList = () => {
+  const v = $('msg').value.trim().toLowerCase();
+  if (!/^\/[a-z0-9-]*$/.test(v)) return [];
+  return [...Object.keys(Bantay.tricks), 'tricks'].filter((k) => `/${k}`.startsWith(v));
+};
+function drawCmdMenu() {
+  const list = cmdList();
+  $('cmdMenu').hidden = !list.length;
+  cmdPick = Math.min(cmdPick, Math.max(0, list.length - 1));
+  $('cmdMenu').replaceChildren(
+    ...list.map((k, i) => {
+      const t = Bantay.tricks[k];
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('role', 'option');
+      b.setAttribute('aria-selected', String(i === cmdPick));
+      b.innerHTML = Bantay.svg(t ? t.pose : 'head', { coat: bantayCoat }); // fixed markup
+      b.append(Object.assign(document.createElement('b'), { textContent: `/${k}` }),
+        Object.assign(document.createElement('span'), { textContent: t ? t.name : 'list them all' }));
+      b.onmousedown = (e) => e.preventDefault(); // keep the focus in the message box
+      b.onclick = () => runCmd(k);
+      return b;
+    }),
+  );
+}
+function runCmd(k) {
+  $('msg').value = `/${k}`;
+  $('cmdMenu').hidden = true;
+  $('form').requestSubmit();
+}
+$('msg').addEventListener('input', () => {
+  cmdPick = 0;
+  drawCmdMenu();
+});
+$('msg').addEventListener('keydown', (e) => {
+  const list = $('cmdMenu').hidden ? [] : cmdList();
+  if (!list.length) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    cmdPick = (cmdPick + (e.key === 'ArrowDown' ? 1 : list.length - 1)) % list.length;
+    drawCmdMenu();
+    $('cmdMenu').querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    runCmd(list[cmdPick]);
+  } else if (e.key === 'Tab') {
+    e.preventDefault();
+    $('msg').value = `/${list[cmdPick]}`;
+    drawCmdMenu();
+  } else if (e.key === 'Escape') {
+    $('cmdMenu').hidden = true;
+  }
+});
+$('msg').addEventListener('blur', () => setTimeout(() => ($('cmdMenu').hidden = true), 150));
 function askTrick(trick) {
   if (Date.now() < trickUntil) return addChat('', 'Bantay is still busy. Try again in a moment.', 'system');
   send({ type: 'bantay-trick', trick, name: myName() });

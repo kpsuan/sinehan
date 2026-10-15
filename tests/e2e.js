@@ -1082,6 +1082,13 @@ const vstate = (p) =>
     await pB2.evaluate(() => showBest(false));
 
     section('Bantay’s tricks');
+    await pA.fill('#msg', '/');
+    check('typing / lists the tricks', await until(async () => (await pA.$$eval('#cmdMenu button b', (b) => b.map((x) => x.textContent))).includes('/playdead')));
+    if (process.env.SHOT) await pA.locator('#cmdMenu').screenshot({ path: process.env.SHOT });
+    await pA.fill('#msg', '/pl');
+    check('…narrowed as you type', await until(async () => (await pA.$$eval('#cmdMenu button b', (b) => b.map((x) => x.textContent)).then((l) => l.join(','))) === '/playdead'));
+    await pA.fill('#msg', '');
+    check('…and gone with no slash', await until(() => pA.$eval('#cmdMenu', (m) => m.hidden)));
     await pA.fill('#msg', '/spin');
     await pA.press('#msg', 'Enter');
     check('a /command makes Bantay do it for both', await until(async () => (await logLines(pB2)).some((l) => /asked Bantay to spin/.test(l.text)) && (await pB2.locator('.trick-pop svg[aria-label="Bantay spinning"]').count()) > 0));
