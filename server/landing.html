@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sinehan · Watch together</title>
+  <meta name="description" content="A small Chrome extension for watching together: synced playback, chat, and a video call next to your show." />
+  <meta property="og:title" content="Sinehan · Watch together" />
+  <meta property="og:description" content="Synced playback, chat, and a video call next to your show." />
+  <meta property="og:image" content="https://sinehan.live/static/preview.webp" />
+  <link rel="icon" href="/static/logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root { color-scheme: dark; --text: #efeaf6; --muted: #9a90aa; --faint: #6d6479; --accent: #c9b6f2; --accent-ink: #1b1325;
+      --edge: rgba(255, 255, 255, .08); --card: rgba(255, 255, 255, .03); }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; overflow-x: clip; } /* the screenshot's glow mustn't cause sideways scroll */
+    body { margin: 0; color: var(--text); font: 16px/1.6 'Inter', system-ui, sans-serif;
+      background: radial-gradient(80% 50% at 50% 0%, #241c31 0%, #120f17 55%, #0b090e 100%) fixed, #0b090e; }
+    a { color: inherit; }
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+
+    nav { display: flex; align-items: center; justify-content: space-between; padding: 20px 0; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; text-decoration: none; }
+    .brand img { width: 28px; height: 28px; }
+    nav .links { display: flex; gap: 22px; font-size: 14px; color: var(--muted); }
+    nav .links a { text-decoration: none; }
+    nav .links a:hover { color: var(--text); }
+
+    .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 8px; font-weight: 600; text-decoration: none;
+      transition: background .15s, transform .1s; }
+    .btn:active { transform: scale(.98); }
+    .btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .btn.primary { background: var(--accent); color: var(--accent-ink); box-shadow: 0 10px 30px rgba(201, 182, 242, .28); }
+    .btn.primary:hover { background: #d8c9f7; }
+    .btn.ghost { background: var(--card); }
+    .btn.ghost:hover { background: rgba(255, 255, 255, .07); }
+
+    .hero { display: grid; grid-template-columns: 1.1fr .9fr; gap: 48px; align-items: center; padding: 48px 0 80px; }
+    .eyebrow { display: inline-block; padding: 4px 10px; border-radius: 6px; background: var(--card);
+      color: var(--muted); font-size: 13px; }
+    h1 { margin: 18px 0 16px; font-size: clamp(38px, 6vw, 60px); line-height: 1.05; letter-spacing: -0.035em; font-weight: 700; }
+    h1 span { color: var(--accent); }
+    .lead { margin: 0 0 30px; max-width: 30em; color: var(--muted); font-size: 18px; }
+    .cta { display: flex; flex-wrap: wrap; gap: 12px; }
+    .small { margin-top: 14px; color: var(--faint); font-size: 13px; }
+    .shot { justify-self: center; position: relative; }
+    .shot img { display: block; width: 320px; max-width: 100%; border-radius: 14px;
+      box-shadow: 0 40px 100px rgba(0, 0, 0, .55); }
+    .shot::before { content: ''; position: absolute; inset: 10% -12%; z-index: -1; filter: blur(60px); opacity: .5;
+      background: radial-gradient(closest-side, rgba(201, 182, 242, .5), transparent); }
+
+    section { padding: 70px 0; }
+    h2 { margin: 0 0 10px; font-size: 30px; letter-spacing: -0.02em; }
+    .sub { margin: 0 0 36px; color: var(--muted); }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .feature { padding: 22px; border-radius: 10px; background: var(--card); }
+    .feature .ic { font-size: 22px; }
+    .feature h3 { margin: 10px 0 6px; font-size: 16px; }
+    .feature p { margin: 0; color: var(--muted); font-size: 14px; }
+
+    .works { display: flex; flex-wrap: wrap; gap: 10px; }
+    .works span { padding: 8px 14px; border-radius: 8px; background: var(--card); font-size: 14px; }
+    .note { margin-top: 14px; color: var(--faint); font-size: 13px; }
+
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; counter-reset: step; }
+    .step { padding: 22px; border-radius: 10px; background: var(--card); counter-increment: step; }
+    .step::before { content: counter(step); display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;
+      background: rgba(201, 182, 242, .15); color: var(--accent); font-weight: 700; font-size: 14px; }
+    .step h3 { margin: 12px 0 6px; font-size: 16px; }
+    .step p { margin: 0; color: var(--muted); font-size: 14px; }
+    code { padding: 1px 6px; border-radius: 4px; background: rgba(255, 255, 255, .07); font-size: 13px; }
+
+    footer { padding: 36px 0 50px; color: var(--faint); font-size: 14px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+
+    @media (max-width: 820px) {
+      .hero { grid-template-columns: 1fr; padding-top: 24px; gap: 40px; text-align: left; }
+      .grid, .steps { grid-template-columns: 1fr; }
+      nav .links a:not(.keep) { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <nav>
+      <a class="brand" href="/"><img src="/static/logo.png" alt="" /> Sinehan</a>
+      <div class="links">
+        <a href="#features">Features</a>
+        <a href="#install">Install</a>
+        <a class="keep" href="/download">Download</a>
+      </div>
+    </nav>
+
+    <header class="hero">
+      <div>
+        <span class="eyebrow">A watch party for two</span>
+        <h1>Watch together,<br /><span>from anywhere.</span></h1>
+        <p class="lead">Sinehan keeps your show in sync, with chat and a video call right next to it. Press play on one side, and it plays on both.</p>
+        <div class="cta">
+          <a class="btn primary" href="/download">
+            <svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14" /></svg>
+            Download for Chrome
+          </a>
+          <a class="btn ghost" href="#install">How to install</a>
+        </div>
+        <p class="small">Free · Chrome and Edge · About 160 KB</p>
+      </div>
+      <div class="shot"><img src="/static/preview.webp" alt="The Sinehan sidebar: who's watching, the show, a video call and chat" width="360" height="760" /></div>
+    </header>
+  </div>
+
+  <section id="features">
+    <div class="wrap">
+      <h2>Everything for movie night</h2>
+      <p class="sub">Each of you watches on your own account. Sinehan handles being together.</p>
+      <div class="grid">
+        <div class="feature"><div class="ic">⏯️</div><h3>Synced playback</h3><p>Play, pause and skip on either side and the other follows. A 3·2·1 countdown starts you at the same moment.</p></div>
+        <div class="feature"><div class="ic">💬</div><h3>Chat & reactions</h3><p>Messages carry the moment they were sent. Tap one to jump back. Emoji float across the video.</p></div>
+        <div class="feature"><div class="ic">📹</div><h3>Video call</h3><p>See each other in the sidebar, or as a floating window you can drag around in fullscreen.</p></div>
+        <div class="feature"><div class="ic">⏸️</div><h3>Waits for you</h3><p>Ads, buffering, a dropped connection: the other side pauses until you're both back.</p></div>
+        <div class="feature"><div class="ic">🔗</div><h3>One-link invites</h3><p>Send a link. They join the party and land on the same show, at the same spot.</p></div>
+        <div class="feature"><div class="ic">🕘</div><h3>Past parties</h3><p>Each night's chat is saved with what you watched, so you can look back on it.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <h2>Works where you watch</h2>
+      <p class="sub">Any site with a video player in Chrome.</p>
+      <div class="works"><span>YouTube</span><span>Netflix</span><span>Prime Video</span><span>Disney+</span><span>Max</span><span>Hulu</span><span>…and more</span></div>
+      <p class="note">You each need your own account on the service. Ad detection on some services is best-effort.</p>
+    </div>
+  </section>
+
+  <section id="install">
+    <div class="wrap">
+      <h2>Install in a minute</h2>
+      <p class="sub">Sinehan isn't on the Chrome Web Store yet, so it's added by hand.</p>
+      <div class="steps">
+        <div class="step"><h3>Download & unzip</h3><p><a href="/download">Download the zip</a> and unzip it somewhere you'll keep it, like Documents.</p></div>
+        <div class="step"><h3>Load it into Chrome</h3><p>Open <code>chrome://extensions</code>, turn on <b>Developer mode</b>, click <b>Load unpacked</b> and pick the <code>sinehan</code> folder.</p></div>
+        <div class="step"><h3>Start a party</h3><p>Pin Sinehan, open a show, click the 🔗 in the sidebar and send the link. That's it.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <footer>
+      <span>Sinehan · made for watching together</span>
+      <a href="/download">Download</a>
+    </footer>
+  </div>
+</body>
+</html>

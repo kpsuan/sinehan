@@ -7,7 +7,16 @@ const { WebSocketServer } = require('ws');
 const PORT = process.env.PORT || 8080;
 const rooms = new Map(); // room -> Set<ws>
 const JOIN_PAGE = fs.readFileSync(path.join(__dirname, 'join.html'));
-const STATIC_FILES = new Set(['logo.png', 'avatar1.png', 'avatar2.png', 'avatar3.png', 'avatar4.png']);
+const LANDING_PAGE = fs.readFileSync(path.join(__dirname, 'landing.html'));
+// Only these exact files are served from public/.
+const STATIC_FILES = new Map([
+  ['logo.png', 'image/png'],
+  ['avatar1.png', 'image/png'],
+  ['avatar2.png', 'image/png'],
+  ['avatar3.png', 'image/png'],
+  ['avatar4.png', 'image/png'],
+  ['preview.webp', 'image/webp'],
+]);
 const KLIPY_API_KEY = process.env.KLIPY_API_KEY;
 
 const server = http.createServer((req, res) => {
@@ -18,17 +27,32 @@ const server = http.createServer((req, res) => {
     return res.end(JOIN_PAGE);
   }
   if (url.pathname === '/gifs') return gifs(url, res);
-  // Images for the invite page (logo + profile pictures). Only these exact files are served.
+  // Images for the landing and invite pages.
   if (url.pathname.startsWith('/static/')) {
     const name = url.pathname.slice('/static/'.length);
     if (!STATIC_FILES.has(name)) {
       res.writeHead(404);
       return res.end();
     }
-    res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' });
+    res.writeHead(200, { 'content-type': STATIC_FILES.get(name), 'cache-control': 'public, max-age=86400' });
     return fs.createReadStream(path.join(__dirname, 'public', name)).pipe(res);
   }
-  res.end('watch-party relay ok');
+  // The extension itself, for the landing page's Download button.
+  if (url.pathname === '/download') {
+    res.writeHead(200, {
+      'content-type': 'application/zip',
+      'content-disposition': 'attachment; filename="sinehan-extension.zip"',
+      'cache-control': 'no-cache',
+    });
+    return fs.createReadStream(path.join(__dirname, 'public', 'sinehan-extension.zip')).pipe(res);
+  }
+  if (url.pathname === '/health') return res.end('watch-party relay ok');
+  if (url.pathname === '/' || url.pathname === '/index.html') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    return res.end(LANDING_PAGE);
+  }
+  res.writeHead(404, { 'content-type': 'text/plain' });
+  res.end('Not found');
 });
 
 // GIF search via KLIPY. Proxied so the API key stays on the server, not in the extension.

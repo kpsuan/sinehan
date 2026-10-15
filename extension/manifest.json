@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Sinehan",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "Watch together: synced playback, chat and video call.",
   "permissions": ["storage", "sidePanel", "tabs", "clipboardWrite"],
   "host_permissions": ["<all_urls>"],

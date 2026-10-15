@@ -5,7 +5,9 @@ let pingTimer = null;
 let status = { connected: false, peers: 0, room: '' };
 const ports = new Set();
 const HISTORY_LIMIT = 300;
-const DEFAULT_SERVER = 'wss://sinehan-rhua.onrender.com';
+const DEFAULT_SERVER = 'wss://sinehan.live';
+// Addresses earlier versions used; anyone still on them moves to the real domain.
+const OLD_SERVERS = ['ws://localhost:8080', 'wss://sinehan-rhua.onrender.com'];
 
 // The one tab that syncs. Everything from other tabs is ignored, and nothing is sent to them.
 let watch = null; // { tabId, url, title, favIconUrl }
@@ -15,8 +17,7 @@ let lastPos = null; // { time, paused, at } — the watch tab's playback positio
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(console.error);
 
 chrome.storage.local.get(['server', 'room', 'active', 'watch']).then(async ({ server, room, active, watch: saved }) => {
-  // Older versions defaulted to a local test server; move anyone still on it to the real one.
-  if (server === 'ws://localhost:8080') {
+  if (OLD_SERVERS.includes(server)) {
     server = DEFAULT_SERVER;
     chrome.storage.local.set({ server });
   }

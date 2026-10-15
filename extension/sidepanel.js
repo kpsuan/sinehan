@@ -95,15 +95,15 @@ function sendProfile(ask) {
 }
 
 // ---- Profile & connection settings ----
-const DEFAULT_SERVER = 'wss://sinehan-rhua.onrender.com';
-const LEGACY_LOCAL_SERVER = 'ws://localhost:8080'; // the old default from local testing
+const DEFAULT_SERVER = 'wss://sinehan.live';
+const OLD_SERVERS = ['ws://localhost:8080', 'wss://sinehan-rhua.onrender.com']; // earlier defaults
 
 chrome.storage.local.get(['name', 'avatar', 'server', 'room']).then(({ name, avatar, server, room }) => {
   me.name = name || '';
   me.avatar = Number.isInteger(avatar) && avatar < AVATAR_COUNT ? avatar : Math.floor(Math.random() * AVATAR_COUNT);
   chrome.storage.local.set({ avatar: me.avatar });
   $('name').value = me.name;
-  $('server').value = !server || server === LEGACY_LOCAL_SERVER ? DEFAULT_SERVER : server;
+  $('server').value = !server || OLD_SERVERS.includes(server) ? DEFAULT_SERVER : server;
   $('room').value = room || '';
   renderProfiles();
 });
