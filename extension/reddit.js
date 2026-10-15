@@ -69,6 +69,14 @@
     throw lastError;
   }
 
+  // Reddit's formatting marks (**bold**, __underline__, ~~strike~~, `code`, # headings, > quotes, [text](link))
+  // as plain text, for showing.
+  const unmark = (t) => String(t || '')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/(\*\*|__|~~|\*|`)/g, '')
+    .replace(/^\s*(#{1,6}|>+)\s*/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   const norm = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 
   // ---- The episode guide ----
@@ -331,7 +339,7 @@
       .map((c) => c.data)
       .filter((d) => d && !d.over_18 && d.num_comments >= 5 && d.score >= 3)
       .map((d) => ({
-        title: d.title,
+        title: unmark(d.title),
         sub: d.subreddit_name_prefixed,
         comments: d.num_comments,
         upvotes: d.score,
@@ -385,7 +393,8 @@
     const out = [];
     let season = null;
     for (const raw of String(text || '').split(/\n+/)) {
-      const line = raw.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').trim();
+      // (Reddit's bold/underline/strike/code marks off; a leading "*" bullet stays for the list check.)
+      const line = raw.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/(\*\*|__|~~|`)/g, '').trim();
       if (!line) continue;
       let keys = [...episodesIn(line).keys()];
       const heading = line.match(/^[#*_\s]*season\s+(\d{1,2})\b/i);
@@ -416,6 +425,7 @@
         const title = guide?.byKey.get(key)?.name || '';
         if (title && norm(reason).startsWith(norm(title))) reason = reason.slice(title.length);
         reason = reason.replace(/^\s*[-–—:|,.]+\s*/, '').trim();
+        reason = unmark(reason);
         out.push({ key, reason: reason.length > 150 ? `${reason.slice(0, 150).replace(/\s\S*$/, '')}…` : reason });
       }
     }
@@ -476,7 +486,7 @@
     const d = post?.data?.children?.[0]?.data || {};
     const comments = (list?.data?.children || []).filter((c) => c.kind === 't1' && c.data?.body)
       .map((c) => ({ body: c.data.body, score: c.data.score || 0, url: `https://www.reddit.com${c.data.permalink}` }));
-    return { title: d.title || '', body: `${d.title || ''}\n${d.selftext || ''}`, sub: d.subreddit_name_prefixed || '', upvotes: d.score || 0,
+    return { title: unmark(d.title), body: `${d.title || ''}\n${d.selftext || ''}`, sub: d.subreddit_name_prefixed || '', upvotes: d.score || 0,
       comments, url: `https://www.reddit.com${d.permalink || path}` };
   }
 
