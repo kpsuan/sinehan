@@ -40,8 +40,9 @@
     .hero .wrap { flex: 1; display: flex; flex-direction: column; }
     .brand { display: inline-flex; align-items: center; gap: 8px; color: var(--text); font-size: 15px; font-weight: 600; }
     .brand img { width: 24px; height: 24px; }
-    .head { display: flex; align-items: flex-end; gap: 28px; margin-top: auto; padding-top: 48px; }
-    .poster { flex: none; width: 168px; aspect-ratio: 2 / 3; border-radius: 12px; object-fit: cover; background: var(--raised); box-shadow: 0 24px 60px rgba(0, 0, 0, .55); }
+    /* The poster is as tall as the text beside it: its top meets the kicker, its bottom the button */
+    .head { display: flex; align-items: stretch; gap: 28px; margin-top: auto; padding-top: 48px; }
+    .poster { flex: none; align-self: stretch; height: auto; width: auto; max-height: 360px; aspect-ratio: 2 / 3; border-radius: 12px; object-fit: cover; background: var(--raised); box-shadow: 0 24px 60px rgba(0, 0, 0, .55); }
     .kicker { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
     h1 { margin: 6px 0 4px; font-size: clamp(36px, 7vw, 68px); line-height: 1.02; letter-spacing: -0.035em; overflow-wrap: anywhere; text-shadow: 0 2px 24px rgba(0, 0, 0, .45); }
     .topic { margin: 0; font-size: clamp(18px, 2.4vw, 24px); font-weight: 500; color: var(--text); opacity: .92; }
@@ -108,7 +109,7 @@
     @media (max-width: 560px) {
       .hero { min-height: 0; }
       .head { gap: 16px; padding-top: 28px; align-items: flex-end; }
-      .poster { width: 92px; }
+      .poster { align-self: flex-end; width: 92px; height: auto; }
       .summary { display: none; }
       /* Phones: the key art as a banner on top, the name and button below it */
       .backdrop { inset: 0 0 auto 0; width: 100%; height: 230px; -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); }

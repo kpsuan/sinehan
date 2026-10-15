@@ -810,6 +810,7 @@ const guideId = (show, topic) => `${norm(show)}|${norm(topic)}`;
 const askP = (msg) => new Promise((r) => ask(msg, r));
 const isDone = (g, key) => !!g.done?.[key]?.v;
 
+const OPEN_ICON = '<svg viewBox="0 0 24 24"><path d="M14 4h6v6" /><path d="M20 4l-9 9" /><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" /></svg>';
 async function listGuides() {
   openGuide = null;
   const run = ++bestRun;
@@ -843,7 +844,18 @@ async function listGuides() {
     del.setAttribute('aria-label', 'Remove');
     del.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>'; // fixed markup
     del.onclick = () => ask({ type: 'guide-delete', id: x.id }, listGuides);
-    row.append(open, del);
+    // Open it as a page in a new tab (the same link works on any device).
+    const link = document.createElement('button');
+    link.type = 'button';
+    link.className = 'i-remove g-link';
+    link.title = 'Open this guide as a page';
+    link.setAttribute('aria-label', 'Open as a page');
+    link.innerHTML = OPEN_ICON; // fixed markup
+    link.onclick = async () => {
+      const g = await askP({ type: 'guide-get', id: x.id });
+      if (g) chrome.tabs.create({ url: await guidePageLink({ ...g, saved: true }) });
+    };
+    row.append(open, link, del);
     return row;
   }));
 }
@@ -921,8 +933,7 @@ const short = (text, n) => {
 // sinehan.live/guide#g=… : the guide packed into the link (squeezed, then base64url), with the party's
 // room when it's saved and you're in one, so ticks on that page sync live.
 async function guidePageLink(g) {
-  // Guides saved before they remembered their fan wiki: look it up now.
-  if (!g.wiki) g.wiki = (await Reddit.findWiki(g.show, null).catch(() => null))?.host || '';
+  // (Guides saved before they remembered their fan wiki: the page finds it by itself.)
   const data = {
     v: 1,
     id: g.id,
