@@ -372,6 +372,9 @@
     :root[data-theme='light'] .wl-start { box-shadow: 0 -12px 18px -12px rgba(16, 16, 24, .12); }
     /* Bantay's hello: a bark and a hop (tap him on the welcome screen for another) */
     #wlBantay { cursor: pointer; }
+    .wl-dog { position: relative; }
+    .intro-bark { white-space: nowrap; }
+    .wl-bark { top: -2px; right: calc(50% - 112px); font-size: 13px; }
     .hop { animation: hop .5s cubic-bezier(.3, .7, .3, 1.4); }
     @keyframes hop { 0%, 100% { transform: translateY(0); } 35% { transform: translateY(-14px) rotate(-3deg); } 65% { transform: translateY(0) rotate(2deg); } }
     .intro { display: flex; flex-direction: column; align-items: center; gap: 10px; min-height: 100%; padding: 6px 4px 4px; text-align: center; }
@@ -560,14 +563,14 @@
       <div id="names">Sinehan</div>
       <div id="status">Not connected</div>
     </div>
-    <button id="invite" class="icon" title="Copy invite link" aria-label="Copy invite link">
+    <button id="invite" class="icon" disabled title="Start a party first" aria-label="Copy invite link">
       <svg class="i-link" viewBox="0 0 24 24"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3.2-3.2a4.5 4.5 0 0 0-6.4-6.4L11.6 6" /><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3.2 3.2a4.5 4.5 0 0 0 6.4 6.4l1.6-1.6" /></svg>
       <svg class="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
     </button>
     <button id="historyBtn" class="icon" title="Past parties" aria-label="Past parties" aria-pressed="false">
       <svg viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6" /><path d="M3 4v4h4" /><path d="M12 8v4.5l3 1.8" /></svg>
     </button>
-    <button id="settingsBtn" class="icon" title="Settings" aria-label="Settings" aria-pressed="true">
+    <button id="settingsBtn" class="icon" title="Settings" aria-label="Settings" aria-pressed="false">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></svg>
     </button>
   </header>
@@ -622,7 +625,7 @@
       <div class="intro-dots" id="introDots"></div>
       <button type="button" id="introNext" class="primary wide">Next</button>
     </div>
-    <div class="wl-bantay" id="wlBantay" aria-hidden="true" title="Pat Bantay"></div>
+    <div class="wl-dog"><div class="wl-bantay" id="wlBantay" aria-hidden="true" title="Pat Bantay"></div><span class="intro-bark wl-bark" id="wlBark"></span></div>
     <svg class="pen" viewBox="0 0 520 150" role="img" aria-label="Sinehan">
       <defs>
         <linearGradient id="nib" x1="0" x2="1"><stop offset="0" stop-color="#fff" /><stop offset=".86" stop-color="#fff" /><stop offset="1" stop-color="#fff" stop-opacity="0" /></linearGradient>
@@ -659,7 +662,7 @@
     </div>
   </section>
 
-  <details id="settings" class="card" open>
+  <details id="settings" class="card">
     <summary hidden>Settings</summary>
     <div class="body">
       <section class="group">

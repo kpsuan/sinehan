@@ -219,7 +219,7 @@ const vstate = (p) =>
     await sleep(500);
     check('…only the first time', await pA.$eval('#intro', (i) => i.hidden));
     check('fresh sidebar shows "Not connected"', (await text(pA, '#status')) === 'Not connected');
-    await pA.click('#settingsBtn'); // close Settings to see the first screen
+    // (Settings starts closed: the first screen is the welcome screen)
     check(
       'first screen is the welcome screen',
       (await pA.$eval('#welcome', (w) => !w.hidden)) &&
@@ -1397,7 +1397,9 @@ const vstate = (p) =>
     );
     await pC.click('#advanced summary');
     await pC.fill('#room', '');
-    await pC.click('#invite');
+    check('link icon is off with no party', await pC.$eval('#invite', (b) => b.disabled));
+    await pC.click('#settingsBtn');
+    await pC.click('#wlStart');
     check(
       'invite with no room creates a hard-to-guess one',
       await until(async () => /^party-[a-z2-9]{20}$/.test(await pC.inputValue('#room'))),

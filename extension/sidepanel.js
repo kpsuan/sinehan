@@ -290,20 +290,27 @@ $('settings').addEventListener('toggle', () =>
 // He hops in, barks hello, then walks you through the three steps. Tap him on the welcome screen for
 // another bark.
 const INTRO = [
-  { pose: 'happy', bark: 'Woof!', title: 'Hi, I’m Bantay.', text: 'I keep watch while the two of you watch together, from two places.' },
-  { pose: 'guard', title: 'Open your show', text: 'YouTube, Netflix, Prime Video or almost any site with a video. Keep this sidebar open beside it.' },
-  { pose: 'sit', bark: 'Arf!', title: 'Start a party, send the link', text: 'Your invite link is copied for you. They tap it and land on the same show, at the same scene.' },
-  { pose: 'lying', title: 'Watch together', text: 'Play, pause and skip stay in sync. Chat, call, take CR breaks and pick what’s next, right here.' },
+  { pose: 'happy', bark: ['Woof!', 'U・ᴥ・U'], title: 'Hi, I’m Bantay.', text: 'I keep watch while the two of you watch together, from two places.' },
+  { pose: 'guard', bark: ['(•ᴥ•)?'], title: 'Open your show', text: 'YouTube, Netflix, Prime Video or almost any site with a video. Keep this sidebar open beside it.' },
+  { pose: 'sit', bark: ['Arf!', 'Arf!'], title: 'Start a party, send the link', text: 'Your invite link is copied for you. They tap it and land on the same show, at the same scene.' },
+  { pose: 'lying', bark: ['(ᵔᴥᵔ)'], title: 'Watch together', text: 'Play, pause and skip stay in sync. Chat, call, take CR breaks and pick what’s next, right here.' },
 ];
 let introStep = 0;
-function bark(text = 'Woof!') {
-  const b = $('introBark');
-  b.textContent = text;
-  b.classList.remove('on');
-  void b.offsetWidth;
-  b.classList.add('on');
-  clearTimeout(bark.t);
-  bark.t = setTimeout(() => b.classList.remove('on'), 1400);
+// Barks (and dog kaomoji), one after another: each pops up with a little hop.
+const BARKS = [['Arf!', 'Arf!'], ['Woof!'], ['U・ᴥ・U'], ['(ᵔᴥᵔ)'], ['Woof!', '(•ᴥ•)'], ['Arf!', 'U・ᴥ・U']];
+function bark(lines = ['Woof!'], bubble = $('introBark'), dog = $('introDog')) {
+  const list = Array.isArray(lines) ? lines : [lines];
+  clearTimeout(bubble.t);
+  (bubble.timers || []).forEach(clearTimeout);
+  bubble.timers = list.map((text, i) => setTimeout(() => {
+    bubble.textContent = text;
+    bubble.classList.remove('on');
+    void bubble.offsetWidth;
+    bubble.classList.add('on');
+    if (i > 0) hop(dog);
+    clearTimeout(bubble.t);
+    bubble.t = setTimeout(() => bubble.classList.remove('on'), i === list.length - 1 ? 1400 : 900);
+  }, i * 520));
 }
 function hop(el) {
   el.classList.remove('hop');
@@ -352,10 +359,13 @@ $('introNext').onclick = () => {
 $('introSkip').onclick = endIntro;
 $('introDog').onclick = () => {
   hop($('introDog'));
-  bark(INTRO[introStep].bark || 'Woof!');
+  bark(BARKS[Math.floor(Math.random() * BARKS.length)]);
 };
 // On the welcome screen: tap Bantay, he hops and wags.
-$('wlBantay').onclick = () => hop($('wlBantay'));
+$('wlBantay').onclick = () => {
+  hop($('wlBantay'));
+  bark(BARKS[Math.floor(Math.random() * BARKS.length)], $('wlBark'), $('wlBantay'));
+};
 chrome.storage.local.get('introSeen').then(({ introSeen }) => {
   if (!introSeen && !status.room) startIntro();
 });
@@ -408,6 +418,9 @@ function showStatus(s) {
   const prev = status;
   const wasConnected = prev.connected;
   status = s;
+  // The link icon copies this party's invite; with no party yet, "Start a party" makes one.
+  $('invite').disabled = !s.room;
+  $('invite').title = s.room ? 'Copy invite link' : 'Start a party first';
 
   // An invite link may have moved us to another room/server: reflect it, but never over what someone is typing.
   if (s.room && s.room !== prev.room && document.activeElement !== $('room')) $('room').value = s.room;
