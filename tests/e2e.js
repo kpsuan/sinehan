@@ -1116,6 +1116,8 @@ const vstate = (p) =>
       { id: 'tv:2', kind: 'show', title: 'Bravo', sub: '2021', summary: '', image: '', url: 'https://example.com/bravo', where: '' },
       { id: 'tv:3', kind: 'show', title: 'Charlie', sub: '2022', summary: '', image: '', url: 'https://example.com/charlie', where: '' },
     ]; showBest(true); setEpisodesMode('tonight'); });
+    check('each deck menu is named', await pA.$$eval('.tn-field span', (s) => s.map((x) => x.textContent).join('|')) === 'Genre or origin|Streaming on|Watching from|Shows or movies');
+    if (process.env.SHOT) await pA.locator('.tn').screenshot({ path: process.env.SHOT });
     await pA.locator('.tn button.primary.wide').click();
     check('dealing a deck reaches them', await until(() => pB2.locator('.tn-card').count().then((n) => n > 0)));
     check('…with a note in their chat', (await logLines(pB2)).some((l) => /dealt a deck/.test(l.text)));

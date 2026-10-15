@@ -1295,7 +1295,10 @@ function renderTonight() {
         renderTonight();
       });
     };
-    out.push(el('div', { className: 'tn-row' }, genre, platform), el('div', { className: 'tn-row' }, country, kind), deal,
+    // Each menu with its name above it ("Filipino" is a genre, "Philippines" is where you are).
+    const field = (label, m) => el('label', { className: 'tn-field' }, el('span', { textContent: label }), m);
+    out.push(el('div', { className: 'tn-row' }, field('Genre or origin', genre), field('Streaming on', platform)),
+      el('div', { className: 'tn-row' }, field('Watching from', country), field('Shows or movies', kind)), deal,
       el('p', { className: 'tn-credit', textContent: 'Picks and where they stream come from TMDB and JustWatch. Not endorsed by TMDB.' }));
     $('bestResults').replaceChildren(el('div', { className: 'tn' }, ...out));
     return;
