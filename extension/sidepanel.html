@@ -351,6 +351,15 @@
     .cmd-menu b { font-weight: 600; }
     .cmd-menu span { color: var(--muted); }
 
+    /* Sealed "Who did it?" guesses, pinned above the chat so they're easy to reveal after a long chat */
+    .sealed-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--soft); font-size: 12px; }
+    .sealed-bar[hidden] { display: none; }
+    .sealed-bar svg { flex: none; width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+    .sealed-bar span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sealed-bar button { flex: none; padding: 4px 10px; font-size: 12px; }
+    .guess-card.found { animation: found 1.4s ease; }
+    @keyframes found { 30% { box-shadow: 0 0 0 2px var(--accent); } }
+
     /* Emoji tray */
     .tray { border-top: 1px solid var(--line); background: var(--soft); max-height: 280px; overflow-y: auto; padding: 10px 12px;
       scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
@@ -774,6 +783,7 @@
   </section>
 
   <section class="card chat">
+    <div id="sealedBar" class="sealed-bar" hidden></div>
     <div id="log"></div>
     <div id="guessTray" class="tray guess-tray" hidden>
       <div class="gt-head"><b>Who did it?</b><span id="guessShow"></span></div>

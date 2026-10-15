@@ -837,6 +837,16 @@ function playbackLine(who, action, time) {
         ? `${who} pressed play at ${at}`
         : `${who} jumped to ${at}`;
   const log = $('log');
+  const recent = (ms) => lastPlayback?.who === who && Date.now() - lastPlayback.at < ms && lastPlayback.el === log.lastElementChild;
+
+  // One skip on players like Prime is pause, jump, play in a second or two: show it as the jump alone.
+  // (A real pause, then a jump while paused, keeps both lines.)
+  if (action === 'play' && lastPlayback?.action === 'seeked' && lastPlayback.pauseEl && recent(3000)) {
+    lastPlayback.pauseEl.remove();
+    lastPlayback.pauseEl = null;
+    return;
+  }
+  const pauseEl = action === 'seeked' && lastPlayback?.action === 'pause' && recent(2000) ? lastPlayback.el : null;
 
   // Quick repeated jumps by the same person (scrubbing) update one line; pause and play always get their own.
   if (
@@ -852,7 +862,7 @@ function playbackLine(who, action, time) {
   }
   addChat('', text, 'system');
   log.lastElementChild.classList.add('playback');
-  lastPlayback = { who, action, el: log.lastElementChild, at: Date.now() };
+  lastPlayback = { who, action, el: log.lastElementChild, at: Date.now(), pauseEl };
 }
 
 // ---- Chat ----
@@ -2209,9 +2219,42 @@ function loadGuesses() {
     guesses = new Map(r.list.map((g) => [g.id, g]));
     revealWants = r.wants || {};
     document.querySelectorAll('.guess-card[data-guess]').forEach(drawGuessCard);
+    drawSealedBar();
   });
 }
 loadGuesses();
+
+// Sealed guesses waiting to be revealed, pinned above the chat: reveal from here, or jump to the card.
+function drawSealedBar() {
+  const sealed = [...guesses.values()].filter((g) => !g.revealed && Date.now() - (g.at || 0) < 24 * 3600 * 1000);
+  $('sealedBar').hidden = !sealed.length;
+  if (!sealed.length) return;
+  const show = sealed[sealed.length - 1].show;
+  const forShow = sealed.filter((g) => g.show === show);
+  const w = revealWants[show] || {};
+  const text = Object.assign(document.createElement('span'), {
+    textContent: `${forShow.length} sealed guess${forShow.length === 1 ? '' : 'es'} · ${forShow[0].showName || 'Who did it?'}`,
+  });
+  const find = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Find' });
+  find.onclick = () => {
+    const card = [...document.querySelectorAll('#log .guess-card[data-guess]')].find((c) => forShow.some((g) => g.id === c.dataset.guess));
+    if (!card) return;
+    card.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    card.classList.remove('found');
+    void card.offsetWidth;
+    card.classList.add('found');
+  };
+  const reveal = Object.assign(document.createElement('button'), { type: 'button', className: 'primary' });
+  if (w.me) {
+    reveal.textContent = `Waiting for ${peer?.name || 'them'}`;
+    reveal.disabled = true;
+  } else {
+    reveal.textContent = w.them ? 'They want to reveal · Reveal' : 'Reveal';
+    reveal.onclick = () => ask({ type: 'guess-reveal', show });
+  }
+  $('sealedBar').innerHTML = LOCK_ICON; // fixed markup
+  $('sealedBar').append(text, find, reveal);
+}
 const currentShowName = () => (status.watch ? inviteTitle(status.watch.showTitle || status.watch.title) : '');
 
 function drawGuessCard(card) {

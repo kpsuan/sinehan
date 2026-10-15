@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
   <meta name="theme-color" content="#0c0a10" />
   <title>sinehan · chat & remote</title>
   <link rel="icon" href="/static/logo.png" />
@@ -86,6 +86,11 @@
     .reacts button { flex: 1; height: 42px; font-size: 22px; background: var(--raised); }
     form { display: flex; gap: 8px; }
     form button { flex: none; width: 48px; display: grid; place-items: center; background: var(--accent); color: var(--ink); }
+    /* Typing: the keyboard takes the bottom of the screen, so the chat gets all of what's left */
+    body.typing .app { height: var(--vvh, 100dvh); min-height: 0; overflow: hidden; }
+    body.typing #main { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+    body.typing #main > section:not(.chat), body.typing .leave, body.typing header { display: none; }
+    body.typing .chat { margin-top: 0 !important; min-height: 0; }
     .leave { align-self: center; padding: 8px 14px; background: none; color: var(--faint); font-size: 13px; }
   </style>
 </head>
@@ -141,6 +146,33 @@
   </div>
 
   <script>
+    // The keyboard: while typing, fit the page to the space above it (visualViewport) and keep the newest
+    // messages and the message box in view.
+    (() => {
+      const msg = document.getElementById('msg');
+      const log = document.getElementById('log');
+      const vv = window.visualViewport;
+      const fit = () => {
+        document.documentElement.style.setProperty('--vvh', `${Math.round(vv ? vv.height : innerHeight)}px`);
+        if (!document.body.classList.contains('typing')) return;
+        window.scrollTo(0, 0);
+        log.scrollTop = log.scrollHeight;
+      };
+      vv?.addEventListener('resize', fit);
+      vv?.addEventListener('scroll', fit);
+      msg.addEventListener('focus', () => {
+        document.body.classList.add('typing');
+        fit();
+        setTimeout(fit, 350); // after the keyboard has finished opening
+      });
+      msg.addEventListener('blur', () =>
+        setTimeout(() => document.activeElement !== msg && document.body.classList.remove('typing'), 120),
+      );
+      // Send and the quick reactions keep the keyboard up (a tap would otherwise close it first).
+      for (const el of [document.querySelector('#form button'), document.getElementById('reacts')])
+        el.addEventListener('pointerdown', (e) => e.preventDefault());
+    })();
+
     // Phone companion: joins the room as a "companion" (doesn't count as a person watching),
     // shows what's playing, and sends chat, reactions and remote commands to the laptops.
     (() => {

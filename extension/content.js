@@ -136,11 +136,13 @@ function onVideoEvent(e) {
   if (e.type === 'waiting') return onWaiting();
   if (e.type === 'playing') return onPlaying();
   if (e.type === 'pause') clearTimeout(stallTimer);
+  // Our player following their change fires its own events: skip those. While it jumps to their spot, some
+  // players (Prime) briefly pause and play again; those are part of the jump, not something we did.
   if (
     applied &&
     Date.now() < applied.until &&
-    video.paused === applied.paused &&
-    Math.abs(video.currentTime - applied.time) < 1.5
+    Math.abs(video.currentTime - applied.time) < 2 &&
+    (video.paused === applied.paused || (applied.seek && (e.type === 'seeked' || (e.type === 'pause' && !applied.paused))))
   )
     return;
   applied = null; // a real local action: from here on nothing is an echo of the old remote change
@@ -295,7 +297,7 @@ function onRemote(msg) {
   if (myAd) return; // we're in an ad; we'll ask where they are once it ends
 
   const delta = msg.time - video.currentTime;
-  applied = { paused: !!msg.paused, time: msg.time, until: Date.now() + 1500 };
+  applied = { paused: !!msg.paused, time: msg.time, until: Date.now() + 2500, seek: Math.abs(delta) > 1 };
   if (Math.abs(delta) > 1) seek(msg.time);
   if (msg.paused) video.pause();
   else video.play().catch(() => toast('Click the video once so the browser lets it autoplay'));

@@ -1126,6 +1126,7 @@ const vstate = (p) =>
     check('locking a guess posts a sealed card', await until(async () => (await card(pB2).count()) > 0 && /locked a guess/i.test(await card(pB2).innerText())));
     check('…they can’t see who you picked', !/butler|too quiet/i.test(await card(pB2).innerText()));
     check('…you can', await until(async () => /Your guess: The butler/.test(await card(pA).innerText())));
+    check('a sealed guess is pinned above the chat, to reveal from there', await until(() => pB2.evaluate(() => !$('sealedBar').hidden && /1 sealed guess/.test($('sealedBar').textContent) && /Reveal/.test($('sealedBar').textContent))));
     await card(pB2).locator('.gq-actions button').click();
     check('one side asking to reveal is shown to the other', await until(async () => /wants to reveal/i.test(await card(pA).innerText())));
     check('…but nothing opens yet', !/The butler/.test(await card(pB2).innerText()));
@@ -1360,6 +1361,15 @@ const vstate = (p) =>
       await until(async () => !(await phone.$eval('#title', (t) => t.classList.contains('none')))),
     );
 
+    // The keyboard opening (the visible area shrinks): the chat fits above it, the message box in view.
+    await phone.focus('#msg');
+    await phone.setViewportSize({ width: 390, height: 420 });
+    await sleep(500);
+    check('phone: typing fits the chat above the keyboard', await phone.evaluate(() => {
+      const box = document.getElementById('msg').getBoundingClientRect();
+      return document.body.classList.contains('typing') && box.bottom <= innerHeight && box.top > 0;
+    }));
+    await phone.setViewportSize({ width: 390, height: 844 });
     await phone.fill('#msg', 'hi from my phone');
     await phone.press('#msg', 'Enter');
     check(
@@ -1378,6 +1388,8 @@ const vstate = (p) =>
       'phone: sees the show playing',
       await until(async () => (await phone.textContent('#clock')).startsWith('Playing')),
     );
+    await phone.evaluate(() => document.activeElement?.blur()); // keyboard down: the remote is back
+    check('phone: the remote comes back when the keyboard closes', await until(() => phone.locator('#playBtn').isVisible()));
     await phone.click('#playBtn');
     check(
       'phone remote: pause stops both laptops',
