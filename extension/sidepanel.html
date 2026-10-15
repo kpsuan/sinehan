@@ -148,18 +148,22 @@
     @keyframes pulse { 0% { transform: scale(1); } 40% { transform: scale(1.25); } 100% { transform: scale(1); } }
 
     /* What we're watching + together actions */
-    #watchBar { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; }
-    #watchIcon { width: 16px; height: 16px; border-radius: 4px; flex: none; }
-    .wb-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    #watchBar { display: flex; flex-direction: column; gap: 8px; padding: 10px 8px 8px; }
+    .wb-show { display: flex; align-items: flex-start; gap: 8px; padding: 0 4px; }
+    #watchIcon { width: 16px; height: 16px; margin-top: 2px; border-radius: 4px; flex: none; }
+    .wb-text { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
+    .wb-text > * { max-width: 100%; }
+    #watchHere { margin-top: 2px; padding: 0; border: 0; background: none; color: var(--accent); font-size: 12px; font-weight: 500; }
+    #watchHere:hover:not(:disabled) { background: none; text-decoration: underline; }
+    .wb-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+    .act { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 2px 6px; border-color: transparent; color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .act:hover:not(:disabled) { color: var(--text); }
+    .act svg { width: 16px; height: 16px; }
+    .act b { height: 16px; font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: .02em; color: var(--text); }
     .wb-label { font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
     #watchTitle { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     #watchTitle.none { color: var(--muted); }
-    #watchHere { font-size: 12px; padding: 5px 9px; flex: none; }
-    #handBtn, #countdownBtn, #breakBtn { flex: none; font-size: 12px; padding: 5px 8px; }
-    #handBtn svg, #breakBtn svg, #bestBtn svg { width: 16px; height: 16px; }
-    #bestBtn { flex: none; padding: 5px 8px; }
     #remoteMic svg { width: 14px; height: 14px; }
-    #countdownBtn { font-weight: 600; letter-spacing: .02em; }
     #handBtn.sent { animation: pulse .6s ease-out; }
     #followBar { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; border-color: rgba(201, 182, 242, .3); }
     #followText { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -262,7 +266,7 @@
     #wlJoin { display: flex; gap: 6px; }
     #wlJoin input { flex: 1; min-width: 0; }
     .wl-error { margin: 8px 0 0; color: var(--danger); font-size: 12px; }
-    #breakBtn.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+    #breakBtn.on, #breakBtn.on:hover { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
     @media (prefers-reduced-motion: reduce) { #welcome .nibRect { animation: none; transform: translateX(560px); } }
 
     /* Past parties (history) */
@@ -293,7 +297,7 @@
     .ep { display: flex; gap: 10px; padding: 10px; margin-bottom: 6px; border-radius: 7px; background: var(--soft); }
     .ep .e-rank { flex: none; width: 18px; color: var(--faint); font-weight: 600; font-variant-numeric: tabular-nums; }
     .ep .e-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-    .ep .e-head { display: flex; align-items: baseline; gap: 8px; }
+    .ep .e-head { display: flex; flex-direction: column; gap: 1px; }
     .ep .e-label { font-weight: 600; }
     .ep .e-count { font-size: 12px; color: var(--muted); }
     .ep .e-quote { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
@@ -328,16 +332,20 @@
   <div id="inviteBox" class="card" hidden><input id="inviteLink" readonly /></div>
 
   <div id="watchBar" class="card" hidden>
-    <img id="watchIcon" alt="" hidden />
-    <div class="wb-text">
-      <span class="wb-label">Watching</span>
-      <span id="watchTitle">Nothing yet</span>
+    <div class="wb-show">
+      <img id="watchIcon" alt="" hidden />
+      <div class="wb-text">
+        <span class="wb-label">Watching</span>
+        <span id="watchTitle">Nothing yet</span>
+        <button id="watchHere" hidden title="Make the tab you're on the show you're watching together">Watch this tab instead</button>
+      </div>
     </div>
-    <button id="watchHere" hidden title="Make the tab you're on the show you're watching together">Watch here</button>
-    <button id="bestBtn" class="icon" title="Best episodes, according to Reddit"><svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-.9z" /></svg></button>
-    <button id="handBtn" class="icon" title="Hold their hand"><svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></svg></button>
-    <button id="countdownBtn" class="icon" title="Count down 3-2-1 and play together">3·2·1</button>
-    <button id="breakBtn" class="icon" title="CR break: pause for both of you"><svg viewBox="0 0 24 24"><path d="M14 4H6v16h8" /><path d="M14 4l5 2v14l-5-2z" /><path d="M11 12h.01" /></svg></button>
+    <div class="wb-actions">
+      <button id="bestBtn" class="act" title="Best episodes, according to Reddit"><svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-.9z" /></svg><span>Episodes</span></button>
+      <button id="handBtn" class="act" title="Hold their hand"><svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></svg><span>Hold hand</span></button>
+      <button id="countdownBtn" class="act" title="Count down 3-2-1 and play together"><b>3·2·1</b><span>Count in</span></button>
+      <button id="breakBtn" class="act" title="CR break: pause for both of you"><svg viewBox="0 0 24 24"><path d="M14 4H6v16h8" /><path d="M14 4l5 2v14l-5-2z" /><path d="M11 12h.01" /></svg><span id="breakLabel">Break</span></button>
+    </div>
   </div>
   <div id="followBar" class="card" hidden>
     <span id="followText"></span>

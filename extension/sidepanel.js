@@ -386,12 +386,13 @@ async function renderWatch() {
     $('backdrop').classList.remove('on');
     return;
   }
-  $('watchTitle').textContent = w ? w.showTitle || w.title || w.url : 'Nothing yet. Open a show and click Watch here.';
+  $('watchTitle').textContent = w ? w.showTitle || w.title || w.url : 'Nothing yet. Open a show and click Watch this tab.';
   $('watchTitle').classList.toggle('none', !w);
   $('watchIcon').hidden = !w?.favIconUrl;
   if (w?.favIconUrl && $('watchIcon').src !== w.favIconUrl) $('watchIcon').src = w.favIconUrl;
   [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true }).catch(() => []);
   $('watchHere').hidden = !(activeTab?.url?.startsWith('http') && activeTab.id !== w?.tabId);
+  $('watchHere').textContent = w ? 'Watch this tab instead' : 'Watch this tab';
   $('countdownBtn').disabled = !w || !(status.connected && status.peers > 1);
   $('breakBtn').disabled = !onBreak && !(status.connected && status.peers > 1);
   $('handBtn').disabled = !(status.connected && status.peers > 1);
@@ -422,15 +423,13 @@ $('countdownBtn').onclick = () => send({ local: true, type: 'countdown-start' })
 
 // CR break: the show's tab pauses both of you; "I'm back" counts you both back in.
 let onBreak = false;
-const BREAK_ICON = $('breakBtn').innerHTML;
 $('breakBtn').onclick = () => {
   if (!status.watch) return addChat('', 'Open your show first (or click Watch here), then take a break.', 'system');
   send({ local: true, type: 'break-toggle' });
 };
 function renderBreak() {
   $('breakBtn').classList.toggle('on', onBreak);
-  if (onBreak) $('breakBtn').textContent = 'I’m back';
-  else $('breakBtn').innerHTML = BREAK_ICON; // fixed icon markup from this file
+  $('breakLabel').textContent = onBreak ? 'I’m back' : 'Break';
   $('breakBtn').title = onBreak ? 'End your break: count down 3-2-1 and play' : 'CR break: pause for both of you';
 }
 
@@ -637,6 +636,12 @@ function tidyTitle(title) {
     .trim();
 }
 
+// 1234 → "1.2k"
+function shortNum(n) {
+  n = Number(n) || 0;
+  return n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(/\.0$/, '')}k` : String(n);
+}
+
 function note(text, button) {
   const el = document.createElement('div');
   el.className = 'b-note';
@@ -682,14 +687,15 @@ async function askReddit() {
       head.className = 'e-head';
       const labelEl = document.createElement('span');
       labelEl.className = 'e-label';
-      labelEl.textContent = ep.label;
+      labelEl.textContent = ep.title ? `${ep.label} · ${ep.title}` : ep.label;
       const count = document.createElement('span');
       count.className = 'e-count';
-      count.textContent = `${ep.mentions} mention${ep.mentions === 1 ? '' : 's'}`;
+      count.textContent = `${ep.mentions} mention${ep.mentions === 1 ? '' : 's'} · ${shortNum(ep.upvotes)} upvotes`
+        + (ep.described ? ` · ${ep.described === ep.mentions ? 'matched from what people describe' : `${ep.described} matched from descriptions`}` : '');
       head.append(labelEl, count);
       const quote = document.createElement('span');
       quote.className = 'e-quote';
-      quote.textContent = ep.quote;
+      quote.textContent = ep.quoteUpvotes ? `${ep.quote} (${shortNum(ep.quoteUpvotes)} upvotes)` : ep.quote;
       const actions = document.createElement('div');
       actions.className = 'e-actions';
       const read = document.createElement('button');
@@ -701,7 +707,7 @@ async function askReddit() {
       share.textContent = 'Share in chat';
       share.disabled = !status.connected;
       share.onclick = () => {
-        sendChat(`Reddit’s pick for ${r.show}: ${ep.label} (${ep.mentions} mention${ep.mentions === 1 ? '' : 's'})`);
+        sendChat(`Reddit’s pick for ${r.show}: ${ep.label}${ep.title ? ` “${ep.title}”` : ''} (${shortNum(ep.upvotes)} upvotes)`);
         share.textContent = 'Shared';
         share.disabled = true;
       };
@@ -729,7 +735,7 @@ async function askReddit() {
       title.textContent = t.title;
       const meta = document.createElement('span');
       meta.className = 't-meta';
-      meta.textContent = `${t.sub} · ${t.comments} comments`;
+      meta.textContent = `${t.sub} · ${shortNum(t.upvotes)} upvotes · ${shortNum(t.comments)} comments`;
       b.append(title, meta);
       b.onclick = () => openTab(t.url);
       box.append(b);

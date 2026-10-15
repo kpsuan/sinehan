@@ -150,13 +150,42 @@
     /* Install + end */
     .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
     .step { padding: 24px; border-radius: 14px; background: var(--panel); color: var(--muted); font-size: 15px; }
-    .step .n { display: block; margin-bottom: 18px; color: var(--accent); font-weight: 600; }
+    .step .n { display: block; margin-bottom: 10px; color: var(--accent); font-weight: 600; }
+
+    /* Privacy: one panel, three promises */
+    .promises { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 8px; border-radius: 16px; background: var(--panel); }
+    .promise { padding: 26px 24px 28px; border-radius: 11px; }
+    .promise:hover { background: var(--panel-2); }
+    .promise b { display: block; margin: 18px 0 6px; font-size: 17px; font-weight: 500; }
+    .promise p { margin: 0; color: var(--muted); font-size: 15px; }
+    .p-icon { width: 42px; height: 42px; border-radius: 11px; display: grid; place-items: center; background: rgba(180, 156, 255, .12); color: var(--accent); }
+    .p-icon svg, .art svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+    /* Install: each step shows what you'll see */
+    .art { height: 128px; margin-bottom: 22px; border-radius: 10px; background: var(--panel-2); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+      color: var(--text); font-size: 13px; }
+    .a-file { display: flex; align-items: center; gap: 8px; padding: 9px 10px 9px 12px; border-radius: 9px; background: var(--bg); }
+    .a-file svg { color: var(--muted); }
+    .a-down { display: grid; place-items: center; width: 26px; height: 26px; margin-left: 4px; border-radius: 7px; background: var(--accent); color: #1b1325; }
+    .a-down svg { width: 15px; height: 15px; color: inherit; }
+    .a-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 9px; background: var(--bg); }
+    .a-toggle { position: relative; width: 30px; height: 17px; border-radius: 999px; background: var(--accent); }
+    .a-toggle::after { content: ''; position: absolute; right: 2px; top: 2px; width: 13px; height: 13px; border-radius: 50%; background: #fff; }
+    .a-btn { padding: 6px 12px; border-radius: 7px; background: rgba(180, 156, 255, .16); color: var(--accent); font-weight: 500; }
+    .a-side { gap: 8px; font-weight: 600; }
+    .a-side img { width: 18px; height: 18px; }
+    .a-link { display: grid; place-items: center; width: 28px; height: 28px; margin-left: 14px; border-radius: 7px; background: rgba(159, 214, 176, .14); color: #9fd6b0; }
+    .a-link svg { width: 15px; height: 15px; }
+    .a-copied { padding: 3px 9px; border-radius: 6px; background: var(--bg); color: var(--muted); font-size: 12px; }
+    .install-cta { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 14px 18px; margin-top: 28px; color: var(--faint); font-size: 14px; }
     .step b { color: var(--text); font-weight: 500; }
     code { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--panel-2); color: var(--text); padding: 2px 6px; border-radius: 5px; }
     .end { position: relative; isolation: isolate; overflow: hidden; margin: 120px 0 0; padding: 88px 24px 92px; border-radius: 16px; text-align: center; background: var(--panel); }
-    .end::before { content: ''; position: absolute; inset: -40px; z-index: -2; background: url(/static/film-sintel.webp) center / cover; filter: blur(28px) saturate(1.35) brightness(.45); }
+    /* A still from the movie, dimmed like the lights just went down. */
+    .end::before { content: ''; position: absolute; inset: -20px; z-index: -2; background: url(/static/film-bridge.webp) center 60% / cover;
+      filter: blur(5px) saturate(1.25) brightness(.5); }
     .end::after { content: ''; position: absolute; inset: 0; z-index: -1;
-      background: radial-gradient(70% 90% at 50% 110%, rgba(180, 156, 255, .2), transparent 70%), linear-gradient(rgba(16, 14, 14, .25), rgba(16, 14, 14, .55)); }
+      background: radial-gradient(75% 85% at 50% 50%, rgba(16, 14, 14, .55), rgba(16, 14, 14, .92)); }
     .end-logo { display: block; width: 44px; height: 44px; margin: 0 auto 22px; }
     .end h2 { margin: 0 0 10px; font-size: clamp(34px, 4vw, 48px); line-height: 1.12; }
     .end p { margin: 0 0 30px; color: var(--muted); font-size: 18px; }
@@ -210,6 +239,32 @@
     .mp-msg { align-self: flex-start; margin-top: 3px; padding: 6px 9px; border-radius: 10px 10px 10px 3px; background: #1f1927; opacity: 0; transform: translateY(6px); transition: opacity .4s, transform .4s; }
     .mp-msg.on { opacity: 1; transform: none; }
 
+    /* Best episodes (Reddit) */
+    .best { position: relative; padding: 0; }
+    .visual .best-frame { min-height: 580px; }
+    .best-frame::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(16, 14, 14, .1), rgba(16, 14, 14, .55)); }
+    .best-panel { position: absolute; right: 6%; top: 50%; transform: translateY(-50%); width: 300px; padding: 14px; border-radius: 12px;
+      background: rgba(18, 14, 24, .78); backdrop-filter: blur(18px) saturate(140%); box-shadow: 0 30px 80px rgba(0, 0, 0, .5);
+      display: flex; flex-direction: column; gap: 8px; color: #efeaf6; font-size: 12px; }
+    .bp-head { display: flex; align-items: center; gap: 7px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #9a90aa; }
+    .bp-head b { font-weight: 600; }
+    .bp-head svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+    .bp-search { display: flex; gap: 6px; }
+    .bp-search .bp-q { flex: 1; min-height: 32px; padding: 7px 10px; border-radius: 7px; background: rgba(255, 255, 255, .06); }
+    .bp-search b { flex: none; padding: 7px 10px; border-radius: 7px; background: #c9b6f2; color: #1b1325; font-weight: 600; transition: transform .1s, filter .1s; }
+    .bp-search b.tap { transform: scale(.94); filter: brightness(1.15); }
+    .bp-reading { color: #9a90aa; height: 0; opacity: 0; overflow: hidden; transition: opacity .3s; }
+    .bp-reading.on { height: auto; opacity: 1; }
+    .bp-ep { display: flex; gap: 10px; padding: 9px 10px; border-radius: 8px; background: rgba(255, 255, 255, .04); opacity: 0; transform: translateY(8px); transition: opacity .45s, transform .45s; }
+    .bp-ep.on { opacity: 1; transform: none; }
+    .bp-ep i { font-style: normal; color: #6d6479; font-weight: 600; }
+    .bp-ep div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .bp-ep small { color: #9a90aa; font-size: 11px; }
+    .bp-ep p { margin: 0; color: #b9b0c7; font-size: 11.5px; }
+    .bp-ep.picked { background: rgba(201, 182, 242, .16); }
+    .bp-shared { align-self: center; padding: 5px 10px; border-radius: 999px; background: rgba(159, 214, 176, .14); color: #9fd6b0; font-size: 11px; opacity: 0; transition: opacity .4s; }
+    .bp-shared.on { opacity: 1; }
+
     /* ---------- Motion ---------- */
     .reveal { opacity: 0; transform: translateY(26px); transition: opacity .9s ease, transform .9s cubic-bezier(.2, .7, .2, 1); }
     .reveal.in { opacity: 1; transform: none; }
@@ -254,12 +309,15 @@
       .frame { min-height: 300px; }
       .row { grid-template-columns: 1fr; gap: 14px; padding-top: 88px; }
       .row .tag { justify-self: start; }
-      .pair, .steps { grid-template-columns: 1fr; }
+      .pair, .steps, .promises { grid-template-columns: 1fr; }
+      .promise { padding: 22px 18px; }
       .f-top { grid-template-columns: 1fr; gap: 36px; }
       .f-cols { grid-template-columns: repeat(2, 1fr); }
       .f-word { margin-top: 48px; }
       .phones { gap: 16px; padding: 24px 12px; }
       .couch-frame { min-height: 300px; }
+      .visual .best-frame { min-height: 260px; }
+      .best-panel { position: relative; right: auto; top: auto; transform: none; width: auto; margin: -120px 14px 14px; }
       .mini-phone { position: relative; right: auto; bottom: auto; margin: -60px auto 20px; }
       .phone { width: 46%; }
       .chat { width: 230px; right: 12px; bottom: 12px; }
@@ -282,7 +340,7 @@
       </nav>
 
       <div class="hero2-inner">
-        <a class="announce" href="#how"><span class="new">New</span> CR breaks and a 3·2·1 countdown <span class="arr">→</span></a>
+        <a class="announce" href="#best-row"><span class="new">New</span> Best episodes, picked by Reddit <span class="arr">→</span></a>
         <h1 class="display"><span class="w">a</span> <span class="w" style="animation-delay:.07s">movie</span> <span class="w" style="animation-delay:.14s">theater</span> <span class="w" style="animation-delay:.21s">for</span> <span class="w" style="animation-delay:.28s">two.</span></h1>
         <p class="lead2"><b>Sinehan</b> is Tagalog for cinema. Watch the same show at the same second from two places, with a chat and a video call beside it.</p>
         <div class="actions2">
@@ -401,16 +459,36 @@
       </div>
     </section>
 
+    <section id="best-row">
+      <div class="row">
+        <h2 class="display">Ask Reddit for the best episodes<br /><span>before you pick tonight's.</span></h2>
+        <p><b>Tap the star</b> and Sinehan reads what Reddit says about your show, then ranks the episodes people name most, weighted by upvotes. Share a pick straight into your chat.</p>
+        <span class="tag">Episodes</span>
+      </div>
+      <div class="visual best" id="best">
+        <div class="frame best-frame" style="--img:url(/static/film-canal.webp)"></div>
+        <div class="best-panel" aria-hidden="true">
+          <div class="bp-head"><svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-.9z" /></svg><b>Best episodes</b></div>
+          <div class="bp-search"><span class="bp-q"></span><b>Ask Reddit</b></div>
+          <div class="bp-reading">Reading Reddit…</div>
+          <div class="bp-ep"><i>1</i><div><b>S2 E6</b><small>34 mentions · 5.1k upvotes</small><p>The lighthouse episode is perfect television. No notes.</p></div></div>
+          <div class="bp-ep"><i>2</i><div><b>S1 E9</b><small>21 mentions · 2.8k upvotes</small><p>That finale had our whole group chat screaming.</p></div></div>
+          <div class="bp-ep"><i>3</i><div><b>S3 E4</b><small>12 mentions · 1.4k upvotes</small><p>Underrated. The one-take scene in the market…</p></div></div>
+          <div class="bp-shared">Shared in chat: S2 E6</div>
+        </div>
+      </div>
+    </section>
+
     <section id="private">
       <div class="row">
         <h2 class="display">Just the two of you<br /><span>no accounts, nothing tracked.</span></h2>
         <p>No sign-up, no email, no location. You pick <b>a name and a picture</b>, and they stay in your browser.</p>
         <span class="tag">Private</span>
       </div>
-      <div class="steps">
-        <div class="step"><span class="n">No account</span><b>A name and a link.</b> That's all it takes to start or join. Nothing to sign up for, no password to forget.</div>
-        <div class="step"><span class="n">No location</span><b>Nobody sees where you are.</b> Sinehan never asks for your location or contacts, and there's no ad profile.</div>
-        <div class="step"><span class="n">Nothing kept</span><b>Your chat stays on your laptop.</b> The server only passes messages between you two and keeps none of them. Calls go straight from one browser to the other.</div>
+      <div class="promises">
+        <div class="promise"><span class="p-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5" /><path d="M5 20a7 7 0 0 1 14 0" /><path d="M4 4l16 16" /></svg></span><b>No account</b><p>A name and a link is all it takes to start or join. Nothing to sign up for, no password to forget.</p></div>
+        <div class="promise"><span class="p-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6-5.3-6-11a6 6 0 0 1 12 0c0 5.7-6 11-6 11z" /><circle cx="12" cy="10" r="2" /><path d="M4 4l16 16" /></svg></span><b>No location</b><p>Nobody sees where you are. Sinehan never asks for your location or contacts, and there's no ad profile.</p></div>
+        <div class="promise"><span class="p-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="9.5" rx="2" /><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" /></svg></span><b>Nothing kept</b><p>Your chat stays on your laptop. The server only passes messages between you two, and calls go straight from one browser to the other.</p></div>
       </div>
     </section>
 
@@ -420,11 +498,12 @@
         <p>Sinehan isn't on the Chrome Web Store yet, so it's <b>added by hand</b>. It only takes three steps.</p>
         <span class="tag">Install</span>
       </div>
-      <div class="steps">
-        <div class="step"><span class="n">01</span><b>Download</b> <a href="/download" style="text-decoration:underline">the zip</a> and unzip it somewhere you'll keep it, like Documents.</div>
-        <div class="step"><span class="n">02</span>Open <code>chrome://extensions</code>, turn on <b>Developer mode</b>, then <b>Load unpacked</b> and pick the <code>sinehan</code> folder.</div>
-        <div class="step"><span class="n">03</span>Pin Sinehan, open a show and click the <b>link icon</b> in the sidebar. Send it to the other person.</div>
+      <div class="steps install-steps">
+        <div class="step"><div class="art"><span class="a-file"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7z" /><path d="M14 3v5h5" /><path d="M10 9h1M10 12h1M10 15h1" /></svg>sinehan-extension.zip<span class="a-down"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M5 20h14" /></svg></span></span></div><span class="n">01</span><b>Download</b> <a href="/download" style="text-decoration:underline">the zip</a> and unzip it somewhere you'll keep it, like Documents.</div>
+        <div class="step"><div class="art"><span class="a-row">Developer mode<i class="a-toggle"></i></span><span class="a-btn">Load unpacked</span></div><span class="n">02</span>Open <code>chrome://extensions</code>, turn on <b>Developer mode</b>, then <b>Load unpacked</b> and pick the <code>sinehan</code> folder.</div>
+        <div class="step"><div class="art"><span class="a-row a-side"><img src="/static/logo.png" alt="" />sinehan<span class="a-link"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3.2-3.2a4.5 4.5 0 0 0-6.4-6.4L11.6 6" /><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3.2 3.2a4.5 4.5 0 0 0 6.4 6.4l1.6-1.6" /></svg></span></span><span class="a-copied">Invite link copied</span></div><span class="n">03</span>Pin Sinehan, open a show and click the <b>link icon</b> in the sidebar. Send it to the other person.</div>
       </div>
+      <div class="install-cta"><a class="pill light" href="/download">Download the zip</a><span>Free · Chrome and Edge · no account</span></div>
     </section>
 
     <section class="end">
@@ -498,7 +577,7 @@
 
       // Sections ease in as they reach the screen; demos only run while visible.
       const visible = new Set();
-      $$('.row, .visual, .steps, .end, .window').forEach((el) => el.classList.add('reveal'));
+      $$('.row, .visual, .steps, .promises, .end, .window').forEach((el) => el.classList.add('reveal'));
       const io = new IntersectionObserver((entries) => {
         for (const e of entries) {
           if (e.isIntersecting) { e.target.classList.add('in'); visible.add(e.target.id); }
@@ -506,7 +585,7 @@
         }
       }, { threshold: 0.2 });
       $$('.reveal').forEach((el) => io.observe(el));
-      if (calm) { $$('.reveal').forEach((el) => el.classList.add('in')); $$('.chat .m').forEach((m) => m.classList.add('on')); return; }
+      if (calm) { $$('.reveal').forEach((el) => el.classList.add('in')); $$('.chat .m').forEach((m) => m.classList.add('on')); $$('#best .bp-ep').forEach((e) => e.classList.add('on')); $('#best .bp-q').textContent = 'Midnight Harbor'; return; }
 
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
       function burst(frame, emoji, n = 3) {
@@ -584,6 +663,26 @@
             for (const f of [mine, hers]) { f.style.transition = 'none'; f.style.transform = 'translateY(0)'; void f.offsetWidth; f.style.transition = ''; }
             i = 0;
           }
+        }
+      })();
+
+      // Best episodes: type the show, ask Reddit, the ranked picks arrive, the top one is shared.
+      (async function best() {
+        const q = $('#best .bp-q'), ask = $('#best .bp-search b'), reading = $('#best .bp-reading');
+        const eps = [...document.querySelectorAll('#best .bp-ep')], shared = $('#best .bp-shared');
+        const name = 'Midnight Harbor';
+        for (;;) {
+          q.textContent = ''; reading.classList.remove('on'); shared.classList.remove('on');
+          eps.forEach((e) => e.classList.remove('on', 'picked'));
+          await wait(900);
+          for (const ch of name) { q.textContent += ch; await wait(70); }
+          await wait(400);
+          ask.classList.add('tap'); await wait(160); ask.classList.remove('tap');
+          reading.classList.add('on'); await wait(1300); reading.classList.remove('on');
+          for (const e of eps) { e.classList.add('on'); await wait(380); }
+          await wait(1400);
+          eps[0].classList.add('picked'); shared.classList.add('on');
+          await wait(3200);
         }
       })();
 
