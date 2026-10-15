@@ -83,6 +83,9 @@ chrome.runtime.onConnect.addListener((port) => {
       for (const p of ports)
         if (p.name === 'panel') postTo(p, { type: 'playback', action: msg.type, time: msg.time, mine: true });
     }
+    if (msg.type === 'bantay-trick') {
+      for (const p of ports) if (p !== port && p.name === 'party' && isWatchTab(p)) postTo(p, { ...msg, mine: true });
+    }
     if (msg.type === 'chat') {
       remember({ ...msg, mine: true });
 

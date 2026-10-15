@@ -57,16 +57,41 @@
     `<path d="M80 54 C 84 50, 91 50, 95 53 M106 59 C 110 58, 116 58, 120 59.5" fill="none" stroke="${shade}" stroke-width="2.8" stroke-linecap="round"/>`;
   const TONGUE = `<path d="M92 95 C 94 104, 106 104, 108 95 Z" fill="${nose}"/><path d="M95.5 98 C 95.5 108, 104.5 108, 104.5 98 Z" fill="#e8768a"/>`;
   const HEAD = EARS + FACE;
-  const BODY =
-    '<ellipse cx="102" cy="194" rx="46" ry="6" fill="#000" opacity=".3"/>' +
+  const SHADOW = '<ellipse cx="102" cy="194" rx="46" ry="6" fill="#000" opacity=".3"/>';
+  const TORSO =
     `<g class="snb-tail"><path d="M138 182 C 160 178, 166 156, 156 146 C 152 142, 146 146, 150 150 C 156 156, 150 170, 136 172 Z" fill="${shade}"/></g>` +
     `<ellipse cx="124" cy="174" rx="25" ry="20" fill="${shade}"/>` +
     `<path d="M86 94 C 84 108, 80 120, 78 134 C 74 158, 76 178, 84 190 L 118 190 C 126 178, 127 156, 122 134 C 120 120, 116 108, 114 94 Z" fill="${coat}"/>` +
-    `<path d="M90 130 C 92 140, 108 140, 110 130 C 110 150, 108 168, 100 176 C 92 168, 90 150, 90 130 Z" fill="${light}" opacity=".8"/>` +
+    `<path d="M90 130 C 92 140, 108 140, 110 130 C 110 150, 108 168, 100 176 C 92 168, 90 150, 90 130 Z" fill="${light}" opacity=".8"/>`;
+  const FRONT_LEGS =
     `<path d="M89 146 C 88 162, 88 176, 89 189 M111 146 C 112 162, 112 176, 111 189 M100 168 L 100 189" fill="none" stroke="${shade}" stroke-width="2.2" stroke-linecap="round"/>` +
-    `<ellipse cx="91" cy="191" rx="9" ry="5" fill="${coat}"/><ellipse cx="109" cy="191" rx="9" ry="5" fill="${coat}"/>` +
+    `<ellipse cx="91" cy="191" rx="9" ry="5" fill="${coat}"/><ellipse cx="109" cy="191" rx="9" ry="5" fill="${coat}"/>`;
+  const COLLAR =
     `<path d="M84 108 C 94 115, 106 115, 116 108 L 117 116 C 106 123, 94 123, 83 116 Z" fill="${collar}"/>` +
     `<circle cx="100" cy="125" r="5.5" fill="${tag}"/><circle cx="100" cy="125" r="2" fill="#1b1325" opacity=".5"/>`;
+  const BODY = SHADOW + TORSO + FRONT_LEGS + COLLAR;
+
+  // ---- Tricks ----
+  // A front leg lifted from the shoulder (x1,y1) to the paw (x2,y2), in a group that can move.
+  const leg = (x1, y1, x2, y2, cls = '') =>
+    `<g class="${cls}"><path d="M${x1} ${y1} L${x2} ${y2}" fill="none" stroke="${shade}" stroke-width="15" stroke-linecap="round"/>` +
+    `<path d="M${x1} ${y1} L${x2} ${y2}" fill="none" stroke="${coat}" stroke-width="11.5" stroke-linecap="round"/>` +
+    `<ellipse cx="${x2}" cy="${y2}" rx="7.5" ry="6.5" fill="${coat}"/></g>`;
+  // Sitting with the front paws off the ground: the back feet show instead.
+  const HIND_FEET =
+    `<ellipse cx="86" cy="191" rx="9" ry="5" fill="${coat}"/><ellipse cx="114" cy="191" rx="9" ry="5" fill="${coat}"/>`;
+  const SIT_UP = SHADOW + TORSO + HIND_FEET + COLLAR;
+  const ONE_FRONT_LEG =
+    `<path d="M89 146 C 88 162, 88 176, 89 189" fill="none" stroke="${shade}" stroke-width="2.2" stroke-linecap="round"/>` +
+    `<ellipse cx="91" cy="191" rx="9" ry="5" fill="${coat}"/>`;
+  const EYES_WIDE =
+    `<circle cx="86.5" cy="64" r="7" fill="${eye}"/><circle cx="88.5" cy="61.5" r="2.2" fill="#fff"/>` +
+    `<circle cx="113.5" cy="64" r="7" fill="${eye}"/><circle cx="115.5" cy="61.5" r="2.2" fill="#fff"/>`;
+  const EYES_X = `<path d="M81 60 L92 70 M92 60 L81 70 M108 60 L119 70 M119 60 L108 70" fill="none" stroke="${eye}" stroke-width="3" stroke-linecap="round"/>`;
+  const DUST =
+    `<g class="snb-dust"><circle cx="66" cy="188" r="6" fill="${shade}" opacity=".7"/><circle cx="56" cy="182" r="4" fill="${shade}" opacity=".5"/>` +
+    `<circle cx="140" cy="188" r="6" fill="${shade}" opacity=".7"/><circle cx="150" cy="182" r="4" fill="${shade}" opacity=".5"/></g>`;
+
   const LYING_BODY =
     '<ellipse cx="112" cy="188" rx="88" ry="6" fill="#000" opacity=".3"/>' +
     `<g class="snb-tail"><path d="M176 168 C 198 166, 204 144, 194 134 C 190 130, 184 134, 188 138 C 194 144, 188 158, 174 160 Z" fill="${shade}"/></g>` +
@@ -143,6 +168,53 @@
         + '<circle cx="100" cy="4" r="5" fill="#f2c94c"/></g>',
     },
     head: { box: '56 4 88 98', label: 'Bantay', art: HEAD + MOUTH + EYES },
+
+    // Tricks (chat commands like /spin, or a tap on him).
+    spin: {
+      box: '30 -10 150 210',
+      label: 'Bantay spinning',
+      art: DUST + `<g class="snb-spin">${BODY + HEAD + EYES_HAPPY + TONGUE}</g>`,
+    },
+    beg: {
+      box: '40 0 130 200',
+      label: 'Bantay begging',
+      art: SIT_UP + leg(87, 136, 84, 117) + leg(113, 136, 116, 117) + HEAD + EYES_UP + MOUTH,
+    },
+    stand: {
+      box: '36 -16 138 216',
+      label: 'Bantay standing up',
+      art: SHADOW +
+        `<rect x="80" y="166" width="13" height="24" rx="6" fill="${coat}"/><rect x="107" y="166" width="13" height="24" rx="6" fill="${coat}"/>` +
+        HIND_FEET +
+        `<g class="snb-wobble"><g transform="translate(0 -16)">${TORSO + COLLAR + leg(86, 128, 68, 104) + leg(114, 128, 132, 104) + HEAD + EYES_HAPPY + TONGUE}</g></g>`,
+    },
+    paw: {
+      box: '40 0 140 200',
+      label: 'Bantay giving his paw',
+      art: SHADOW + TORSO + ONE_FRONT_LEG + COLLAR + leg(110, 140, 134, 126, 'snb-wave') + HEAD + EYES + MOUTH,
+    },
+    playdead: {
+      box: '0 70 214 130',
+      label: 'Bantay playing dead',
+      art: '<ellipse cx="116" cy="188" rx="90" ry="6" fill="#000" opacity=".3"/>' +
+        leg(116, 160, 110, 130) + leg(130, 158, 128, 126) + leg(152, 158, 158, 128) + leg(166, 162, 176, 136) +
+        `<path d="M176 172 C 192 176, 204 170, 206 160 C 207 156, 202 155, 201 159 C 199 166, 190 168, 178 166 Z" fill="${shade}"/>` +
+        `<ellipse cx="128" cy="172" rx="58" ry="20" fill="${shade}"/><ellipse cx="126" cy="170" rx="56" ry="18" fill="${coat}"/>` +
+        `<ellipse cx="130" cy="164" rx="36" ry="8" fill="${light}"/>` +
+        `<g transform="translate(4 98) scale(.8) rotate(-28 100 60)">${HEAD + EYES_X + TONGUE}</g>`,
+    },
+    dance67: {
+      box: '40 -10 130 210',
+      label: 'Bantay doing the 6 7',
+      art: SIT_UP + leg(87, 134, 74, 112, 'snb-67l') + leg(113, 134, 126, 112, 'snb-67r') +
+        `<g class="snb-bob">${HEAD + EYES_HAPPY + TONGUE}</g>`,
+    },
+    gasp: {
+      box: '40 0 130 200',
+      label: 'Bantay with a paw over his mouth',
+      art: `<g class="snb-shake">${SHADOW + TORSO + ONE_FRONT_LEG + COLLAR + HEAD + EYES_WIDE + leg(114, 136, 101, 96)}</g>` +
+        `<path d="M58 44 l8 4 M54 58 l9 1 M142 44 l-8 4 M146 58 l-9 1" stroke="${tag}" stroke-width="3" stroke-linecap="round"/>`,
+    },
     'head-tilt': {
       box: '50 2 100 104',
       label: 'Bantay, puzzled',
@@ -173,7 +245,20 @@
     '@keyframes snb-tear{0%{transform:translateY(0);opacity:1}100%{transform:translateY(16px);opacity:0}}' +
     '.snb-hearts{transform-box:fill-box;transform-origin:50% 100%;animation:snb-hearts 1.6s ease-in-out infinite}' +
     '@keyframes snb-hearts{0%{transform:translateY(6px) scale(.85);opacity:.4}50%{opacity:1}100%{transform:translateY(-6px) scale(1.05);opacity:.9}}' +
-    '@media (prefers-reduced-motion:reduce){.snb-tail,.snb-ear-r,.snb-ear-l,.snb-blink,.snb-look,.snb-breathe,.snb-laugh,.snb-tear,.snb-hearts{animation:none}}' +
+    // Tricks
+    '.snb-spin{transform-box:view-box;transform-origin:100px 120px;animation:snb-spin .9s ease-in-out 2}' +
+    '@keyframes snb-spin{0%{transform:scaleX(1)}25%{transform:translateY(-10px) scaleX(0)}50%{transform:scaleX(-1)}75%{transform:translateY(-10px) scaleX(0)}100%{transform:scaleX(1)}}' +
+    '.snb-dust{animation:snb-dust .9s ease-out 2}@keyframes snb-dust{0%{opacity:0;transform:translateY(4px)}30%{opacity:1}100%{opacity:0;transform:translateY(-6px)}}' +
+    '.snb-67l{animation:snb-67 .42s ease-in-out infinite alternate}.snb-67r{animation:snb-67 .42s ease-in-out infinite alternate-reverse}' +
+    '@keyframes snb-67{from{transform:translateY(-16px)}to{transform:translateY(8px)}}' +
+    '.snb-bob{transform-box:view-box;transform-origin:100px 100px;animation:snb-bob .42s ease-in-out infinite alternate}' +
+    '@keyframes snb-bob{from{transform:rotate(-5deg)}to{transform:translateY(3px) rotate(5deg)}}' +
+    '.snb-shake{animation:snb-shake .16s linear infinite alternate}@keyframes snb-shake{from{transform:translateX(-1.6px)}to{transform:translateX(1.6px)}}' +
+    '.snb-wave{transform-box:view-box;transform-origin:110px 140px;animation:snb-wave .5s ease-in-out infinite alternate}' +
+    '@keyframes snb-wave{from{transform:rotate(-14deg)}to{transform:rotate(6deg)}}' +
+    '.snb-wobble{transform-box:view-box;transform-origin:100px 190px;animation:snb-wobble .8s ease-in-out infinite alternate}' +
+    '@keyframes snb-wobble{from{transform:rotate(-3deg)}to{transform:rotate(3deg)}}' +
+    '@media (prefers-reduced-motion:reduce){.snb-tail,.snb-ear-r,.snb-ear-l,.snb-blink,.snb-look,.snb-breathe,.snb-laugh,.snb-tear,.snb-hearts,.snb-spin,.snb-dust,.snb-67l,.snb-67r,.snb-bob,.snb-shake,.snb-wave,.snb-wobble{animation:none}}' +
     '</style>';
 
   // Coats picked in Settings; each overrides the --b-* colours the drawing reads.
@@ -216,7 +301,35 @@
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`;
   }
 
+  // Tricks you can ask for in chat (/spin, /paw…): the pose, how it reads ("asked Bantay to …"), how long
+  // it plays, and what he barks.
+  const TRICKS = {
+    sit: { pose: 'sit', name: 'sit', ms: 2200, bark: '(•ᴥ•)' },
+    stand: { pose: 'stand', name: 'stand up', ms: 2800, bark: 'U・ᴥ・U' },
+    spin: { pose: 'spin', name: 'spin', ms: 2000, bark: 'Wheee!' },
+    down: { pose: 'lying', name: 'lie down', ms: 2600, bark: '(ᵕᴥᵕ)' },
+    playdead: { pose: 'playdead', name: 'play dead', ms: 3000, bark: 'x_x' },
+    paw: { pose: 'paw', name: 'give paw', ms: 2600, bark: 'ฅ(•ᴥ•)' },
+    beg: { pose: 'beg', name: 'beg', ms: 2600, bark: '(◕ᴥ◕)' },
+    speak: { pose: 'happy', name: 'speak', ms: 2200, bark: 'Arf! Arf!' },
+    dance: { pose: 'dance67', name: 'do the 6 7', ms: 3200, bark: '6 7!' },
+    gasp: { pose: 'gasp', name: 'gasp', ms: 2600, bark: '(⊙ᴥ⊙)' },
+  };
+  const ALIASES = {
+    67: 'dance', '6-7': 'dance', dead: 'playdead', 'play-dead': 'playdead', shake: 'paw', lie: 'down', liedown: 'down',
+    bark: 'speak', omg: 'gasp', handovermouth: 'gasp', up: 'stand',
+  };
+  // "/spin" → 'spin'; anything else → ''.
+  const trickFor = (text) => {
+    const m = String(text || '').trim().toLowerCase().match(/^\/([a-z0-9-]+)$/);
+    if (!m) return '';
+    const k = ALIASES[m[1]] || m[1];
+    return Object.hasOwn(TRICKS, k) ? k : '';
+  };
+
   root.Bantay = {
+    tricks: TRICKS,
+    trickFor,
     svg,
     dataUri,
     poses: Object.keys(POSES),

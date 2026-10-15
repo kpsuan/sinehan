@@ -216,6 +216,12 @@ function onRemote(msg) {
   // The rest is for the show's tab only (the background doesn't route it elsewhere anyway).
   if (!isWatchTab) return;
 
+  if (msg.type === 'bantay-trick') {
+    const t = typeof Bantay !== 'undefined' && Object.hasOwn(Bantay.tricks, msg.trick) ? Bantay.tricks[msg.trick] : null;
+    if (t) bantayPop(t.pose, t.ms + 400, t.bark);
+    return;
+  }
+
   if (msg.type === 'chat') {
     const text = String(msg.text || '');
     overlay?.add(msg); // keeps the fullscreen chat current, including what we sent from the sidebar

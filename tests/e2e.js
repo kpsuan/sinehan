@@ -226,6 +226,9 @@ const vstate = (p) =>
         (await pA.$eval('.chat', (c) => getComputedStyle(c).display === 'none')),
     );
     await pA.fill('#wlName', 'Alice');
+    await pA.click('#wlBantay');
+    check('welcome: tapping Bantay gets a trick', await until(() => pA.$eval('#wlBantay svg', (svg) => !/^Bantay sitting up$/.test(svg.getAttribute('aria-label')))));
+    check('…with a bark', await until(() => pA.$eval('#wlBark', (b) => b.textContent.trim().length > 0)));
     check('welcome: name is saved like in Settings', (await pA.inputValue('#name')) === 'Alice');
     await pA.fill('#wlLink', 'not a link');
     await pA.press('#wlLink', 'Enter');
@@ -1077,6 +1080,21 @@ const vstate = (p) =>
     );
     await pA.evaluate(() => showBest(false));
     await pB2.evaluate(() => showBest(false));
+
+    section('Bantay’s tricks');
+    await pA.fill('#msg', '/spin');
+    await pA.press('#msg', 'Enter');
+    check('a /command makes Bantay do it for both', await until(async () => (await logLines(pB2)).some((l) => /asked Bantay to spin/.test(l.text)) && (await pB2.locator('.trick-pop svg[aria-label="Bantay spinning"]').count()) > 0));
+    check('…and isn’t sent as a chat message', !(await logLines(pB2)).some((l) => l.text.trim() === '/spin'));
+    check('…you see it too', (await logLines(pA)).some((l) => /You asked Bantay to spin/.test(l.text)));
+    await pA.fill('#msg', '/tricks');
+    await pA.press('#msg', 'Enter');
+    check('/tricks lists them', await until(async () => (await logLines(pA)).some((l) => /Bantay knows: .*\/playdead/.test(l.text))));
+    await sleep(2400);
+    await pB2.fill('#msg', '67');
+    await pB2.press('#msg', 'Enter');
+    check('typing 67 gets the dance', await until(async () => (await pA.locator('.trick-pop svg[aria-label="Bantay doing the 6 7"]').count()) > 0));
+    await sleep(3600);
 
     section('Who did it?');
     await pA.click('#guessBtn');

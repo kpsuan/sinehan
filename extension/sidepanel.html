@@ -375,6 +375,15 @@
     :root[data-theme='light'] .wl-start { box-shadow: 0 -12px 18px -12px rgba(16, 16, 24, .12); }
     /* Bantay's hello: a bark and a hop (tap him on the welcome screen for another) */
     #wlBantay { cursor: pointer; }
+    /* A trick asked for in chat: he pops up above the chat box for a moment */
+    .trick-pop { position: fixed; right: 14px; bottom: 92px; z-index: 30; width: 104px; display: flex; flex-direction: column; align-items: center; gap: 4px;
+      pointer-events: none; animation: trickIn .38s cubic-bezier(.2, .8, .3, 1.2) both; filter: drop-shadow(0 6px 14px rgba(0, 0, 0, .4)); }
+    .trick-pop svg { display: block; width: 100%; height: auto; }
+    .trick-pop.away { animation: trickOut .28s ease-in both; }
+    .trick-bark { padding: 4px 10px; border-radius: 10px 10px 10px 3px; background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: 12px; white-space: nowrap; }
+    @keyframes trickIn { from { opacity: 0; transform: translateY(26px) scale(.7); } }
+    @keyframes trickOut { to { opacity: 0; transform: translateY(16px) scale(.9); } }
+    @media (prefers-reduced-motion: reduce) { .trick-pop, .trick-pop.away { animation: none; } }
     .wl-dog { position: relative; }
     .intro-bark { white-space: nowrap; }
     .wl-bark { top: -2px; right: calc(50% - 112px); font-size: 13px; }
@@ -644,7 +653,7 @@
       </defs>
       <text x="50%" y="104" text-anchor="middle" mask="url(#writing)">Sinehan</text>
     </svg>
-    <p class="wl-sub">A movie theater for two. Same show, same second, from two places.</p>
+    <p class="wl-sub">A movie theater for two.</p>
     <p class="wl-meet">This is <b>Bantay</b>. His name means <i>keep watch</i>: he keeps your show in sync, waits with you when one of you steps away, and keeps the party just for the two of you.</p>
 
     <div class="wl-step">

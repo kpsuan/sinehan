@@ -104,6 +104,8 @@ function onMessage(msg) {
     addChat('', msg.active ? `${msg.name || 'They'} is on a CR break` : `${msg.name || 'They'} is back`, 'system');
   } else if (msg.type === 'typing') {
     showTyping(msg.name);
+  } else if (msg.type === 'bantay-trick') {
+    if (Object.hasOwn(Bantay.tricks, msg.trick)) showTrick(msg.trick, String(msg.name || '').slice(0, 30), false);
   } else if (msg.type === 'hand') {
     $('who').closest('.top').classList.remove('holding');
     void $('who').offsetWidth; // force a reflow so the animation restarts
@@ -363,10 +365,22 @@ $('introDog').onclick = () => {
   hop($('introDog'));
   bark(BARKS[Math.floor(Math.random() * BARKS.length)]);
 };
-// On the welcome screen: tap Bantay, he hops and wags.
+// On the welcome screen: tap Bantay and he does a trick.
+let tapTrick = '';
+let lastTap = '';
 $('wlBantay').onclick = () => {
-  hop($('wlBantay'));
-  bark(BARKS[Math.floor(Math.random() * BARKS.length)], $('wlBark'), $('wlBantay'));
+  if (tapTrick) return;
+  const names = Object.keys(Bantay.tricks).filter((k) => k !== 'sit' && k !== lastTap); // never the same twice running
+  const k = names[Math.floor(Math.random() * names.length)];
+  const t = Bantay.tricks[k];
+  tapTrick = lastTap = k;
+  $('wlBantay').innerHTML = Bantay.svg(t.pose, { coat: bantayCoat }); // fixed markup
+  bark([t.bark], $('wlBark'), $('wlBantay'));
+  setTimeout(() => {
+    tapTrick = '';
+    drawBantay();
+    hop($('wlBantay'));
+  }, t.ms);
 };
 chrome.storage.local.get('introSeen').then(({ introSeen }) => {
   if (!introSeen && !status.room) startIntro();
@@ -853,10 +867,40 @@ $('form').onsubmit = (e) => {
   e.preventDefault();
   const text = $('msg').value.trim();
   if (!text) return;
-  sendChat(text);
   $('msg').value = '';
   closeTrays();
+  // Commands for Bantay: /spin, /paw… (and /tricks lists them). They aren't sent as chat.
+  const trick = Bantay.trickFor(text);
+  if (trick) return askTrick(trick);
+  if (/^\/(tricks|help)$/i.test(text)) return addChat('', TRICKS_HELP, 'system');
+  sendChat(text);
+  if (/^6\s*[-\s]?\s*7[!.\s]*$/.test(text)) askTrick('dance'); // "67" gets the dance
 };
+
+// ---- Bantay's tricks ----
+// Ask in chat and he does it for both of you: in the sidebar and on the video. One at a time.
+const TRICKS_HELP = `Bantay knows: ${Object.keys(Bantay.tricks).map((k) => `/${k}`).join(' ')}`;
+let trickUntil = 0;
+function askTrick(trick) {
+  if (Date.now() < trickUntil) return addChat('', 'Bantay is still busy. Try again in a moment.', 'system');
+  send({ type: 'bantay-trick', trick, name: myName() });
+  showTrick(trick, '', true);
+}
+function showTrick(trick, name, mine) {
+  const t = Bantay.tricks[trick];
+  trickUntil = Date.now() + t.ms;
+  addChat('', `${mine ? 'You' : name || 'They'} asked Bantay to ${t.name}`, 'system');
+  document.querySelector('.trick-pop')?.remove();
+  const pop = document.createElement('div');
+  pop.className = 'trick-pop';
+  pop.innerHTML = Bantay.svg(t.pose, { coat: bantayCoat }); // fixed markup
+  pop.prepend(Object.assign(document.createElement('span'), { className: 'trick-bark', textContent: t.bark }));
+  document.body.append(pop);
+  setTimeout(() => {
+    pop.classList.add('away');
+    setTimeout(() => pop.remove(), 300);
+  }, t.ms);
+}
 
 function sendChat(text, extra = {}) {
   const id = crypto.randomUUID();
