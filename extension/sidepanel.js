@@ -1135,6 +1135,8 @@ const countryName = (c) => {
 // The deck's menus, remembered between nights.
 let tnPrefs = { genre: 'Any', platform: 'Any', country: guessCountry(), kind: 'both' };
 chrome.storage.local.get('tonightPrefs').then(({ tonightPrefs }) => (tnPrefs = { ...tnPrefs, ...tonightPrefs }));
+// Shows from a country, for the deck without the relay (TVmaze knows the network's country).
+const ORIGINS = { Filipino: ['PH'], 'K-drama': ['KR'], Thai: ['TH'], 'C-drama': ['CN', 'TW'], 'J-drama': ['JP'], Bollywood: ['IN'] };
 let tonight = null; // the deck from the background
 let tonightSeenMatches = new Set();
 let tonightSource = '';
@@ -1223,10 +1225,14 @@ async function dealDeck(genre, platform = 'Any', country = 'US', kind = 'both') 
   // Without the relay: well-liked shows from TVmaze in that genre (a few pages of its catalogue, the most-watched first).
   // One platform is a smaller slice of the catalogue, so it looks through more pages.
   const pages = new Set();
-  while (pages.size < (onPlatform ? 12 : 4)) pages.add(Math.floor(Math.random() * 300));
+  while (pages.size < (onPlatform || ORIGINS[genre] ? 12 : 4)) pages.add(Math.floor(Math.random() * 300));
   const shows = (await Promise.all([...pages].map((n) => fetch(`https://api.tvmaze.com/shows?page=${n}`).then((r) => (r.ok ? r.json() : [])).catch(() => [])))).flat();
   const picks = shows
-    .filter((s) => s.image?.medium && (s.rating?.average || 0) >= 7 && (s.weight || 0) >= (onPlatform ? 60 : 70) && (genre === 'Any' || (s.genres || []).includes(genre)))
+    .filter((s) => {
+      if (!s.image?.medium) return false;
+      if (ORIGINS[genre]) return ORIGINS[genre].includes(s.network?.country?.code || s.webChannel?.country?.code) && (s.rating?.average || 0) >= 6.5;
+      return (s.rating?.average || 0) >= 7 && (s.weight || 0) >= (onPlatform ? 60 : 70) && (genre === 'Any' || (s.genres || []).includes(genre));
+    })
     .filter((s) => !onPlatform || onPlatform.test(s.webChannel?.name || s.network?.name || ''))
     .sort((a, b) => (b.weight || 0) - (a.weight || 0) || (b.rating?.average || 0) - (a.rating?.average || 0))
     .slice(0, 30);
@@ -1263,7 +1269,13 @@ function renderTonight() {
       };
       return m;
     };
-    const genre = menu('tnGenre', GENRES.map((g) => [g, g === 'Any' ? 'Any genre' : g.replace('Science-Fiction', 'Sci-fi')]), tnPrefs.genre, 'Genre');
+    const genre = menu('tnGenre', GENRES.map((g) => [g, g === 'Any' ? 'Any genre' : g.replace('Science-Fiction', 'Sci-fi')]), 'Any', 'Genre');
+    // Where it's from, as its own group in the same menu.
+    const from = el('optgroup', { label: 'From' });
+    from.append(...Object.keys(ORIGINS).map((o) => new Option(o, o)));
+    genre.append(from);
+    genre.value = tnPrefs.genre;
+    if (!genre.value) genre.value = 'Any';
     const platform = menu('tnPlatform', PLATFORMS.map(([v, label]) => [v, label]), tnPrefs.platform, 'Streaming on');
     const country = menu('tnCountry', [...new Set([tnPrefs.country, ...COUNTRIES])].map((c) => [c, countryName(c)]), tnPrefs.country, 'Where you watch from');
     const kind = menu('tnKind', [['both', 'Shows and movies'], ['tv', 'Shows'], ['movie', 'Movies']], tnPrefs.kind, 'Shows or movies');

@@ -1485,6 +1485,7 @@ const vstate = (p) =>
     check('…without one-message parties', await pB2.$$eval('#sessions .s-meta', (m) => m.every((x) => !/· 1 message$/.test(x.textContent))));
     check('…named after the show, not the tab', await pB2.$$eval('#sessions .s-title', (t) => t.every((x) => !/ - YouTube|Prime Video:/.test(x.textContent))));
     check('Tonight knows your country', await pA.evaluate(() => /^[A-Z]{2}$/.test(guessCountry()) && COUNTRIES.includes('PH')));
+    check('Tonight deals by where it’s from too', await pA.evaluate(() => ['Filipino', 'K-drama', 'Thai'].every((o) => o in ORIGINS)));
     check('Tonight has a platform filter', await pA.evaluate(() => typeof PLATFORMS !== 'undefined' && PLATFORMS.some(([v]) => v === 'Netflix')));
     await pB2.click('#sessions .session');
     check(

@@ -152,6 +152,12 @@ const TMDB_GENRES = {
   Romance: [10749, 10749], 'Science-Fiction': [10765, 878], Fantasy: [10765, 14], Action: [10759, 28],
   Horror: [null, 27], Anime: [16, 16], Family: [10751, 10751],
 };
+// "Genres" that are really where it's from: Filipino, K-drama, Thai and so on (drama only for the -dramas'
+// shows; their films are any genre).
+const ORIGINS = {
+  Filipino: { country: 'PH' }, 'K-drama': { country: 'KR', tv: 18 }, Thai: { country: 'TH' },
+  'C-drama': { country: 'CN|TW', tv: 18 }, 'J-drama': { country: 'JP', tv: 18 }, Bollywood: { country: 'IN', lang: 'hi' },
+};
 const tmdbCache = new Map(); // url → { at, body }
 const deckHits = new Map(); // ip → { at, n }
 async function tmdb(path, params = {}) {
@@ -180,6 +186,7 @@ async function deck(url, req, res) {
   const country = /^[A-Z]{2}$/.test(url.searchParams.get('country') || '') ? url.searchParams.get('country') : 'US';
   const platform = PROVIDERS[url.searchParams.get('platform')] ? url.searchParams.get('platform') : '';
   const genre = TMDB_GENRES[url.searchParams.get('genre')] ? url.searchParams.get('genre') : '';
+  const origin = ORIGINS[url.searchParams.get('genre')] || null;
   const want = url.searchParams.get('kind');
   const kinds = (want === 'tv' || want === 'movie' ? [want] : ['tv', 'movie']).filter((k) => !genre || TMDB_GENRES[genre][k === 'tv' ? 0 : 1]);
   try {
@@ -188,6 +195,14 @@ async function deck(url, req, res) {
         watch_region: country, with_watch_monetization_types: 'flatrate', sort_by: 'popularity.desc',
         'vote_average.gte': '7', 'vote_count.gte': kind === 'tv' ? '150' : '400', include_adult: 'false',
       };
+      if (origin) {
+        // Smaller catalogues get fewer votes on TMDB: a lower bar, still well liked.
+        Object.assign(params, { with_origin_country: origin.country, 'vote_average.gte': '6.5', 'vote_count.gte': '15' });
+        if (kind === 'tv' && origin.tv) params.with_genres = String(origin.tv);
+        if (origin.lang) params.with_original_language = origin.lang;
+        if (!origin.tv) params.without_genres = '10767,10763'; // no talk shows or news
+        else params.without_genres = '16'; // a drama, not an anime
+      }
       if (platform) params.with_watch_providers = PROVIDERS[platform];
       if (genre) params.with_genres = String(TMDB_GENRES[genre][kind === 'tv' ? 0 : 1]);
       if (genre === 'Anime') params.with_original_language = 'ja';
