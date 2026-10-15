@@ -105,6 +105,15 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     historyWrite.then(() => chrome.storage.local.get('history')).then(({ history = [] }) => reply(history));
     return true;
   }
+  if (msg.type === 'pending-call') {
+    reply(pendingCall);
+    return;
+  }
+  if (msg.type === 'call-handled') {
+    clearPendingCall();
+    reply(true);
+    return;
+  }
   if (msg.type === 'open-sidebar') {
     // From the floating camera's exit button; must run right away, while Chrome still counts the click.
     if (!sender.tab) return reply({ ok: false });
@@ -280,6 +289,49 @@ function remember(msg) {
     .catch(console.error);
 }
 
+// ---- Incoming calls while the sidebar is closed ----
+// The call itself lives in the sidebar. If it's closed when they call, ring on the show's tab and with
+// a notification; opening the sidebar picks the call up.
+let pendingCall = null; // { name, at }
+let pendingTimer = null;
+function onCallSignal(msg) {
+  const panelOpen = [...ports].some((p) => p.name === 'panel');
+  if (msg.bye) {
+    if (pendingCall) clearPendingCall();
+    return;
+  }
+  if (panelOpen || pendingCall || msg.description?.type !== 'offer') return;
+  pendingCall = { name: msg.name || 'They', at: Date.now() };
+  broadcastLocal({ local: true, type: 'incoming-call', name: pendingCall.name });
+  chrome.notifications?.create('sinehan-call', {
+    type: 'basic',
+    iconUrl: 'icons/icon128.png',
+    title: `${pendingCall.name} is calling`,
+    message: 'Open Sinehan to answer.',
+    requireInteraction: true,
+    priority: 2,
+  }, () => void chrome.runtime.lastError);
+  clearTimeout(pendingTimer);
+  pendingTimer = setTimeout(clearPendingCall, 40000);
+}
+function clearPendingCall() {
+  if (!pendingCall) return;
+  pendingCall = null;
+  clearTimeout(pendingTimer);
+  chrome.notifications?.clear('sinehan-call', () => void chrome.runtime.lastError);
+  broadcastLocal({ local: true, type: 'call-gone' });
+}
+chrome.notifications?.onClicked.addListener(async (id) => {
+  if (id !== 'sinehan-call') return;
+  const win = watch ? (await chrome.tabs.get(watch.tabId).catch(() => null))?.windowId : undefined;
+  const target = win ?? (await chrome.windows.getLastFocused().catch(() => null))?.id;
+  if (target != null) {
+    chrome.windows.update(target, { focused: true }).catch(() => {});
+    chrome.sidePanel.open({ windowId: target }).catch(() => {});
+  }
+  chrome.notifications.clear(id);
+});
+
 // ---- Relay connection ----
 function connect(server, room) {
   disconnect();
@@ -301,6 +353,7 @@ function connect(server, room) {
     if (msg.type === 'joined' && msg.count > 1) setTimeout(announceShow, 500); // let a returning partner know
     if (msg.type === 'peer' && msg.joined) setTimeout(announceShow, 500);
     if (msg.type === 'companion-hello') setTimeout(announceShow, 300); // a phone joined: tell it what's on
+    if (msg.type === 'rtc') onCallSignal(msg);
     if (msg.type === 'chat') {
       remember({ ...msg, mine: false });
       // Lets the show's tab know whether to flash the message on the video (sidebar closed or hidden by fullscreen).

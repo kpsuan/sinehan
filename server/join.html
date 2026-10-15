@@ -115,12 +115,15 @@
         <p class="done" id="wp-done" hidden>You're in. Open the show you're watching together.</p>
       </div>
       <div class="needs-ext">
-        <a class="join phone" id="phoneLink" href="/party">Join from this phone</a>
-        <p class="note">Chat and control the show on the laptop. Nothing to install.</p>
-        <ol class="steps">
+        <div id="onPhone" hidden>
+          <a class="join phone" id="phoneLink" href="/party">Join from this phone</a>
+          <p class="note">Chat and control the show on the laptop. Nothing to install.</p>
+        </div>
+        <ol class="steps" id="installSteps">
           <li><span>Get the Sinehan extension for Chrome from <span id="askWho">the person who invited you</span>, or at <a href="/" style="color:inherit">sinehan.live</a>.</span></li>
           <li><span>Come back and refresh this page.</span></li>
         </ol>
+        <p class="note" id="remoteOnly"><a href="/party" id="remoteLink" style="color:inherit">Or just chat and use the remote, without the extension →</a></p>
       </div>
     </div>
 
@@ -165,8 +168,13 @@
         probe.onerror = () => show(img);
         probe.src = full;
       }
-      // Same party, from a phone: keep the invite's details.
-      document.getElementById('phoneLink').href = `/party${location.search}`;
+      // Same party without the extension (chat + remote): keep the invite's details.
+      document.getElementById('phoneLink').href = document.getElementById('remoteLink').href = `/party${location.search}`;
+      // Phones can't install extensions, so lead with the phone option there; computers get the install steps.
+      const onPhone = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+      document.getElementById('onPhone').hidden = !onPhone;
+      document.getElementById('installSteps').hidden = onPhone;
+      document.getElementById('remoteOnly').hidden = onPhone;
       try {
         const to = new URL(q.get('to'));
         if (/^https?:$/.test(to.protocol)) {

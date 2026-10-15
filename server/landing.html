@@ -171,6 +171,30 @@
     .phone .toast.follow { top: 14px; font-size: 11px; white-space: nowrap; opacity: 0; transition: opacity .3s; }
     .phone .toast.follow.on { opacity: 1; }
 
+    /* Phone as the remote */
+    .couch { position: relative; padding: 0; overflow: visible; margin-bottom: 70px; }
+    .couch-frame { border-radius: 16px; }
+    .couch-frame { min-height: 460px; }
+    .couch-frame .paused { opacity: 0; }
+    .couch-frame.held .paused { opacity: 1; transform: translate(-50%, -50%); }
+    .mini-phone { position: absolute; right: 7%; bottom: -30px; width: 230px; padding: 14px 12px 18px; border-radius: 30px; background: #0c0a10;
+      box-shadow: 0 30px 80px rgba(0, 0, 0, .6), 0 0 0 6px #262120; display: flex; flex-direction: column; gap: 8px; color: #efeaf6; font-size: 12px; }
+    .mp-head { display: flex; align-items: center; gap: 7px; padding: 2px 4px; }
+    .mp-head img { width: 16px; height: 16px; }
+    .mp-dot { margin-left: auto; width: 7px; height: 7px; border-radius: 50%; background: #9fd6b0; }
+    .mp-card { display: flex; flex-direction: column; gap: 3px; padding: 10px; border-radius: 12px; background: #16121c; }
+    .mp-card small { font-size: 9px; font-weight: 600; letter-spacing: .08em; color: #9a90aa; }
+    .mp-card b { font-size: 13px; }
+    .mp-state { color: #9a90aa; font-variant-numeric: tabular-nums; }
+    .mp-remote { display: grid; grid-template-columns: 1fr 1.3fr 1fr; gap: 6px; margin-top: 3px; }
+    .mp-remote span { height: 36px; border-radius: 9px; background: #1f1927; display: grid; place-items: center; transition: transform .1s, filter .1s; }
+    .mp-remote svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .mp-remote svg text { font-family: 'Inter', sans-serif; }
+    .mp-remote .mp-play { background: #c9b6f2; color: #1b1325; }
+    .mp-remote span.tap { transform: scale(.92); filter: brightness(1.3); }
+    .mp-msg { align-self: flex-start; margin-top: 3px; padding: 6px 9px; border-radius: 10px 10px 10px 3px; background: #1f1927; opacity: 0; transform: translateY(6px); transition: opacity .4s, transform .4s; }
+    .mp-msg.on { opacity: 1; transform: none; }
+
     /* ---------- Motion ---------- */
     .reveal { opacity: 0; transform: translateY(26px); transition: opacity .9s ease, transform .9s cubic-bezier(.2, .7, .2, 1); }
     .reveal.in { opacity: 1; transform: none; }
@@ -217,6 +241,8 @@
       .row .tag { justify-self: start; }
       .pair, .steps { grid-template-columns: 1fr; }
       .phones { gap: 16px; padding: 24px 12px; }
+      .couch-frame { min-height: 300px; }
+      .mini-phone { position: relative; right: auto; bottom: auto; margin: -60px auto 20px; }
       .phone { width: 46%; }
       .chat { width: 230px; right: 12px; bottom: 12px; }
       .nav-links a.hide-sm { display: none; }
@@ -337,6 +363,25 @@
       </div>
     </section>
 
+    <section id="phone-row">
+      <div class="row">
+        <h2 class="display">Your phone is the remote<br /><span>and the chat, from the couch.</span></h2>
+        <p><b>Open the invite on your phone</b> and it becomes a remote for the show on your laptop: play, pause, skip, 3·2·1, CR break, plus chat and reactions. Nothing to install.</p>
+        <span class="tag">Phone</span>
+      </div>
+      <div class="visual couch" id="couch">
+        <div class="frame couch-frame" style="--img:url(/static/film-action.webp)"><span class="paused"><i></i><i></i></span></div>
+        <div class="mini-phone" aria-hidden="true">
+          <div class="mp-head"><img src="/static/logo.png" alt="" /><b>sinehan</b><span class="mp-dot"></span></div>
+          <div class="mp-card"><small>WATCHING</small><b>Tears of Steel</b><span class="mp-state">Playing · 41:02</span></div>
+          <div class="mp-card"><small>REMOTE</small>
+            <div class="mp-remote"><span><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.4-5.7" /><path d="M4 4v4h4" /><text x="12.4" y="15.3" text-anchor="middle" font-size="7.5" font-weight="700" fill="currentColor" stroke="none">10</text></svg></span><span class="mp-play"><svg viewBox="0 0 24 24"><path d="M9 5v14M15 5v14" /></svg></span><span><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7" /><path d="M20 4v4h-4" /><text x="11.6" y="15.3" text-anchor="middle" font-size="7.5" font-weight="700" fill="currentColor" stroke="none">10</text></svg></span></div>
+          </div>
+          <div class="mp-card mp-chat"><small>CHAT</small><span class="mp-msg">wait, pause, I need snacks</span></div>
+        </div>
+      </div>
+    </section>
+
     <section id="install">
       <div class="row">
         <h2 class="display">Set up in a minute<br /><span>no account needed.</span></h2>
@@ -367,14 +412,14 @@
     // Smooth, eased scrolling (skipped for people who prefer reduced motion), and smooth jumps for in-page links.
     (() => {
       if (matchMedia('(prefers-reduced-motion: reduce)').matches || typeof Lenis === 'undefined') return;
-      const lenis = new Lenis({ duration: 1.15, easing: (t) => 1 - Math.pow(1 - t, 3) });
+      const lenis = new Lenis({ lerp: 0.2, wheelMultiplier: 1, smoothWheel: true });
       const raf = (time) => { lenis.raf(time); requestAnimationFrame(raf); };
       requestAnimationFrame(raf);
       document.querySelectorAll('a[href^="#"]').forEach((a) => a.addEventListener('click', (e) => {
         const target = document.querySelector(a.getAttribute('href'));
         if (!target) return;
         e.preventDefault();
-        lenis.scrollTo(target, { offset: -20 });
+        lenis.scrollTo(target, { offset: -20, duration: 0.8 });
       }));
     })();
   </script>
@@ -473,6 +518,22 @@
             for (const f of [mine, hers]) { f.style.transition = 'none'; f.style.transform = 'translateY(0)'; void f.offsetWidth; f.style.transition = ''; }
             i = 0;
           }
+        }
+      })();
+
+      // Phone as the remote: a message arrives, the pause button is tapped and the laptop pauses, then play.
+      (async function couch() {
+        const frame = $('#couch .couch-frame'), play = $('#couch .mp-play'), state = $('#couch .mp-state'), msg = $('#couch .mp-msg');
+        const PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z" /></svg>', PAUSE = '<svg viewBox="0 0 24 24"><path d="M9 5v14M15 5v14" /></svg>';
+        const tap = async (el) => { el.classList.add('tap'); await wait(160); el.classList.remove('tap'); };
+        for (;;) {
+          msg.classList.remove('on'); frame.classList.remove('held'); play.innerHTML = PAUSE; state.textContent = 'Playing · 41:02';
+          await wait(1600); msg.classList.add('on');
+          await wait(1400); await tap(play);
+          frame.classList.add('held'); play.innerHTML = PLAY; state.textContent = 'Paused · 41:05';
+          await wait(2600); await tap(play);
+          frame.classList.remove('held'); play.innerHTML = PAUSE; state.textContent = 'Playing · 41:05';
+          await wait(2600);
         }
       })();
 

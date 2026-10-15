@@ -219,6 +219,10 @@ function onRemote(msg) {
   if (msg.type === 'countdown') return startCountdown(msg.time);
   if (msg.type === 'now-watching') return showFollowBanner(msg.url, msg.title, msg.from);
   if (msg.type === 'show-closed') return pauseFor('They closed the show. Paused.');
+  if (msg.type === 'rtc') {
+    if (msg.bye) callBannerOff();
+    return;
+  }
   if (msg.type === 'connection') {
     if (!msg.up) {
       clearTheirHolds();
@@ -472,6 +476,78 @@ function showCount(n) {
   countEl.animate([{ transform: 'translate(-50%,-50%) scale(1.25)', opacity: 0.4 }, { transform: 'translate(-50%,-50%) scale(1)', opacity: 1 }], { duration: 300, easing: 'ease-out' });
 }
 
+// A soft two-note chime every two seconds, made in the browser (no sound file needed).
+function makeRinger() {
+  let ctx = null;
+  let timer = null;
+  const chime = () => {
+    try {
+      ctx ||= new AudioContext();
+      ctx.resume?.();
+      const t = ctx.currentTime;
+      [[659.25, 0], [880, 0.18]].forEach(([freq, delay]) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0, t + delay);
+        gain.gain.linearRampToValueAtTime(0.12, t + delay + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + delay + 0.6);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(t + delay);
+        osc.stop(t + delay + 0.65);
+      });
+    } catch {}
+  };
+  return {
+    start() { if (timer) return; chime(); timer = setInterval(chime, 2000); },
+    stop() { clearInterval(timer); timer = null; },
+    get on() { return !!timer; },
+  };
+}
+
+// "narp is calling" on the video: when the sidebar is closed (we ring here), or in fullscreen (the
+// sidebar rings but is hidden). Answer opens the sidebar, which picks the call up.
+const tabRinger = makeRinger();
+let callEl = null;
+function callBanner(name, ring) {
+  callBannerOff();
+  ensureFont();
+  if (ring) tabRinger.start();
+  callEl = document.createElement('div');
+  callEl.dataset.sinehan = '';
+  callEl.style.cssText = 'position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:2147483647;display:flex;align-items:center;gap:10px;' +
+    'padding:9px 10px 9px 16px;border-radius:9px;background:rgba(22,18,30,.62);backdrop-filter:blur(18px) saturate(140%);color:#efeaf6;' +
+    `font:13px/1.4 ${FONT};box-shadow:0 8px 28px rgba(0,0,0,.35)`;
+  const label = document.createElement('span');
+  label.textContent = `${name || 'They'} is calling`;
+  const btn = (text, bg, fg) => {
+    const b = document.createElement('button');
+    b.textContent = text;
+    b.style.cssText = `border:0;border-radius:7px;padding:6px 12px;background:${bg};color:${fg};font:inherit;font-weight:600;cursor:pointer`;
+    return b;
+  };
+  const answer = btn('Answer', '#c9b6f2', '#1b1325');
+  answer.onclick = () => {
+    callBannerOff();
+    ask({ type: 'open-sidebar' }, (r) => { if (!r?.ok) toast('Click the Sinehan icon to answer'); });
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+  };
+  const decline = btn('Decline', 'rgba(229,134,143,.18)', '#f0b4bb');
+  decline.onclick = () => {
+    callBannerOff();
+    post({ type: 'rtc', bye: true, declined: true, from: 'tab', name: me.name });
+    ask({ type: 'call-handled' });
+  };
+  callEl.append(label, answer, decline);
+  (document.fullscreenElement || document.body).appendChild(callEl);
+}
+function callBannerOff() {
+  tabRinger.stop();
+  callEl?.remove();
+  callEl = null;
+}
+
 // ---- CR break ----
 // You pause both of you; they see who's away and for how long. "I'm back" counts you both back in.
 let myBreak = false;
@@ -675,6 +751,12 @@ async function onLocal(msg) {
   if (msg.to && msg.to !== viewId) return;
   if (msg.type === 'jump') {
     if (isWatchTab && video && typeof msg.time === 'number') seek(msg.time); // the seek then syncs to them
+  } else if (msg.type === 'incoming-call') {
+    if (isWatchTab) callBanner(msg.name, true);
+  } else if (msg.type === 'call-gone' || msg.type === 'ring-stop') {
+    callBannerOff();
+  } else if (msg.type === 'ringing') {
+    if (isWatchTab && document.fullscreenElement) callBanner(msg.name, false); // the sidebar is ringing
   } else if (msg.type === 'break-toggle') {
     if (isWatchTab && video) toggleBreak();
   } else if (msg.type === 'countdown-start') {

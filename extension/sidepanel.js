@@ -196,6 +196,11 @@ $('wlJoin').onsubmit = (e) => {
   $('wlLink').value = '';
 };
 
+chrome.runtime.sendMessage({ type: 'pending-call' }, (call) => {
+  if (chrome.runtime.lastError || !call || pc) return;
+  startRinging(call.name);
+});
+
 function showStatus(s) {
   if (!s) return;
   const prev = status;
@@ -640,6 +645,62 @@ $('emojiBtn').onclick = () => {
 };
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeTrays(); });
 
+// A soft two-note chime every two seconds, made in the browser (no sound file needed).
+function makeRinger() {
+  let ctx = null;
+  let timer = null;
+  const chime = () => {
+    try {
+      ctx ||= new AudioContext();
+      ctx.resume?.();
+      const t = ctx.currentTime;
+      [[659.25, 0], [880, 0.18]].forEach(([freq, delay]) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0, t + delay);
+        gain.gain.linearRampToValueAtTime(0.12, t + delay + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + delay + 0.6);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(t + delay);
+        osc.stop(t + delay + 0.65);
+      });
+    } catch {}
+  };
+  return {
+    start() { if (timer) return; chime(); timer = setInterval(chime, 2000); },
+    stop() { clearInterval(timer); timer = null; },
+    get on() { return !!timer; },
+  };
+}
+
+const ringer = makeRinger();
+let incoming = null; // { name } while someone is calling and we haven't answered
+let ringTimeout = null;
+function startRinging(name) {
+  incoming = { name: name || 'They' };
+  ringer.start();
+  send({ local: true, type: 'ringing', name: incoming.name }); // the show's tab shows it in fullscreen
+  clearTimeout(ringTimeout);
+  ringTimeout = setTimeout(() => {
+    if (!incoming) return;
+    addChat('', `Missed call from ${incoming.name}`, 'system');
+    stopRinging();
+    if (pc && !localStream) endCall(null);
+  }, 40000);
+  render();
+}
+function stopRinging() {
+  if (!incoming && !ringer.on) return;
+  incoming = null;
+  ringer.stop();
+  clearTimeout(ringTimeout);
+  send({ local: true, type: 'ring-stop' });
+  chrome.runtime.sendMessage({ type: 'call-handled' }, () => void chrome.runtime.lastError);
+  render();
+}
+
 // ---- Video call ----
 // Video goes browser-to-browser over WebRTC; the relay only carries the setup messages.
 // Uses the "perfect negotiation" pattern so it doesn't matter who starts or turns on their camera first.
@@ -649,6 +710,7 @@ let localStream = null;
 let remoteStream = null;
 let makingOffer = false;
 let ignoreOffer = false;
+let awaitingOffer = false;
 let audioTx = null;
 let theirMicOn = null; // what they told us (null = not in a call / unknown) // the transceiver our mic goes out on (track swapped in/out without renegotiating)
 // Mic on/off is remembered. Off means the microphone is fully released, which keeps Bluetooth
@@ -742,6 +804,7 @@ function createPeer() {
   remoteStream = new MediaStream();
 
   pc.onnegotiationneeded = async () => {
+    if (awaitingOffer) return; // answering a call late: wait for their fresh offer instead of racing it
     try {
       makingOffer = true;
       await pc.setLocalDescription();
@@ -769,9 +832,28 @@ function createPeer() {
   };
 }
 
-async function onSignal({ description, candidate, bye, from, name }) {
+async function onSignal({ description, candidate, bye, declined, want, from, name }) {
+  // They picked up late and want a fresh offer from us (our first one went unanswered).
+  if (want === 'offer') {
+    if (!pc || !localStream) return;
+    try {
+      makingOffer = true;
+      if (pc.signalingState === 'have-local-offer') await pc.setLocalDescription({ type: 'rollback' });
+      await pc.setLocalDescription(await pc.createOffer({ iceRestart: true }));
+      signal({ description: pc.localDescription.toJSON() });
+    } finally {
+      makingOffer = false;
+    }
+    return;
+  }
   if (bye) {
-    if (pc) endCall(`${name || 'They'} hung up`);
+    if (incoming && !localStream) {
+      addChat('', `Missed call from ${incoming.name}`, 'system');
+      stopRinging();
+      if (pc) endCall(null);
+    } else if (pc) {
+      endCall(declined ? `${name || 'They'} declined` : `${name || 'They'} hung up`);
+    }
     return;
   }
   if (description) {
@@ -779,12 +861,17 @@ async function onSignal({ description, candidate, bye, from, name }) {
       if (description.type !== 'offer') return;
       createPeer();
       addChat('', `${name || 'They'} started a video call`, 'system');
+      if (!localStream) startRinging(name);
     }
     const polite = myId < from;
     const collision = description.type === 'offer' && (makingOffer || pc.signalingState !== 'stable');
     ignoreOffer = !polite && collision;
-    if (ignoreOffer) return;
+    if (ignoreOffer) {
+      if (pc.localDescription?.type === 'offer') signal({ description: pc.localDescription.toJSON() });
+      return;
+    }
     await pc.setRemoteDescription(description);
+    if (description.type === 'offer') awaitingOffer = false;
     if (description.type === 'offer') {
       await pc.setLocalDescription();
       signal({ description: pc.localDescription.toJSON() });
@@ -813,9 +900,21 @@ async function turnOnCamera() {
     return false;
   }
   $('local').srcObject = localStream;
+  // Answering a call that started while our sidebar was closed: ask them for a fresh offer, rather than
+  // both sides offering at once. (Falls back to offering ourselves if nothing comes.)
+  const late = !pc;
+  if (late) awaitingOffer = true;
   if (!pc) createPeer();
   for (const track of localStream.getTracks()) pc.addTrack(track, localStream);
   micTransceiver(); // ready for the mic, even if it starts off
+  if (late) {
+    signal({ want: 'offer' });
+    setTimeout(() => {
+      if (!awaitingOffer || !pc) return;
+      awaitingOffer = false;
+      pc.onnegotiationneeded?.();
+    }, 5000);
+  }
   if (micOn) await setMic(true);
   listDevices(); // names are visible now that we have permission
   send({ type: 'mic', on: !!localStream.getAudioTracks().length });
@@ -859,11 +958,13 @@ async function setMic(on) {
 }
 
 function endCall(reason, notify = false) {
+  if (incoming) stopRinging();
   if (notify) signal({ bye: true });
   stopAllRelays();
   if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
   pc?.close();
   pc = null;
+  awaitingOffer = false;
   audioTx = null;
   theirMicOn = null;
   localStream?.getTracks().forEach((t) => t.stop());
@@ -878,7 +979,17 @@ function endCall(reason, notify = false) {
 $('start').onclick = async () => {
   if (await turnOnCamera()) addChat('', 'Calling. They need the sidebar open to pick up.', 'system');
 };
-$('join').onclick = turnOnCamera;
+$('join').onclick = () => {
+  stopRinging();
+  turnOnCamera();
+};
+$('decline').onclick = () => {
+  const who = incoming?.name;
+  stopRinging();
+  signal({ bye: true, declined: true });
+  if (pc) endCall(null);
+  addChat('', `You declined ${who ? `${who}’s` : 'the'} call`, 'system');
+};
 $('hangup').onclick = () => endCall('You hung up', true);
 
 $('mic').onclick = () => setMic(!localStream?.getAudioTracks().length);
@@ -973,7 +1084,9 @@ function render() {
 
   $('start').hidden = inCall;
   $('start').disabled = !bothHere;
-  $('join').hidden = !inCall || hasCamera;
+  $('join').hidden = !(inCall || incoming) || hasCamera;
+  $('decline').hidden = !incoming;
+  $('start').hidden = inCall || !!incoming;
   $('mic').hidden = $('cam').hidden = !hasCamera;
   $('mic').classList.toggle('off', !localStream?.getAudioTracks().length);
   sendCallState();
@@ -985,7 +1098,8 @@ function render() {
 
   $('placeholder').hidden = seeingThem;
   $('faces').replaceChildren(avatarEl(me.avatar, 52), ...(peer ? [avatarEl(peer.avatar, 52)] : []));
-  $('phText').textContent = !status.connected ? 'Not in a room yet. Use Invite to start one.'
+  $('phText').textContent = incoming ? `${incoming.name} is calling…`
+    : !status.connected ? 'Not in a room yet. Use Invite to start one.'
     : !bothHere ? 'Waiting for them to join.'
     : !inCall ? 'Camera’s off.'
     : 'Connecting…';

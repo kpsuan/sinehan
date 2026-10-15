@@ -152,6 +152,8 @@ async function chat(panel, msg) {
   await panel.fill('#msg', msg);
   await panel.press('#msg', 'Enter');
 }
+const shown = (p, re) => p.evaluate((src) => [...document.querySelectorAll('[data-sinehan]')].some((e) => new RegExp(src).test(e.textContent)), re.source);
+const showingIn = (p) => p.evaluate(() => [...document.querySelectorAll('[data-sinehan]')].some((e) => /is calling/.test(e.textContent) && getComputedStyle(e).opacity !== '0'));
 const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v'); return { paused: v.paused, t: v.currentTime }; });
 
 // =====================================================================
@@ -165,7 +167,7 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
   try {
     // ---------------------------------------------------------------
     section('Connecting & profiles');
-    const pA = await openPanel(A);
+    let pA = await openPanel(A);
     const pB = await openPanel(B);
     check('fresh sidebar shows "Not connected"', (await text(pA, '#status')) === 'Not connected');
     await pA.click('#settingsBtn'); // close Settings to see the first screen
@@ -354,7 +356,7 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     await sleep(500);
     await chat(pA, 'are you there?');
     check('sidebar closed: message shows as a notice on the video', await until(() => vB.evaluate(() => [...document.body.querySelectorAll('div')].some((d) => d.textContent.includes('are you there?')))));
-    const pB2 = await openPanel(B);
+    let pB2 = await openPanel(B);
     check('sidebar closed: message is waiting in history', await until(async () => (await logLines(pB2)).some((l) => l.text.includes('are you there?'))));
 
     // ---------------------------------------------------------------
@@ -363,6 +365,7 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     await pA.click('#start');
     check('caller sees own camera', await until(() => pA.$eval('#local', (v) => !v.hidden && v.videoWidth > 0), 8000));
     check('callee gets "Join with camera"', await until(() => pB2.$eval('#join', (b) => !b.hidden), 8000));
+    check('incoming call rings: "is calling" with Decline', await until(async () => (await text(pB2, '#phText')).includes('is calling') && await pB2.$eval('#decline', (b) => !b.hidden)));
     check('callee already sees caller', await until(() => pB2.$eval('#remote', (v) => v.videoWidth > 0), 10000));
     await pB2.click('#join');
     check('caller sees callee', await until(() => pA.$eval('#remote', (v) => v.videoWidth > 0), 10000));
@@ -465,11 +468,32 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
     check('hang up ends call on both sides', await until(async () => !(await pB2.$eval('#start', (b) => b.hidden)) && !(await pA.$eval('#start', (b) => b.hidden))));
     check('callee told the call ended', (await logLines(pB2)).some((l) => l.text.includes('hung up')));
 
+    // ---------------------------------------------------------------
+    section('Ringing');
+    await pA.click('#start');
+    await until(() => pB2.$eval('#decline', (b) => !b.hidden), 8000);
+    await pB2.click('#decline');
+    check('declining tells the caller', await until(async () => (await logLines(pA)).some((l) => l.text.includes('declined')), 8000));
+    check('…and ends the call on both sides', await until(async () => !(await pA.$eval('#start', (b) => b.hidden)) && !(await pB2.$eval('#start', (b) => b.hidden))));
+
+    // Your sidebar is closed when she calls: the show's tab shows it, and opening the sidebar picks it up.
+    // (Run on A: B's real Chrome sidebar was opened earlier by the fullscreen Exit button.)
+    await pA.close();
+    await sleep(800);
+    await pB2.click('#start');
+    check('sidebar closed: the call shows on the video', await until(() => shown(vA, /is calling/), 20000));
+    pA = await openPanel(A);
+    check('opening the sidebar picks up the ringing call', await until(() => pA.$eval('#decline', (b) => !b.hidden), 8000));
+    await pA.click('#join');
+    check('answering late still connects both ways', await until(async () => (await pA.$eval('#remote', (v) => v.videoWidth > 0)) && (await pB2.$eval('#remote', (v) => v.videoWidth > 0)), 25000));
+    check('the banner goes away once answered', await until(async () => !(await showingIn(vA))));
+    await pA.click('#hangup');
+    await until(async () => !(await pB2.$eval('#start', (b) => b.hidden)));
+
 
     // ---------------------------------------------------------------
     section('Watch tab & watching together');
     const watchTitle = (p) => p.$eval('#watchTitle', (e) => (e.classList.contains('none') ? '' : e.textContent));
-    const shown = (p, re) => p.evaluate((src) => [...document.querySelectorAll('[data-sinehan]')].some((e) => new RegExp(src).test(e.textContent)), re.source);
     check('each side picked its show tab', await until(async () => (await watchTitle(pA)) && (await watchTitle(pB2))));
 
     // A second tab with a video can't control anything, and isn't controlled.
@@ -529,7 +553,7 @@ const vstate = (p) => p.evaluate(() => { const v = document.getElementById('v');
 
     await vA2.evaluate(() => { document.getElementById('v').currentTime = 30; });
     await until(async () => Math.abs((await vstate(vB)).t - 30) < 1.5);
-    await sleep(1600); // the show position reaches the sidebar
+    await sleep(3000); // the show position reaches the sidebar (updated about once a second, then polled)
     await chat(pA, 'this scene!');
     const stamp = await until(() => pB2.$$eval('#log .msg', (ms) => ms.find((m) => m.textContent.includes('this scene!'))?.querySelector('.stamp')?.textContent));
     check('chat messages carry the show time', stamp === '0:30', stamp);
