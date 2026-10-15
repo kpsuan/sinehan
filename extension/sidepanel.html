@@ -363,6 +363,36 @@
     .wl-meet b { color: var(--text); font-weight: 600; }
     .wl-meet i { font-style: normal; color: var(--accent); }
     .wl-step + .wl-step { margin-top: 20px; }
+    /* Short screens: "Start a party" stays in reach at the bottom while the rest scrolls */
+    .wl-start { position: sticky; bottom: -20px; z-index: 2; margin: 20px -16px -20px; padding: 12px 16px 20px; background: var(--wl-sticky);
+      box-shadow: 0 -12px 18px -12px rgba(0, 0, 0, .45); }
+    :root { --wl-sticky: #120f17; }
+    :root[data-theme='dark'] { --wl-sticky: #16121c; }
+    :root[data-theme='light'] { --wl-sticky: #ffffff; }
+    :root[data-theme='light'] .wl-start { box-shadow: 0 -12px 18px -12px rgba(16, 16, 24, .12); }
+    /* Bantay's hello: a bark and a hop (tap him on the welcome screen for another) */
+    #wlBantay { cursor: pointer; }
+    .hop { animation: hop .5s cubic-bezier(.3, .7, .3, 1.4); }
+    @keyframes hop { 0%, 100% { transform: translateY(0); } 35% { transform: translateY(-14px) rotate(-3deg); } 65% { transform: translateY(0) rotate(2deg); } }
+    .intro { display: flex; flex-direction: column; align-items: center; gap: 10px; min-height: 100%; padding: 6px 4px 4px; text-align: center; }
+    .intro[hidden] { display: none; }
+    .intro-skip { align-self: flex-end; padding: 4px 8px; border: 0; background: none; color: var(--muted); font-size: 12px; }
+    .intro-stage { position: relative; display: grid; place-items: center; width: 100%; min-height: 200px; margin-top: 8px; }
+    .intro-dog { width: 150px; }
+    .intro-dog svg { display: block; width: 100%; height: auto; }
+    .intro-bark { position: absolute; top: 6px; right: calc(50% - 128px); padding: 6px 12px; border-radius: 12px 12px 12px 3px; background: var(--accent); color: var(--accent-ink);
+      font-weight: 700; font-size: 14px; opacity: 0; transform: scale(.6) rotate(-6deg); transition: opacity .2s, transform .25s cubic-bezier(.3, .7, .3, 1.4); }
+    .intro-bark.on { opacity: 1; transform: scale(1) rotate(-6deg); }
+    .intro-title { margin: 6px 0 0; font-size: 22px; letter-spacing: -0.02em; }
+    .intro-text { margin: 0; max-width: 30ch; color: var(--muted); }
+    .intro-dots { display: flex; gap: 6px; margin: 6px 0 2px; }
+    .intro-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--line); }
+    :root[data-theme='light'] .intro-dots i { background: #d8d8de; }
+    .intro-dots i.on { width: 18px; border-radius: 3px; background: var(--accent); }
+    #introNext { width: 100%; margin-top: auto; padding: 11px; font-size: 14px; }
+    .intro-step-in { animation: stepIn .35s ease both; }
+    @keyframes stepIn { from { opacity: 0; transform: translateY(8px); } }
+    @media (prefers-reduced-motion: reduce) { .hop, .intro-step-in { animation: none; } }
     .wl-profile { display: flex; align-items: center; gap: 10px; }
     .wl-profile input { flex: 1; }
     #wlAvatars { display: flex; gap: 12px; margin-top: 12px; }
@@ -581,7 +611,18 @@
   </div>
 
   <section id="welcome" class="card" hidden>
-    <div class="wl-bantay" id="wlBantay" aria-hidden="true"></div>
+    <div id="intro" class="intro" hidden>
+      <button type="button" id="introSkip" class="intro-skip">Skip</button>
+      <div class="intro-stage">
+        <span class="intro-bark" id="introBark">Woof!</span>
+        <div class="intro-dog" id="introDog" aria-hidden="true"></div>
+      </div>
+      <h1 class="intro-title" id="introTitle"></h1>
+      <p class="intro-text" id="introText"></p>
+      <div class="intro-dots" id="introDots"></div>
+      <button type="button" id="introNext" class="primary wide">Next</button>
+    </div>
+    <div class="wl-bantay" id="wlBantay" aria-hidden="true" title="Pat Bantay"></div>
     <svg class="pen" viewBox="0 0 520 150" role="img" aria-label="Sinehan">
       <defs>
         <linearGradient id="nib" x1="0" x2="1"><stop offset="0" stop-color="#fff" /><stop offset=".86" stop-color="#fff" /><stop offset="1" stop-color="#fff" stop-opacity="0" /></linearGradient>
@@ -606,7 +647,7 @@
       <div class="wl-resume"><span id="wlResumeText"></span><button id="wlResumeGo" class="primary">Resume</button></div>
     </div>
 
-    <div class="wl-step">
+    <div class="wl-step wl-start">
       <h2>Start watching</h2>
       <button id="wlStart" class="primary wide">Start a party</button>
       <p class="wl-hint">Makes a room and copies an invite link. Open your show first, and the link takes them straight to it.</p>

@@ -286,6 +286,80 @@ $('settings').addEventListener('toggle', () =>
   $('settingsBtn').setAttribute('aria-pressed', String($('settings').open)),
 );
 
+// ---- Bantay's introduction (the first time) ----
+// He hops in, barks hello, then walks you through the three steps. Tap him on the welcome screen for
+// another bark.
+const INTRO = [
+  { pose: 'happy', bark: 'Woof!', title: 'Hi, I’m Bantay.', text: 'I keep watch while the two of you watch together, from two places.' },
+  { pose: 'guard', title: 'Open your show', text: 'YouTube, Netflix, Prime Video or almost any site with a video. Keep this sidebar open beside it.' },
+  { pose: 'sit', bark: 'Arf!', title: 'Start a party, send the link', text: 'Your invite link is copied for you. They tap it and land on the same show, at the same scene.' },
+  { pose: 'lying', title: 'Watch together', text: 'Play, pause and skip stay in sync. Chat, call, take CR breaks and pick what’s next, right here.' },
+];
+let introStep = 0;
+function bark(text = 'Woof!') {
+  const b = $('introBark');
+  b.textContent = text;
+  b.classList.remove('on');
+  void b.offsetWidth;
+  b.classList.add('on');
+  clearTimeout(bark.t);
+  bark.t = setTimeout(() => b.classList.remove('on'), 1400);
+}
+function hop(el) {
+  el.classList.remove('hop');
+  void el.offsetWidth;
+  el.classList.add('hop');
+}
+function showIntroStep() {
+  const s = INTRO[introStep];
+  $('introDog').innerHTML = Bantay.svg(s.pose, { coat: bantayCoat }); // fixed markup
+  $('introTitle').textContent = s.title;
+  $('introText').textContent = s.text;
+  $('introDots').replaceChildren(...INTRO.map((_, i) => Object.assign(document.createElement('i'), { className: i === introStep ? 'on' : '' })));
+  $('introNext').textContent = introStep === INTRO.length - 1 ? 'Let’s watch' : 'Next';
+  for (const id of ['introDog', 'introTitle', 'introText']) {
+    $(id).classList.remove('intro-step-in');
+    void $(id).offsetWidth;
+    $(id).classList.add('intro-step-in');
+  }
+  hop($('introDog'));
+  if (s.bark) setTimeout(() => bark(s.bark), 380);
+}
+function endIntro() {
+  $('intro').hidden = true;
+  for (const n of $('welcome').children) if (n.id !== 'intro') n.toggleAttribute('hidden', n.dataset.wasHidden === '1');
+  chrome.storage.local.set({ introSeen: true });
+  hop($('wlBantay'));
+}
+function startIntro() {
+  // First run: straight to Bantay (not the settings).
+  $('settings').open = false;
+  renderWelcome();
+  for (const n of $('welcome').children) {
+    if (n.id === 'intro') continue;
+    n.dataset.wasHidden = n.hasAttribute('hidden') ? '1' : '';
+    n.setAttribute('hidden', '');
+  }
+  $('intro').hidden = false;
+  introStep = 0;
+  showIntroStep();
+}
+$('introNext').onclick = () => {
+  if (introStep === INTRO.length - 1) return endIntro();
+  introStep += 1;
+  showIntroStep();
+};
+$('introSkip').onclick = endIntro;
+$('introDog').onclick = () => {
+  hop($('introDog'));
+  bark(INTRO[introStep].bark || 'Woof!');
+};
+// On the welcome screen: tap Bantay, he hops and wags.
+$('wlBantay').onclick = () => hop($('wlBantay'));
+chrome.storage.local.get('introSeen').then(({ introSeen }) => {
+  if (!introSeen && !status.room) startIntro();
+});
+
 // ---- Welcome (not in a party yet) ----
 function renderWelcome() {
   const show = !status.room && !$('settings').open && $('historyView').hidden && $('bestView').hidden;

@@ -143,10 +143,15 @@ async function launch(label) {
   return { label, ctx, extId };
 }
 
-async function openPanel(user) {
+// The first time, Bantay introduces himself; skip that unless a test wants to see it.
+async function openPanel(user, { intro = false } = {}) {
   const p = await user.ctx.newPage();
   await p.goto(`chrome-extension://${user.extId}/sidepanel.html`);
   await p.waitForSelector('#avatars button', { state: 'attached' });
+  if (!intro) {
+    await sleep(300);
+    await p.evaluate(() => { if (!document.getElementById('intro').hidden) endIntro(); });
+  }
   return p;
 }
 async function openVideo(user) {
@@ -203,8 +208,16 @@ const vstate = (p) =>
 
   try {
     section('Connecting & profiles');
-    let pA = await openPanel(A);
+    let pA = await openPanel(A, { intro: true });
     const pB = await openPanel(B);
+    check('the first time, Bantay introduces himself', await until(() => pA.$eval('#intro', (i) => !i.hidden)) && /Bantay/.test(await text(pA, '#introTitle')));
+    check('…and barks hello', await until(() => pA.$eval('#introBark', (b) => b.classList.contains('on'))));
+    for (let i = 0; i < 4; i++) await pA.click('#introNext');
+    check('…then steps through to the welcome screen', await pA.$eval('#intro', (i) => i.hidden) && await pA.$eval('#wlStart', (b) => b.checkVisibility()));
+    await pA.reload();
+    await pA.waitForSelector('#avatars button', { state: 'attached' });
+    await sleep(500);
+    check('…only the first time', await pA.$eval('#intro', (i) => i.hidden));
     check('fresh sidebar shows "Not connected"', (await text(pA, '#status')) === 'Not connected');
     await pA.click('#settingsBtn'); // close Settings to see the first screen
     check(
