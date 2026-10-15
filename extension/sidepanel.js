@@ -91,7 +91,7 @@ function onMessage(msg) {
     seenChat.add(msg.id);
 
     // `mine` = sent from this browser's fullscreen chat rather than this sidebar.
-    addChat(msg.name, msg.text, msg.mine ? 'me' : 'them', msg.avatar, msg.vt, $('log'), msg.guide);
+    addChat(msg.name, msg.text, msg.mine ? 'me' : 'them', msg.avatar, msg.vt, $('log'), msg.guide, msg.guess);
     if (!msg.mine) showTyping(null);
   } else if (msg.type === 'mic') {
     if (pc && msg.on === false && theirMicOn !== false)
@@ -112,6 +112,8 @@ function onMessage(msg) {
   } else if (msg.type === 'room-full') {
     $('wlError').textContent = `That party is full (${msg.max || 10} people at most). Ask them for a new invite link.`;
     $('wlError').hidden = false;
+  } else if (msg.type === 'guesses-changed') {
+    loadGuesses();
   } else if (msg.type === 'guides-changed') {
     if ($('bestView').hidden || episodesMode !== 'guide') return;
     if (!openGuide) listGuides();
@@ -263,7 +265,7 @@ function startFresh() {
         for (const m of history) {
           if (m.id && seenChat.has(m.id)) continue;
           if (m.id) seenChat.add(m.id);
-          addChat(m.name, m.text, m.mine ? 'me' : 'them', m.avatar, m.vt, $('log'), m.guide);
+          addChat(m.name, m.text, m.mine ? 'me' : 'them', m.avatar, m.vt, $('log'), m.guide, m.guess);
         }
       }),
     400,
@@ -736,7 +738,7 @@ ask({ type: 'history' }, (history = []) => {
   for (const m of history) {
     if (m.id && seenChat.has(m.id)) continue;
     if (m.id) seenChat.add(m.id);
-    addChat(m.name, m.text, m.mine ? 'me' : 'them', m.avatar, m.vt, $('log'), m.guide);
+    addChat(m.name, m.text, m.mine ? 'me' : 'them', m.avatar, m.vt, $('log'), m.guide, m.guess);
   }
   $('log').append(...live);
   $('log').scrollTop = $('log').scrollHeight;
@@ -760,7 +762,7 @@ function sendChat(text, extra = {}) {
   const vt = showTime();
   seenChat.add(id);
   send({ type: 'chat', id, name: myName(), avatar: me.avatar, text, vt, ...extra });
-  addChat(myName(), text, 'me', me.avatar, vt, $('log'), extra.guide);
+  addChat(myName(), text, 'me', me.avatar, vt, $('log'), extra.guide, extra.guess);
 }
 
 // Current position in the show (from the show's tab), for stamping chat messages.
@@ -805,7 +807,7 @@ function isEmojiOnly(text) {
 }
 
 // `into` = which list (the live chat, or a past party being read); past parties' timestamps aren't clickable.
-function addChat(name, text, kind, avatar, vt, into = $('log'), guide = null) {
+function addChat(name, text, kind, avatar, vt, into = $('log'), guide = null, guess = null) {
   const live = into === $('log');
   const line = document.createElement('div');
   line.className = `line ${kind}`;
@@ -817,8 +819,14 @@ function addChat(name, text, kind, avatar, vt, into = $('log'), guide = null) {
     const who = document.createElement('span');
     who.className = 'who';
     who.textContent = name;
-    if (isEmojiOnly(text || '') && !guide) bubble.classList.add('big');
-    if (guide?.id) {
+    if (isEmojiOnly(text || '') && !guide && !guess) bubble.classList.add('big');
+    if (guess?.id) {
+      // A "Who did it?" guess: sealed until you both reveal.
+      bubble.classList.add('guess-card');
+      bubble.dataset.guess = guess.id;
+      bubble.append(who);
+      drawGuessCard(bubble);
+    } else if (guide?.id) {
       // A shared watch guide shows as a card with an Open button.
       bubble.classList.add('card-msg');
       const label = document.createElement('span');
@@ -1658,7 +1666,166 @@ for (const [label, list] of Object.entries(EMOJI)) {
 function closeTrays() {
   $('emojiTray').hidden = true;
   $('emojiBtn').setAttribute('aria-pressed', 'false');
+  $('guessTray').hidden = true;
+  $('guessBtn').setAttribute('aria-pressed', 'false');
 }
+
+// ---- "Who did it?" ----
+// The background keeps guesses (sealed until both reveal); chat carries a card that shows their state.
+let guesses = new Map(); // id -> guess (theirs have no text until revealed)
+let revealWants = {};
+let guessPick = null; // { name, image } picked from the cast
+const LOCK_ICON = '<svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2" /><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" /></svg>';
+function loadGuesses() {
+  ask({ type: 'guesses' }, (r) => {
+    if (!r) return;
+    guesses = new Map(r.list.map((g) => [g.id, g]));
+    revealWants = r.wants || {};
+    document.querySelectorAll('.guess-card[data-guess]').forEach(drawGuessCard);
+  });
+}
+loadGuesses();
+const currentShowName = () => (status.watch ? inviteTitle(status.watch.showTitle || status.watch.title) : '');
+
+function drawGuessCard(card) {
+  const g = guesses.get(card.dataset.guess);
+  const who = card.querySelector('.who');
+  card.replaceChildren(who);
+  const top = document.createElement('div');
+  top.className = 'gq-top';
+  const pose = !g?.revealed ? 'head-tilt' : g.verdict === 'right' ? 'happy' : g.verdict === 'wrong' ? 'tilt' : 'guard';
+  top.innerHTML = Bantay.svg(pose === 'happy' || pose === 'tilt' || pose === 'guard' ? 'head' : pose, { coat: bantayCoat }); // fixed markup
+  const label = document.createElement('div');
+  label.innerHTML = '<div class="gq-label">Who did it?</div>';
+  const meta = document.createElement('div');
+  meta.className = 'gq-meta';
+  meta.textContent = g ? [g.showName, typeof g.vt === 'number' ? `at ${clock(g.vt)}` : ''].filter(Boolean).join(' · ') : 'A locked guess';
+  label.append(meta);
+  top.append(label);
+  card.append(top);
+  if (!g) return;
+  const whoName = g.mine ? 'You' : g.by || 'They';
+  if (!g.revealed) {
+    const sealed = document.createElement('div');
+    sealed.className = 'gq-sealed';
+    sealed.innerHTML = LOCK_ICON; // fixed markup
+    sealed.append(g.mine ? `Your guess: ${g.text}` : `${whoName} locked a guess`);
+    card.append(sealed);
+    if (g.mine && g.note) card.append(Object.assign(document.createElement('div'), { className: 'gq-note', textContent: g.note }));
+    const actions = document.createElement('div');
+    actions.className = 'gq-actions';
+    const w = revealWants[g.show] || {};
+    const btn = Object.assign(document.createElement('button'), { type: 'button', className: 'go' });
+    if (w.me) {
+      btn.textContent = `Waiting for ${peer?.name || 'them'} to reveal…`;
+      btn.disabled = true;
+    } else {
+      btn.textContent = w.them ? `${peer?.name || 'They'} wants to reveal. Reveal` : 'Reveal';
+      btn.onclick = () => ask({ type: 'guess-reveal', show: g.show });
+    }
+    actions.append(btn);
+    card.append(actions);
+    return;
+  }
+  // Revealed: the name (and face), the note, whether it's unchanged since it was locked, and who was right.
+  const reveal = document.createElement('div');
+  reveal.className = 'gq-who';
+  if (g.image) reveal.append(Object.assign(document.createElement('img'), { src: g.image, alt: '' }));
+  const name = document.createElement('div');
+  name.append(Object.assign(document.createElement('div'), { className: 'gq-meta', textContent: `${whoName} guessed` }), Object.assign(document.createElement('b'), { textContent: g.text }));
+  reveal.append(name);
+  card.append(reveal);
+  if (g.note) card.append(Object.assign(document.createElement('div'), { className: 'gq-note', textContent: `“${g.note}”` }));
+  card.append(Object.assign(document.createElement('div'), { className: 'gq-check', textContent: g.mine || g.verified ? `Locked ${partyDate(g.at)}, unchanged` : 'Couldn’t confirm this one wasn’t changed' }));
+  if (!g.verdict) {
+    const actions = document.createElement('div');
+    actions.className = 'gq-actions';
+    for (const [text, right] of [['Right', true], ['Wrong', false]]) {
+      const b = Object.assign(document.createElement('button'), { type: 'button', textContent: text, className: right ? 'go' : '' });
+      b.onclick = () => ask({ type: 'guess-verdict', id: g.id, right });
+      actions.append(b);
+    }
+    card.append(actions);
+  } else {
+    card.append(Object.assign(document.createElement('div'), { className: 'gq-verdict', textContent: g.verdict === 'right' ? `${whoName} got it!` : 'Not this time' }));
+    // The score for this show so far.
+    const score = {};
+    for (const x of guesses.values()) if (x.show === g.show && x.verdict === 'right') score[x.mine ? myName() : x.by || 'They'] = (score[x.mine ? myName() : x.by || 'They'] || 0) + 1;
+    const line = Object.entries(score).sort((a, b) => b[1] - a[1]).map(([n, c]) => `${n} ${c}`).join(' · ');
+    if (line) card.append(Object.assign(document.createElement('div'), { className: 'gq-score', textContent: `${g.showName}: ${line}` }));
+  }
+}
+
+// The tray: the show's cast to pick from (TVmaze), or any name.
+let castFor = '';
+async function openGuessTray() {
+  const show = currentShowName();
+  $('guessShow').textContent = show || '';
+  $('guessErr').hidden = true;
+  guessPick = null;
+  if (!show) {
+    $('guessCast').replaceChildren(Object.assign(document.createElement('p'), { className: 'gt-hint', textContent: 'Open your show first (or click Watch this tab).' }));
+    return;
+  }
+  if (castFor === show) return;
+  castFor = show;
+  $('guessCast').replaceChildren(Object.assign(document.createElement('p'), { className: 'gt-hint', textContent: 'Loading the cast…' }));
+  let cast = [];
+  try {
+    const r = await fetch(`https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(show)}&embed=cast`);
+    const data = r.ok ? await r.json() : null;
+    if (data && Reddit.sameShow(data.name, show)) cast = data._embedded?.cast || [];
+  } catch {}
+  if (castFor !== show) return;
+  if (!cast.length) {
+    $('guessCast').replaceChildren(Object.assign(document.createElement('p'), { className: 'gt-hint', textContent: 'No cast list for this one. Type a name below.' }));
+    return;
+  }
+  $('guessCast').replaceChildren(...cast.slice(0, 40).map((c) => {
+    const nameText = c.character?.name || c.person?.name || '';
+    const image = String(c.character?.image?.medium || c.person?.image?.medium || '').replace(/^http:/, 'https:');
+    const b = Object.assign(document.createElement('button'), { type: 'button', title: c.person?.name ? `${nameText} (${c.person.name})` : nameText });
+    b.setAttribute('aria-pressed', 'false');
+    if (image) b.append(Object.assign(document.createElement('img'), { src: image, alt: '', loading: 'lazy' }));
+    else b.append(Object.assign(document.createElement('span'), { className: 'gt-noface' }));
+    b.append(Object.assign(document.createElement('span'), { textContent: nameText }));
+    b.onclick = () => {
+      guessPick = { name: nameText, image };
+      $('guessName').value = nameText;
+      $('guessCast').querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    };
+    return b;
+  }));
+}
+$('guessBtn').onclick = () => {
+  const opening = $('guessTray').hidden;
+  closeTrays();
+  if (!opening) return;
+  $('guessTray').hidden = false;
+  $('guessBtn').setAttribute('aria-pressed', 'true');
+  openGuessTray();
+};
+$('guessName').addEventListener('input', () => {
+  if (guessPick && $('guessName').value !== guessPick.name) {
+    guessPick = null;
+    $('guessCast').querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', 'false'));
+  }
+});
+$('guessLock').onclick = () => {
+  const showName = currentShowName();
+  const text = $('guessName').value.trim();
+  const err = (t) => { $('guessErr').textContent = t; $('guessErr').hidden = false; };
+  if (!showName) return err('Open your show first.');
+  if (!text) return err('Pick someone, or type a name.');
+  if (!(status.connected && status.peers > 1)) return err('Your partner needs to be here to see it.');
+  ask({ type: 'guess-lock', show: norm(showName), showName, vt: showTime(), by: myName(), text, note: $('guessNote').value.trim(), image: guessPick?.name === text ? guessPick.image : '' }, (g) => {
+    if (!g) return err('Couldn’t lock that one. Try again.');
+    guesses.set(g.id, g);
+    sendChat('locked a guess', { guess: { id: g.id } });
+    $('guessName').value = $('guessNote').value = '';
+    closeTrays();
+  });
+};
 $('emojiBtn').onclick = () => {
   const opening = $('emojiTray').hidden;
   closeTrays();

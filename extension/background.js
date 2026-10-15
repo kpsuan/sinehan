@@ -225,6 +225,20 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     if (watch) chrome.tabs.reload(watch.tabId).catch(() => {});
     reply(true);
     return;
+  } else if (msg.type === 'guesses') {
+    guessWrite.then(readGuesses).then((list) => reply({ list: list.map(guessView), wants: revealWants }));
+    return true;
+  } else if (msg.type === 'guess-lock') {
+    lockGuess(msg).then(reply);
+    return true;
+  } else if (msg.type === 'guess-reveal') {
+    wantReveal('me', str(msg.show, 100));
+    reply(true);
+    return;
+  } else if (msg.type === 'guess-verdict') {
+    setVerdict(str(msg.id, 80), msg.right === true ? 'right' : msg.right === false ? 'wrong' : null, true);
+    reply(true);
+    return;
   } else if (msg.type === 'set-watch') {
     setWatchTab(msg.tabId, true).then(() => reply(statusView()));
     return true;
@@ -466,6 +480,97 @@ function shareGuides() {
   });
 }
 
+// ---- "Who did it?" ----
+// Lock a guess about who's behind it. Your partner sees only that you locked one (and a fingerprint of
+// it); when you both tap Reveal, each side opens its own guesses, and the fingerprint proves nobody
+// changed theirs after the fact. Guesses stick to the show, so a mystery can run for seasons.
+let guessWrite = Promise.resolve();
+const revealWants = {}; // show -> { me, them }: both tapped Reveal → open
+async function readGuesses() {
+  return (await chrome.storage.local.get('guesses')).guesses || [];
+}
+function changeGuesses(fn) {
+  const run = guessWrite.then(readGuesses).then(async (list) => {
+    const result = await fn(list);
+    await chrome.storage.local.set({ guesses: list.slice(-300) });
+    panels({ type: 'guesses-changed' });
+    return result;
+  });
+  guessWrite = run.catch(console.error);
+  return run;
+}
+// What the sidebar may show: their guesses only once revealed (they aren't even here before then).
+const guessView = (g) => ({ id: g.id, show: g.show, showName: g.showName, ep: g.ep, vt: g.vt, by: g.by, mine: g.mine, at: g.at,
+  revealed: g.revealed, verified: g.verified, verdict: g.verdict,
+  text: g.mine || g.revealed ? g.text : '', note: g.mine || g.revealed ? g.note : '', image: g.mine || g.revealed ? g.image : '' });
+async function fingerprint(salt, text, note) {
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${salt}|${text}|${note}`));
+  return [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+const guessImage = (x) => (/^https:\/\/static\.tvmaze\.com\/[\w/.-]+$/.test(x || '') ? x : '');
+async function lockGuess(msg) {
+  const text = str(msg.text, 80).trim();
+  if (!text) return null;
+  const note = str(msg.note, 200).trim();
+  const salt = crypto.randomUUID();
+  const g = {
+    id: crypto.randomUUID(), show: str(msg.show, 100), showName: str(msg.showName, 100), ep: str(msg.ep, 40),
+    vt: typeof msg.vt === 'number' ? msg.vt : null, by: str(msg.by, 30), mine: true, room: status.room, at: Date.now(),
+    text, note, image: guessImage(msg.image), salt, hash: await fingerprint(salt, text, note), revealed: false, verified: true, verdict: null,
+  };
+  await changeGuesses((list) => list.push(g));
+  send({ type: 'guess-lock', id: g.id, show: g.show, showName: g.showName, ep: g.ep, vt: g.vt, by: g.by, at: g.at, hash: g.hash });
+  return guessView(g);
+}
+function theirGuess(msg) {
+  const id = str(msg.id, 80);
+  if (!id) return;
+  changeGuesses((list) => {
+    if (list.some((g) => g.id === id)) return;
+    list.push({ id, show: str(msg.show, 100), showName: str(msg.showName, 100), ep: str(msg.ep, 40), vt: typeof msg.vt === 'number' ? msg.vt : null,
+      by: str(msg.by, 30), mine: false, room: status.room, at: Number(msg.at) || Date.now(), hash: str(msg.hash, 64),
+      text: '', note: '', image: '', revealed: false, verified: false, verdict: null });
+  });
+}
+function wantReveal(who, show) {
+  if (!show) return;
+  const w = (revealWants[show] ||= { me: false, them: false });
+  w[who] = true;
+  if (who === 'me') send({ type: 'guess-reveal-ask', show });
+  panels({ type: 'guesses-changed' });
+  if (!w.me || !w.them) return;
+  delete revealWants[show];
+  // Both want to see: open ours.
+  changeGuesses((list) => {
+    for (const g of list) {
+      if (g.mine && g.show === show && !g.revealed) {
+        g.revealed = true;
+        send({ type: 'guess-open', id: g.id, text: g.text, note: g.note, image: g.image, salt: g.salt });
+      }
+    }
+  });
+}
+function openTheirGuess(msg) {
+  const id = str(msg.id, 80);
+  changeGuesses(async (list) => {
+    const g = list.find((x) => x.id === id && !x.mine);
+    if (!g || g.revealed) return;
+    g.text = str(msg.text, 80);
+    g.note = str(msg.note, 200);
+    g.image = guessImage(msg.image);
+    g.revealed = true;
+    g.verified = (await fingerprint(str(msg.salt, 80), g.text, g.note)) === g.hash;
+  });
+}
+function setVerdict(id, verdict, share) {
+  changeGuesses((list) => {
+    const g = list.find((x) => x.id === id);
+    if (!g || !g.revealed) return;
+    g.verdict = verdict;
+    if (share) send({ type: 'guess-verdict', id, verdict });
+  });
+}
+
 // ---- Stop for tonight ----
 // Either of you (or the phone) stops for the night: both pause and the spot is saved, so the sidebar
 // can offer to pick up there next time.
@@ -578,6 +683,8 @@ function remember(msg) {
     at: Date.now(),
   };
 
+  // A locked "Who did it?" guess shows as a sealed card (its contents live in the guesses store).
+  if (msg.guess?.id) entry.guess = { id: str(msg.guess.id, 80) };
   // A shared watch guide shows as a card with an Open button.
   if (msg.guide?.id)
     entry.guide = {
@@ -712,6 +819,10 @@ function connect(server, room) {
       }
     }
     if (msg.type === 'guide-add') addFromPage(msg);
+    if (msg.type === 'guess-lock') theirGuess(msg);
+    if (msg.type === 'guess-reveal-ask') wantReveal('them', str(msg.show, 100));
+    if (msg.type === 'guess-open') openTheirGuess(msg);
+    if (msg.type === 'guess-verdict') setVerdict(str(msg.id, 80), msg.verdict === 'right' ? 'right' : msg.verdict === 'wrong' ? 'wrong' : null, false);
     if (msg.type === 'guide-art') {
       const art = cleanArt(msg);
       guidesWrite = guidesWrite

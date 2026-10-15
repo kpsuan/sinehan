@@ -1065,6 +1065,25 @@ const vstate = (p) =>
     await pA.evaluate(() => showBest(false));
     await pB2.evaluate(() => showBest(false));
 
+    section('Who did it?');
+    await pA.click('#guessBtn');
+    await pA.fill('#guessName', 'The butler');
+    await pA.fill('#guessNote', 'too quiet');
+    await pA.click('#guessLock');
+    const card = (p) => p.locator('#log .guess-card').last();
+    check('locking a guess posts a sealed card', await until(async () => (await card(pB2).count()) > 0 && /locked a guess/i.test(await card(pB2).innerText())));
+    check('…they can’t see who you picked', !/butler|too quiet/i.test(await card(pB2).innerText()));
+    check('…you can', await until(async () => /Your guess: The butler/.test(await card(pA).innerText())));
+    await card(pB2).locator('.gq-actions button').click();
+    check('one side asking to reveal is shown to the other', await until(async () => /wants to reveal/i.test(await card(pA).innerText())));
+    check('…but nothing opens yet', !/The butler/.test(await card(pB2).innerText()));
+    await card(pA).locator('.gq-actions button').click();
+    check('when both reveal, the guess opens for both', await until(async () => /The butler/.test(await card(pB2).innerText()) && /guessed/.test(await card(pA).innerText())));
+    check('…checked as unchanged since it was locked', await until(async () => /unchanged/.test(await card(pB2).innerText())));
+    await card(pB2).locator('.gq-actions button', { hasText: 'Right' }).click();
+    check('a verdict shows on both sides, with the score', await until(async () => /got it!/.test(await card(pA).innerText()) && /: \S+ 1/.test(await card(pA).innerText())));
+
+    // ---------------------------------------------------------------
     section('Typing, timestamps, hand-holding');
     await pA.fill('#msg', '');
     await pA.locator('#msg').pressSequentially('typing something');
