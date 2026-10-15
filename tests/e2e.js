@@ -1452,6 +1452,14 @@ const vstate = (p) =>
         async () => !(await pB2.$eval('#settings', (d) => d.open)) && (await pB2.$eval('#welcome', (w) => !w.hidden)),
       ),
     );
+    await pB2.click('#settingsBtn');
+    await pB2.click('#historyBtn');
+    check(
+      'Past parties and Settings are one at a time',
+      await until(() => pB2.evaluate(() => !document.getElementById('settings').open && document.getElementById('settingsBtn').getAttribute('aria-pressed') === 'false')),
+    );
+    await pB2.click('#settingsBtn');
+    check('…both ways', await until(() => pB2.$eval('#historyView', (v) => v.hidden)));
     await pB2.click('#historyBtn');
     const parties = await until(async () => {
       const t = await pB2.$$eval('#sessions .session', (s) => s.map((x) => x.textContent));

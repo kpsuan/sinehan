@@ -282,9 +282,10 @@ function startFresh() {
 }
 
 $('settingsBtn').onclick = () => ($('settings').open = !$('settings').open);
-$('settings').addEventListener('toggle', () =>
-  $('settingsBtn').setAttribute('aria-pressed', String($('settings').open)),
-);
+$('settings').addEventListener('toggle', () => {
+  $('settingsBtn').setAttribute('aria-pressed', String($('settings').open));
+  if ($('settings').open && !$('historyView').hidden) showHistory(false);
+});
 
 // ---- Bantay's introduction (the first time) ----
 // He hops in, barks hello, then walks you through the three steps. Tap him on the welcome screen for
@@ -965,6 +966,7 @@ function addChat(name, text, kind, avatar, vt, into = $('log'), guide = null, gu
 let openSession = null;
 function showHistory(on) {
   if (on) showBest(false);
+  if (on) $('settings').open = false; // one at a time: Past parties or Settings
   document.body.classList.toggle('show-history', on);
   $('historyView').hidden = !on;
   renderWelcome();
