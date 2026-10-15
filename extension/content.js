@@ -82,6 +82,10 @@ function ask(msg, then) {
 let bantayCoat = 'white';
 chrome.storage.local.get('bantayCoat').then(({ bantayCoat: c }) => c && (bantayCoat = c));
 chrome.storage.onChanged.addListener((c) => c.bantayCoat && (bantayCoat = c.bantayCoat.newValue || 'white'));
+// Whether Bantay may pop up on the video (Settings → Bantay).
+let bantayOnVideo = true;
+chrome.storage.local.get('bantayOnVideo').then(({ bantayOnVideo: v }) => (bantayOnVideo = v !== false));
+chrome.storage.onChanged.addListener((c) => c.bantayOnVideo && (bantayOnVideo = c.bantayOnVideo.newValue !== false));
 
 // Our name and avatar, for chat, reactions and holds sent from this tab.
 let me = { name: 'Guest', avatar: 0 };
@@ -215,6 +219,7 @@ function onRemote(msg) {
   if (msg.type === 'chat') {
     const text = String(msg.text || '');
     overlay?.add(msg); // keeps the fullscreen chat current, including what we sent from the sidebar
+    if (isEmojiOnly(text)) reactedTogether(text, !!msg.mine);
     if (msg.mine) return;
 
     // Emoji-only messages float up over the video so they're seen without looking at the chat.
@@ -872,15 +877,33 @@ function biggestPicture() {
   }
   return best || '';
 }
+// Which episode is on: players show it as "S6 E1", "S6:E1" or "Season 6, Episode 1", in the player or
+// the page's title.
+function pageEpisode() {
+  const re = /\bS(?:eason)?\s*(\d{1,2})\s*[:.,\-]?\s*E(?:p(?:isode)?)?\.?\s*(\d{1,3})\b/i;
+  const sources = [document.title];
+  if (video) {
+    try { sources.push(playerRoot().innerText.slice(0, 4000)); } catch {}
+  }
+  if (isNetflix) sources.push(document.querySelector('[data-uia="video-title"]')?.textContent || '');
+  for (const text of sources) {
+    const m = String(text || '').match(re);
+    if (m) return `S${Number(m[1])}E${Number(m[2])}`;
+  }
+  return '';
+}
 let reported = null;
+let lastEpisode = '';
 every(2000, () => {
   if (!isWatchTab || window.top !== window) return;
   const info = showInfo();
   const fallback = info.image ? '' : biggestPicture();
-  const key = `${info.image}|${info.title}|${fallback}`;
+  const ep = pageEpisode() || lastEpisode; // (player controls hide; keep the last one seen)
+  lastEpisode = ep;
+  const key = `${info.image}|${info.title}|${fallback}|${ep}`;
   if (key !== reported) {
     reported = key;
-    post({ type: 'meta', image: info.image, title: info.title, fallbackImage: fallback });
+    post({ type: 'meta', image: info.image, title: info.title, fallbackImage: fallback, ep });
   }
 });
 
@@ -967,6 +990,8 @@ async function onLocal(msg) {
       post({ type: 'goodnight', time, name: me.name, url: location.href });
       goodnight(time, null);
     }
+  } else if (msg.type === 'bantay-streak') {
+    if (isWatchTab) bantayPop('party', 5000, `${msg.days} nights in a row together`);
   } else if (msg.type === 'break-toggle') {
     if (isWatchTab && video) toggleBreak();
   } else if (msg.type === 'countdown-start') {
@@ -1354,6 +1379,76 @@ function isEmojiOnly(text) {
 }
 
 // Emoji drift up from the bottom-right of the video and fade out, like live-stream reactions.
+// ---- Bantay on the video ----
+// He pops up in a corner for a moment when you both react the same way at once, curls up for a nap on
+// a long pause, and celebrates a watch streak. Rare on purpose; Settings → Bantay turns him off here.
+const REACTIONS = [
+  [/[\u{1F602}\u{1F923}\u{1F606}\u{1F639}]/u, 'laugh'],
+  [/[\u{1F62D}\u{1F622}\u{1F97A}\u{1F63F}]/u, 'cry'],
+  [/[\u{1F60D}\u{1F970}\u{2764}\u{1F495}\u{1F496}\u{1F498}\u{1F618}\u{1F63B}\u{1FAF6}]/u, 'love'],
+  [/[\u{1F631}\u{1F62E}\u{1F92F}\u{1F633}\u{1F628}\u{1F640}]/u, 'shock'],
+];
+const reacted = { mine: null, theirs: null }; // { kind, at }
+function reactedTogether(text, mine) {
+  const kind = REACTIONS.find(([re]) => re.test(text))?.[1];
+  if (!kind) return;
+  reacted[mine ? 'mine' : 'theirs'] = { kind, at: Date.now() };
+  const other = reacted[mine ? 'theirs' : 'mine'];
+  if (other && other.kind === kind && Date.now() - other.at < 5000) {
+    reacted.mine = reacted.theirs = null;
+    bantayPop(kind, 3200);
+  }
+}
+let popEl = null;
+let popTimer = null;
+function bantayPop(pose, ms, caption = '') {
+  if (!bantayOnVideo || !isWatchTab || !video || typeof Bantay === 'undefined' || window.top !== window) return;
+  bantayAway();
+  ensureFont();
+  popEl = document.createElement('div');
+  popEl.dataset.sinehan = '';
+  popEl.style.cssText = 'position:fixed;right:28px;bottom:84px;z-index:2147483646;width:116px;pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:4px';
+  popEl.innerHTML = Bantay.svg(pose, { coat: bantayCoat }); // fixed markup from bantay.js
+  const svg = popEl.querySelector('svg');
+  svg.style.cssText = 'width:100%;height:auto;display:block;filter:drop-shadow(0 6px 14px rgba(0,0,0,.45))';
+  if (caption) {
+    const c = document.createElement('div');
+    c.textContent = caption;
+    c.style.cssText = `padding:4px 9px;border-radius:7px;background:rgba(22,18,30,.72);color:#efeaf6;font:600 12px/1.3 ${FONT};white-space:nowrap`;
+    popEl.append(c);
+  }
+  (document.fullscreenElement || document.body).appendChild(popEl);
+  popEl.animate([{ transform: 'translateY(30px) scale(.6)', opacity: 0 }, { transform: 'translateY(-6px) scale(1.04)', opacity: 1, offset: 0.7 }, { transform: 'none', opacity: 1 }],
+    { duration: 380, easing: 'cubic-bezier(.2,.8,.3,1.2)' });
+  if (ms) popTimer = setTimeout(bantayAway, ms);
+}
+function bantayAway() {
+  clearTimeout(popTimer);
+  const el = popEl;
+  popEl = null;
+  if (!el) return;
+  el.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateY(16px) scale(.9)' }], { duration: 260, easing: 'ease-in' }).onfinish = () => el.remove();
+}
+// A long pause: after ten minutes he curls up and naps until someone presses play.
+let pausedAt = 0;
+let napping = false;
+every(15000, () => {
+  if (!isWatchTab || !video || window.top !== window) return;
+  if (!video.paused || video.ended) {
+    pausedAt = 0;
+    if (napping) {
+      napping = false;
+      bantayAway();
+    }
+    return;
+  }
+  if (!pausedAt) pausedAt = Date.now();
+  if (!napping && hasWatch && Date.now() - pausedAt > 10 * 60 * 1000) {
+    napping = true;
+    bantayPop('asleep', 0);
+  }
+});
+
 function floatEmoji(text) {
   ensureFont();
   let emoji = [...new Intl.Segmenter().segment(text.replace(/\s/g, ''))].map((s) => s.segment);

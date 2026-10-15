@@ -104,6 +104,44 @@
     },
 
     // Just the head, for small places (a status chip, an icon).
+    // Reactions (when you both react to the same moment).
+    laugh: {
+      box: '40 -6 130 206',
+      label: 'Bantay laughing',
+      art: BODY + `<g class="snb-laugh"><g transform="rotate(-8 100 100)">${HEAD + EYES_HAPPY + TONGUE}</g></g>`
+        + `<path d="M58 40 l8 4 M54 54 l9 1 M142 40 l-8 4 M146 54 l-9 1" stroke="${tag}" stroke-width="3" stroke-linecap="round"/>`,
+    },
+    cry: {
+      box: '40 0 130 200',
+      label: 'Bantay crying',
+      art: BODY + HEAD + EYES_SHUT
+        + `<path d="M93 97 C 96 93, 104 93, 107 97" fill="none" stroke="${nose}" stroke-width="1.8" stroke-linecap="round"/>`
+        + '<path class="snb-tear" d="M84 72 C 81 79, 80 83, 84 85 C 88 83, 87 79, 84 72 Z" fill="#8ec5f2"/>'
+        + '<path class="snb-tear snb-tear2" d="M116 72 C 113 79, 112 83, 116 85 C 120 83, 119 79, 116 72 Z" fill="#8ec5f2"/>',
+    },
+    love: {
+      box: '40 -14 130 214',
+      label: 'Bantay in love',
+      art: BODY + HEAD + EYES_HAPPY + MOUTH
+        + '<g class="snb-hearts"><path d="M60 22 c-4-6-13-2-10 5 3 6 10 9 10 9 s7-3 10-9 c3-7-6-11-10-5z" fill="#ef6f8f"/>'
+        + '<path d="M138 4 c-3-5-10-2-8 4 2 5 8 7 8 7 s6-2 8-7 c2-6-5-9-8-4z" fill="#f49ab0"/>'
+        + '<path d="M150 34 c-2-3-7-1-6 3 2 4 6 5 6 5 s4-1 6-5 c1-4-4-6-6-3z" fill="#ef6f8f"/></g>',
+    },
+    shock: {
+      box: '40 0 130 200',
+      label: 'Bantay, shocked',
+      art: BODY + EARS_BACK + FACE
+        + `<circle cx="86.5" cy="64" r="7" fill="${eye}"/><circle cx="88.5" cy="61.5" r="2.2" fill="#fff"/>`
+        + `<circle cx="113.5" cy="64" r="7" fill="${eye}"/><circle cx="115.5" cy="61.5" r="2.2" fill="#fff"/>`
+        + `<ellipse cx="100" cy="97" rx="4.5" ry="5.5" fill="${nose}"/>`,
+    },
+    party: {
+      box: '40 -22 130 222',
+      label: 'Bantay celebrating',
+      art: BODY + HEAD + EYES_HAPPY + TONGUE
+        + `<g transform="rotate(-10 100 40)"><path d="M86 46 L100 4 L114 46 Z" fill="${tag}"/><path d="M90 34 L110 34 M94 22 L106 22" stroke="#fff" stroke-width="3" opacity=".6"/>`
+        + '<circle cx="100" cy="4" r="5" fill="#f2c94c"/></g>',
+    },
     head: { box: '56 4 88 98', label: 'Bantay', art: HEAD + MOUTH + EYES },
     'head-tilt': {
       box: '50 2 100 104',
@@ -129,7 +167,13 @@
     '@keyframes snb-look{0%,30%,100%{transform:rotate(0)}38%,52%{transform:rotate(-7deg)}60%{transform:rotate(0)}}' +
     '.snb-breathe{transform-box:fill-box;transform-origin:50% 100%;animation:snb-breathe 3.6s ease-in-out infinite}' +
     '@keyframes snb-breathe{50%{transform:scaleY(1.04)}}' +
-    '@media (prefers-reduced-motion:reduce){.snb-tail,.snb-ear-r,.snb-ear-l,.snb-blink,.snb-look,.snb-breathe{animation:none}}' +
+    '.snb-laugh{transform-box:view-box;transform-origin:100px 110px;animation:snb-laugh .5s ease-in-out infinite alternate}' +
+    '@keyframes snb-laugh{from{transform:translateY(0)}to{transform:translateY(-3px) rotate(-3deg)}}' +
+    '.snb-tear{transform-box:fill-box;animation:snb-tear 1.2s ease-in infinite}.snb-tear2{animation-delay:.6s}' +
+    '@keyframes snb-tear{0%{transform:translateY(0);opacity:1}100%{transform:translateY(16px);opacity:0}}' +
+    '.snb-hearts{transform-box:fill-box;transform-origin:50% 100%;animation:snb-hearts 1.6s ease-in-out infinite}' +
+    '@keyframes snb-hearts{0%{transform:translateY(6px) scale(.85);opacity:.4}50%{opacity:1}100%{transform:translateY(-6px) scale(1.05);opacity:.9}}' +
+    '@media (prefers-reduced-motion:reduce){.snb-tail,.snb-ear-r,.snb-ear-l,.snb-blink,.snb-look,.snb-breathe,.snb-laugh,.snb-tear,.snb-hearts{animation:none}}' +
     '</style>';
 
   // Coats picked in Settings; each overrides the --b-* colours the drawing reads.

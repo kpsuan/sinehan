@@ -63,6 +63,7 @@ chrome.runtime.onConnect.addListener((port) => {
         watch.image = pic(msg.image);
         watch.fallbackImage = pic(msg.fallbackImage); // the page's biggest image, if it publishes none
         watch.showTitle = String(msg.title || '').slice(0, 120); // e.g. Netflix's real show name
+        watch.ep = /^S\d+E\d+$/.test(msg.ep || '') ? msg.ep : ''; // the episode on, when the player shows it
       }
       return;
     }
@@ -571,6 +572,21 @@ function setVerdict(id, verdict, share) {
   });
 }
 
+// ---- Watch streak ----
+// Each day you're in a party together counts; two or more days in a row get a small celebration
+// (once a day), on the video and in the chat.
+async function noteTogether() {
+  const day = (d) => d.toLocaleDateString('en-CA'); // YYYY-MM-DD, local
+  const today = day(new Date());
+  const { togetherDays = [], streakCheered = '' } = await chrome.storage.local.get(['togetherDays', 'streakCheered']);
+  const days = [...new Set([...togetherDays, today])].sort().slice(-60);
+  let streak = 0;
+  for (let d = new Date(); days.includes(day(d)); d.setDate(d.getDate() - 1)) streak += 1;
+  const cheer = streak >= 2 && streakCheered !== today;
+  await chrome.storage.local.set({ togetherDays: days, ...(cheer ? { streakCheered: today } : {}) });
+  if (cheer) setTimeout(() => broadcastLocal({ local: true, type: 'bantay-streak', days: streak }), 2500);
+}
+
 // ---- Stop for tonight ----
 // Either of you (or the phone) stops for the night: both pause and the spot is saved, so the sidebar
 // can offer to pick up there next time.
@@ -797,6 +813,7 @@ function connect(server, room) {
       return;
     }
     if (msg.type === 'joined' || msg.type === 'peer') status.peers = msg.count;
+    if ((msg.type === 'joined' && msg.count > 1) || (msg.type === 'peer' && msg.joined)) noteTogether();
     if (msg.type === 'joined' && msg.count > 1) setTimeout(announceShow, 500); // let a returning partner know
     if (msg.type === 'peer' && msg.joined) setTimeout(announceShow, 500);
     if (msg.type === 'companion-hello') setTimeout(announceShow, 300); // a phone joined: tell it what's on

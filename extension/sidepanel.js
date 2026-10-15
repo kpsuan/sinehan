@@ -53,6 +53,8 @@ for (const [id, name] of Object.entries(Bantay.coats)) {
   $('bantayCoats').append(b);
 }
 drawBantay();
+chrome.storage.local.get('bantayOnVideo').then(({ bantayOnVideo: v }) => ($('bantayOnVideo').checked = v !== false));
+$('bantayOnVideo').onchange = () => chrome.storage.local.set({ bantayOnVideo: $('bantayOnVideo').checked });
 chrome.storage.local.get('bantayCoat').then(({ bantayCoat: saved }) => {
   if (saved && Bantay.coats[saved]) {
     bantayCoat = saved;
@@ -1699,7 +1701,7 @@ function drawGuessCard(card) {
   label.innerHTML = '<div class="gq-label">Who did it?</div>';
   const meta = document.createElement('div');
   meta.className = 'gq-meta';
-  meta.textContent = g ? [g.showName, typeof g.vt === 'number' ? `at ${clock(g.vt)}` : ''].filter(Boolean).join(' · ') : 'A locked guess';
+  meta.textContent = g ? [g.showName, g.ep, typeof g.vt === 'number' ? `at ${clock(g.vt)}` : ''].filter(Boolean).join(' · ') : 'A locked guess';
   label.append(meta);
   top.append(label);
   card.append(top);
@@ -1758,45 +1760,96 @@ function drawGuessCard(card) {
 
 // The tray: the show's cast to pick from (TVmaze), or any name.
 let castFor = '';
+// The show from TVmaze (main cast and episode list), and an episode's guest stars: on a procedural, the
+// one who did it is nearly always a guest.
+let trayShow = null; // { name, show } (TVmaze, with cast and episodes)
+const castChip = (c, list) => {
+  const nameText = c.character?.name || c.person?.name || '';
+  const image = String(c.character?.image?.medium || c.person?.image?.medium || '').replace(/^http:/, 'https:');
+  const b = Object.assign(document.createElement('button'), { type: 'button', title: c.person?.name ? `${nameText} (${c.person.name})` : nameText });
+  b.setAttribute('aria-pressed', 'false');
+  if (image) b.append(Object.assign(document.createElement('img'), { src: image, alt: '', loading: 'lazy' }));
+  else b.append(Object.assign(document.createElement('span'), { className: 'gt-noface' }));
+  b.append(Object.assign(document.createElement('span'), { textContent: nameText }));
+  b.onclick = () => {
+    guessPick = { name: nameText, image };
+    $('guessName').value = nameText;
+    $('guessCast').querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  };
+  return b;
+};
+const hint = (t) => Object.assign(document.createElement('p'), { className: 'gt-hint', textContent: t });
+async function drawCast() {
+  const data = trayShow?.show;
+  const main = data?._embedded?.cast || [];
+  const epId = $('guessEp').value;
+  const parts = [];
+  if (epId) {
+    parts.push(hint('Loading this episode’s guest stars…'));
+    $('guessCast').replaceChildren(...parts);
+    let guests = [];
+    try {
+      const r = await fetch(`https://api.tvmaze.com/episodes/${encodeURIComponent(epId)}/guestcast`);
+      guests = r.ok ? await r.json() : [];
+    } catch {}
+    if ($('guessEp').value !== epId) return;
+    parts.length = 0;
+    parts.push(Object.assign(document.createElement('div'), { className: 'gt-sub', textContent: 'This episode' }));
+    if (guests.length) {
+      const grid = Object.assign(document.createElement('div'), { className: 'gt-cast' });
+      grid.append(...guests.slice(0, 40).map((c) => castChip(c)));
+      parts.push(grid);
+    } else {
+      parts.push(hint('No guest list for this episode. Type a name below.'));
+    }
+  }
+  if (main.length) {
+    parts.push(Object.assign(document.createElement('div'), { className: 'gt-sub', textContent: 'Main cast' }));
+    const grid = Object.assign(document.createElement('div'), { className: 'gt-cast' });
+    grid.append(...main.slice(0, 24).map((c) => castChip(c)));
+    parts.push(grid);
+  }
+  if (!parts.length) parts.push(hint('No cast list for this one. Type a name below.'));
+  $('guessCast').replaceChildren(...parts);
+}
+$('guessEp').onchange = () => {
+  guessPick = null;
+  $('guessEp').dataset.picked = $('guessEp').value;
+  drawCast();
+};
 async function openGuessTray() {
   const show = currentShowName();
   $('guessShow').textContent = show || '';
   $('guessErr').hidden = true;
   guessPick = null;
   if (!show) {
-    $('guessCast').replaceChildren(Object.assign(document.createElement('p'), { className: 'gt-hint', textContent: 'Open your show first (or click Watch this tab).' }));
+    $('guessEp').parentElement.hidden = true;
+    $('guessCast').replaceChildren(hint('Open your show first (or click Watch this tab).'));
     return;
   }
-  if (castFor === show) return;
-  castFor = show;
-  $('guessCast').replaceChildren(Object.assign(document.createElement('p'), { className: 'gt-hint', textContent: 'Loading the cast…' }));
-  let cast = [];
-  try {
-    const r = await fetch(`https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(show)}&embed=cast`);
-    const data = r.ok ? await r.json() : null;
-    if (data && Reddit.sameShow(data.name, show)) cast = data._embedded?.cast || [];
-  } catch {}
-  if (castFor !== show) return;
-  if (!cast.length) {
-    $('guessCast').replaceChildren(Object.assign(document.createElement('p'), { className: 'gt-hint', textContent: 'No cast list for this one. Type a name below.' }));
-    return;
+  if (trayShow?.name !== show) {
+    trayShow = { name: show, show: null };
+    $('guessCast').replaceChildren(hint('Loading the cast…'));
+    try {
+      const r = await fetch(`https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(show)}&embed[]=cast&embed[]=episodes`);
+      const data = r.ok ? await r.json() : null;
+      if (trayShow.name === show && data && Reddit.sameShow(data.name, show)) trayShow.show = data;
+    } catch {}
+    if (trayShow.name !== show) return;
   }
-  $('guessCast').replaceChildren(...cast.slice(0, 40).map((c) => {
-    const nameText = c.character?.name || c.person?.name || '';
-    const image = String(c.character?.image?.medium || c.person?.image?.medium || '').replace(/^http:/, 'https:');
-    const b = Object.assign(document.createElement('button'), { type: 'button', title: c.person?.name ? `${nameText} (${c.person.name})` : nameText });
-    b.setAttribute('aria-pressed', 'false');
-    if (image) b.append(Object.assign(document.createElement('img'), { src: image, alt: '', loading: 'lazy' }));
-    else b.append(Object.assign(document.createElement('span'), { className: 'gt-noface' }));
-    b.append(Object.assign(document.createElement('span'), { textContent: nameText }));
-    b.onclick = () => {
-      guessPick = { name: nameText, image };
-      $('guessName').value = nameText;
-      $('guessCast').querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
-    };
-    return b;
-  }));
+  // The episode menu: the one on screen (when the player shows it), or pick one.
+  const eps = trayShow.show?._embedded?.episodes || [];
+  $('guessEp').parentElement.hidden = !eps.length;
+  const on = status.watch?.ep || '';
+  $('guessEp').replaceChildren(new Option('Whole show (main cast)', ''), ...eps.map((e) => new Option(`S${e.season} E${e.number} · ${e.name}`, String(e.id))));
+  const current = eps.find((e) => `S${e.season}E${e.number}` === on);
+  $('guessEp').value = current ? String(current.id) : $('guessEp').dataset.picked || '';
+  drawCast();
 }
+const pickedEpisodeLabel = () => {
+  const e = (trayShow?.show?._embedded?.episodes || []).find((x) => String(x.id) === $('guessEp').value);
+  return e ? `S${e.season} E${e.number}` : '';
+};
 $('guessBtn').onclick = () => {
   const opening = $('guessTray').hidden;
   closeTrays();
@@ -1818,7 +1871,7 @@ $('guessLock').onclick = () => {
   if (!showName) return err('Open your show first.');
   if (!text) return err('Pick someone, or type a name.');
   if (!(status.connected && status.peers > 1)) return err('Your partner needs to be here to see it.');
-  ask({ type: 'guess-lock', show: norm(showName), showName, vt: showTime(), by: myName(), text, note: $('guessNote').value.trim(), image: guessPick?.name === text ? guessPick.image : '' }, (g) => {
+  ask({ type: 'guess-lock', show: norm(showName), showName, ep: pickedEpisodeLabel(), vt: showTime(), by: myName(), text, note: $('guessNote').value.trim(), image: guessPick?.name === text ? guessPick.image : '' }, (g) => {
     if (!g) return err('Couldn’t lock that one. Try again.');
     guesses.set(g.id, g);
     sendChat('locked a guess', { guess: { id: g.id } });
@@ -2362,6 +2415,10 @@ function sendCallState(force = false) {
 const relays = new Map(); // tab view id -> RTCPeerConnection
 
 async function onLocal(msg) {
+  if (msg.type === 'bantay-streak') {
+    addChat('', `${msg.days} nights in a row together. Bantay is proud.`, 'system');
+    return;
+  }
   if (msg.type === 'break-state') {
     onBreak = !!msg.active;
     return renderBreak();

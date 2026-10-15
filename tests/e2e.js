@@ -1084,7 +1084,28 @@ const vstate = (p) =>
     check('a verdict shows on both sides, with the score', await until(async () => /got it!/.test(await card(pA).innerText()) && /: \S+ 1/.test(await card(pA).innerText())));
 
     // ---------------------------------------------------------------
+    section('Bantay reacts');
+    const laughing = (v) => v.evaluate(() => [...document.querySelectorAll('[data-sinehan] svg.bantay')].some((x) => x.getAttribute('aria-label') === 'Bantay laughing'));
+    await pA.fill('#msg', '😂');
+    await pA.press('#msg', 'Enter');
+    await sleep(600);
+    check('one person laughing alone doesn’t bring Bantay out', !(await laughing(vA2)) && !(await laughing(vB)));
+    await pB2.fill('#msg', '🤣');
+    await pB2.press('#msg', 'Enter');
+    check('you both laugh at once: Bantay laughs on both screens', await until(async () => (await laughing(vA2)) && (await laughing(vB)), 5000));
+    await pA.evaluate(() => chrome.storage.local.set({ bantayOnVideo: false }));
+    await sleep(4000);
+    await pA.fill('#msg', '😭');
+    await pA.press('#msg', 'Enter');
+    await pB2.fill('#msg', '😭');
+    await pB2.press('#msg', 'Enter');
+    const crying = (v) => v.evaluate(() => [...document.querySelectorAll('[data-sinehan] svg.bantay')].some((x) => x.getAttribute('aria-label') === 'Bantay crying'));
+    check('…and he can be switched off', await until(() => crying(vB), 5000) && !(await crying(vA2)));
+    await pA.evaluate(() => chrome.storage.local.set({ bantayOnVideo: true }));
+
+    // ---------------------------------------------------------------
     section('Typing, timestamps, hand-holding');
+    await sleep(2500); // (typing is sent at most every 2 seconds, and we just sent messages)
     await pA.fill('#msg', '');
     await pA.locator('#msg').pressSequentially('typing something');
     check(
