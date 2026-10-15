@@ -853,6 +853,8 @@ async function showGuide(id) {
   if (!g) return listGuides();
   $('bestQuery').value = g.show;
   $('guideTopic').value = g.topic || '';
+  $('guideLink').value = '';
+  showLinkRow(false);
   openGuide = { ...g, saved: true, problems: [] };
   renderGuide(openGuide, true);
 }
@@ -871,6 +873,7 @@ async function makeGuide() {
   $('bestResults').replaceChildren(note('Reading guides…'));
   let g;
   try {
+    sortGuideFields();
     g = await Reddit.watchGuide(show, $('guideTopic').value, $('guideLink').value);
   } catch {
     if (run === bestRun) $('bestResults').replaceChildren(note('Couldn’t make a guide just now. Try again in a moment.'));
@@ -882,6 +885,32 @@ async function makeGuide() {
   openGuide = { ...g, id, by: myName(), at: Date.now(), done: saved?.done || {}, saved: !!saved };
   renderGuide(openGuide, true);
 }
+
+// The topic and the guide-thread link are easy to mix up: a link typed as the topic moves to the link
+// box, and words typed in the link box move to the topic.
+const looksLikeLink = (v) => /^\s*(https?:\/\/|www\.|(old\.)?reddit\.com\/|redd\.it\/)/i.test(v);
+function showLinkRow(on) {
+  $('guideLinkRow').hidden = !on;
+  $('guideLinkToggle').hidden = on;
+}
+function sortGuideFields() {
+  const topic = $('guideTopic').value.trim();
+  const link = $('guideLink').value.trim();
+  if (looksLikeLink(topic)) {
+    $('guideLink').value = topic;
+    $('guideTopic').value = '';
+    showLinkRow(true);
+  } else if (link && !looksLikeLink(link)) {
+    $('guideTopic').value = topic ? `${topic}, ${link}` : link;
+    $('guideLink').value = '';
+  }
+}
+$('guideLinkToggle').onclick = () => {
+  showLinkRow(true);
+  $('guideLink').focus();
+};
+$('guideTopic').addEventListener('input', () => looksLikeLink($('guideTopic').value) && sortGuideFields());
+$('guideLink').addEventListener('change', sortGuideFields);
 
 // Save (and send to them) or, once saved, post its card in chat again.
 async function saveGuide(g) {
@@ -997,7 +1026,7 @@ async function renderGuide(g, fresh = false) {
     const others = e.guides - (e.pasted ? 1 : 0);
     if (others > 0) chip(`In ${others} guide${others === 1 ? '' : 's'}`);
     if (!e.guides && e.comments) chip(`Suggested in ${e.comments} comments`);
-    if (e.summary) chip(`Summary mentions ${g.topic}`);
+    if (e.summary) chip(`Summary mentions ${e.summaryTerm || g.topic}`);
     if (e.fandom) chip('Fandom wiki');
     body.append(src);
     row.append(box, body);

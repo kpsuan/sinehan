@@ -496,10 +496,11 @@
     const names = [show, guide?.name].filter(Boolean);
     const slugs = [...new Set(names.flatMap((n) => {
       const flat = norm(n).replace(/ /g, '');
-      return [flat, flat.replace(/^the/, '')];
+      const dashed = norm(n).replace(/ /g, '-');
+      return [flat, flat.replace(/^the/, ''), dashed, dashed.replace(/^the-/, '')];
     }))].filter((x) => x.length >= 3);
     let wiki = null;
-    for (const slug of slugs.slice(0, 4)) {
+    for (const slug of slugs.slice(0, 6)) {
       try {
         const info = await fandomJson(`${slug}.fandom.com`, 'action=query&meta=siteinfo');
         if (info?.query?.general) {
@@ -526,7 +527,7 @@
     for (const r of search?.query?.search || []) {
       if (r.title.includes('/')) continue; // transcripts and sub-pages
       const eps = episodesNamed(r.title, guide);
-      if (eps.length) for (const e of eps) found.push({ key: e.key, reason: plain(r.snippet).slice(0, 150) || `Its wiki page mentions “${topic}”` });
+      if (eps.length) for (const e of eps) found.push({ key: e.key, reason: plain(r.snippet).slice(0, 150) || `Its wiki page mentions “${topic}”`, event: false });
       else others.push(r.title);
     }
     // Event and story pages: the episodes their infobox lists.
@@ -538,17 +539,30 @@
         if (!field) continue;
         const caption = plain(text.match(/\|\s*caption\s*=\s*([^\n]*)/i)?.[1]?.replace(/\[\[(?:[^|\]]*\|)?([^\]]*)\]\]/g, '$1') || '');
         for (const [, link] of field.matchAll(/\[\[([^|\]#]+)/g)) {
-          for (const e of episodesNamed(link, guide)) found.push({ key: e.key, reason: caption ? `${pg.title}: ${caption}` : pg.title });
+          for (const e of episodesNamed(link, guide)) found.push({ key: e.key, reason: caption ? `${pg.title}: ${caption}` : pg.title, event: true });
         }
       }
     }
     return found;
   }
 
+  // "earthquake, tsunami" -> both. "Mass casualty" (or MCI, disaster) is how fans talk about it, but
+  // summaries and wikis say what happened, so it also looks for the usual disaster words.
+  const DISASTER = ['earthquake', 'tsunami', 'derailment', 'building collapse', 'bridge collapse', 'bridge collapses', 'freeway collapse',
+    'multiple victims', 'mass shooting', 'pileup', 'plane crash', 'bus crash', 'train crash', 'train derails', 'mudslide', 'dam break', 'blackout', 'cruise ship',
+    'capsizes', 'wildfire', 'tornado', 'hurricane', 'sinkhole', 'ferry', 'explosion at'];
+  function topicTerms(topic) {
+    const typed = String(topic || '').split(/\s*(?:,|;|\/|\bor\b)\s*/i).map((t) => t.trim()).filter((t) => t.length >= 2);
+    const out = [...typed];
+    if (typed.some((t) => /mass casualt|\bmci\b|\bdisasters?\b/i.test(t))) out.push(...DISASTER);
+    return [...new Set(out.map((t) => t.toLowerCase()))].slice(0, 20);
+  }
+
   async function watchGuide(show, topic = '', link = '') {
     const name = String(show || '').trim().slice(0, 100);
     if (!name) throw new Error('no show');
-    topic = String(topic || '').trim().slice(0, 60);
+    topic = String(topic || '').trim().slice(0, 100);
+    const terms = topicTerms(topic);
     const guide = await episodeGuide(name);
     const entries = new Map(); // key -> { key, pasted, guides: Set, comments, summary, reason, url }
     const entry = (key) => {
@@ -618,15 +632,17 @@
       if (!path) problems.push('Reddit didn’t answer, so this is from episode summaries only.');
     }
 
-    // 3. Episodes whose summary mentions the topic.
-    if (topic && guide) {
-      const t = norm(topic);
+    // 3. Episodes whose summary mentions the topic (any of its terms).
+    if (terms.length && guide) {
       for (const ep of guide.eps) {
-        if (!` ${norm(ep.text)} `.includes(` ${t} `)) continue;
+        const text = ` ${norm(ep.text)} `;
+        const term = terms.find((t) => text.includes(` ${norm(t)} `));
+        if (!term) continue;
         const e = entry(ep.key);
         e.summary = true;
+        e.summaryTerm ||= term;
         if (!e.reason) {
-          const sentence = ep.text.split(/(?<=[.!?])\s+/).find((x) => norm(x).includes(t)) || '';
+          const sentence = ep.text.split(/(?<=[.!?])\s+/).find((x) => ` ${norm(x)} `.includes(` ${norm(term)} `)) || '';
           e.reason = sentence.length > 150 ? `${sentence.slice(0, 150).replace(/\s\S*$/, '')}…` : sentence;
         }
       }
@@ -637,7 +653,13 @@
       try {
         const wiki = await findWiki(name, guide);
         if (wiki) {
-          const hits = await fandomTopic(wiki, topic, guide);
+          // What you typed first, then (for "mass casualty") the disaster words; a few searches at most.
+          // Words you typed count any wiki page that mentions them; the extra disaster words only count
+          // event pages' episode lists (an episode page just mentioning "the earthquake" isn't about it).
+          const typed = topicTerms(topic.replace(/mass casualt\w*|mci|disasters?/gi, '')).length ? terms.filter((t) => !DISASTER.includes(t)) : terms.filter((t) => !DISASTER.includes(t));
+          const hits = (await Promise.all(terms.slice(0, 6).map((t) => fandomTopic(wiki, t, guide)
+            .then((list) => list.filter((h) => h.event || typed.includes(t)))
+            .catch(() => [])))).flat();
           for (const { key, reason } of hits) {
             const e = entry(key);
             e.fandom = true;
@@ -658,7 +680,7 @@
       .map((e) => {
         const [, s, n] = e.key.match(/^S(\d+)E(\d+)$/);
         return { key: e.key, season: Number(s), number: Number(n), label: label(e.key), title: guide?.byKey.get(e.key)?.name || '',
-          pasted: e.pasted, guides: e.guides.size, comments: e.comments, summary: e.summary, fandom: e.fandom, reason: e.reason, url: e.url };
+          pasted: e.pasted, guides: e.guides.size, comments: e.comments, summary: e.summary, summaryTerm: e.summaryTerm || '', fandom: e.fandom, reason: e.reason, url: e.url };
       })
       .sort((a, b) => a.season - b.season || a.number - b.number);
     return { show: name, topic, episodes, threads, problems, hasGuide: !!guide };

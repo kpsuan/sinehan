@@ -258,12 +258,12 @@ function cleanGuide(g) {
   return {
     id: str(g.id, 200),
     show: str(g.show, 100),
-    topic: str(g.topic, 60),
+    topic: str(g.topic, 100),
     by: str(g.by, 30),
     at: Number(g.at) || Date.now(),
     episodes: (Array.isArray(g.episodes) ? g.episodes : []).slice(0, 150).map((e) => ({
       key: str(e.key, 12), season: Number(e.season) || 0, number: Number(e.number) || 0, label: str(e.label, 20), title: str(e.title, 120),
-      reason: str(e.reason, 160), pasted: !!e.pasted, guides: Number(e.guides) || 0, comments: Number(e.comments) || 0, summary: !!e.summary, fandom: !!e.fandom,
+      reason: str(e.reason, 160), pasted: !!e.pasted, guides: Number(e.guides) || 0, comments: Number(e.comments) || 0, summary: !!e.summary, summaryTerm: str(e.summaryTerm, 40), fandom: !!e.fandom,
       url: /^https:\/\//.test(e.url || '') ? str(e.url, 400) : '',
     })).filter((e) => /^S\d+E\d+$/.test(e.key)),
     threads: (Array.isArray(g.threads) ? g.threads : []).slice(0, 6).map((t) => ({
