@@ -1443,6 +1443,13 @@ const vstate = (p) =>
     await vA2.evaluate(() => document.getElementById('v').pause());
     await until(async () => (await vstate(vB)).paused);
 
+    section('Coming back to a party');
+    const bg = A.ctx.serviceWorkers()[0];
+    check('reopening Chrome soon after: you’re back in the party; hours later: it’s over', await bg.evaluate(() => {
+      const now = Date.now();
+      return shouldRejoin({ active: true, aliveAt: now - 20 * 60 * 1000 }, now) && !shouldRejoin({ active: true, aliveAt: now - 3 * 3600 * 1000 }, now) && !shouldRejoin({ active: false }, now);
+    }));
+
     section('Invite link');
     await vA2.bringToFront(); // invite from the show's tab
     await pA.click('#invite');

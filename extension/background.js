@@ -16,7 +16,13 @@ let lastPos = null; // { time, paused, at } — the watch tab's playback positio
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(console.error);
 
-chrome.storage.local.get(['server', 'room', 'active', 'watch']).then(async ({ server, room, active, watch: saved }) => {
+// Coming back to a party: Chrome reopened (or the background restarted) soon after, you're back in it; after
+// longer (closed for the night), the party is over: it goes to Past parties and you start fresh.
+const REJOIN_WITHIN = 2 * 3600 * 1000;
+const shouldRejoin = ({ active, aliveAt }, now = Date.now()) => !!active && (!aliveAt || now - aliveAt < REJOIN_WITHIN);
+setInterval(() => status.connected && chrome.storage.local.set({ aliveAt: Date.now() }), 60000);
+
+chrome.storage.local.get(['server', 'room', 'active', 'watch', 'aliveAt']).then(async ({ server, room, active, watch: saved, aliveAt }) => {
   if (OLD_SERVERS.includes(server)) {
     server = DEFAULT_SERVER;
     chrome.storage.local.set({ server });
@@ -27,6 +33,11 @@ chrome.storage.local.get(['server', 'room', 'active', 'watch']).then(async ({ se
     const tab = await chrome.tabs.get(saved.tabId).catch(() => null);
     if (tab) setWatchState(tab);
     else chrome.storage.local.remove('watch');
+  }
+  if (active && !shouldRejoin({ active, aliveAt })) {
+    chrome.storage.local.set({ active: false });
+    archiveParty();
+    return;
   }
   if (active && server && room) connect(server, room);
 });
@@ -950,6 +961,7 @@ function connect(server, room) {
     retrying = false;
     lastHeard = Date.now();
     sock.send(JSON.stringify({ type: 'join', room }));
+    chrome.storage.local.set({ aliveAt: Date.now() });
     broadcastLocal({ type: 'connection', up: true });
 
     // Keeps the connection (and this service worker) alive, and detects a silently dead one.

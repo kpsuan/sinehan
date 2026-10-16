@@ -769,12 +769,18 @@ function connectionDropped(who) {
   );
   clearTimeout(dropGiveUp);
 
-  // Drop the bar after two minutes; we still count you in if they come back.
+  // After ten minutes, stop waiting: the show is yours to play again (we still line up if they come back).
   dropGiveUp = setTimeout(() => {
     if (dropped !== 'them') return;
-    netBar.hide();
-    toast('They’re not back yet. Paused.');
-  }, 120000);
+    netBar.show('They’ve been gone 10 minutes', {
+      label: 'Keep watching',
+      onClick: () => {
+        netBar.hide();
+        dropResume = null; // (no count-in when they're back; just line up)
+        video?.play().catch(() => {});
+      },
+    }, 'lying');
+  }, 10 * 60 * 1000);
 }
 const dropResumeFresh = () => !!dropResume && Date.now() - dropResume.at < 10 * 60 * 1000;
 function theyreBack() {

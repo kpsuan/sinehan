@@ -164,6 +164,12 @@ function onMessage(msg) {
     } else if (msg.dropped && msg.count < 2) {
       // Lost connection, not leaving: keep their name, and the call if it's still connected.
       addChat('', `${peer?.name ? `${peer.name}’s` : 'Their'} connection dropped`, 'system');
+      // Still gone after ten minutes (closed the browser, usually): say so, and that Leave ends the party.
+      clearTimeout(goneTimer);
+      goneTimer = setTimeout(() => {
+        if (status.peers > 1) return;
+        addChat('', `${peer?.name || 'They'}’s been gone 10 minutes. Keep watching, or Leave (in Settings) to end the party.`, 'system');
+      }, 10 * 60 * 1000);
     } else {
       // With only two of you, it's them; anyone else (a third browser) is just "someone".
       addChat('', msg.count < 2 ? `${peer?.name || 'Your person'} left` : 'Someone left', 'system');
@@ -175,6 +181,7 @@ function onMessage(msg) {
   }
 }
 
+let goneTimer = null;
 function sendProfile(ask) {
   send({ type: 'profile', name: myName(), avatar: me.avatar, ask });
 }
