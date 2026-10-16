@@ -31,12 +31,13 @@ chrome.storage.local.get(['server', 'room', 'active', 'watch']).then(async ({ se
   if (active && server && room) connect(server, room);
 });
 
-// ---- Ports: tabs connect as 'party', the sidebar as 'panel' ----
+// ---- Ports: tabs connect as 'party', the sidebar as 'panel', the call page as 'call' ----
 chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== 'party' && port.name !== 'panel') return;
+  if (port.name !== 'party' && port.name !== 'panel' && port.name !== 'call') return;
   port.tabId = port.sender?.tab?.id;
   ports.add(port);
   if (port.name === 'party') sendRole(port);
+  if (port.name === 'call') callConnected(port);
 
   port.onMessage.addListener((msg) => {
     // Sidebar ↔ tab messages (camera hand-off, jump to a chat timestamp, countdown) never leave this browser.
@@ -110,8 +111,8 @@ function postTo(port, msg) {
 
 const isWatchTab = (port) => watch != null && port.tabId === watch.tabId;
 
-// The sidebar hears everything; tabs only if they're the show.
-const wantsMessage = (port) => port.name === 'panel' || isWatchTab(port);
+// The sidebar and the call page hear everything; tabs only if they're the show.
+const wantsMessage = (port) => port.name === 'panel' || port.name === 'call' || isWatchTab(port);
 
 function sendRole(port) {
   postTo(port, { type: 'role', watching: isWatchTab(port), hasWatch: !!watch });
@@ -122,13 +123,25 @@ function broadcastLocal(msg) {
 
 // ---- One-off requests (sidebar, invite page, banners) ----
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (msg.type === 'call-query') return; // the call page answers these
   if (msg.type === 'history') {
     // Wait for pending writes so the sidebar doesn't miss the newest message.
     historyWrite.then(() => chrome.storage.local.get('history')).then(({ history = [] }) => reply(history));
     return true;
   }
-  if (msg.type === 'pending-call') {
-    reply(pendingCall);
+  if (msg.type === 'call-ensure') {
+    ensureCallPage().then(() => reply(true), () => reply(false));
+    return true;
+  }
+  if (msg.type === 'call-save') {
+    // Settings the call page changed (it can't use storage itself).
+    const v = msg.values || {};
+    const allowed = Object.fromEntries(Object.entries(v).filter(([k]) => ['micOn', 'cameraId', 'micId'].includes(k)));
+    chrome.storage.local.set(allowed);
+    return;
+  }
+  if (msg.type === 'call-busy') {
+    callBusy(!!msg.busy);
     return;
   }
   if (msg.type === 'call-handled') {
@@ -810,6 +823,58 @@ function remember(msg) {
     .catch(console.error);
 }
 
+// ---- The call page ----
+// Calls run in an offscreen document, so they survive the sidebar closing or reloading (Chrome does that
+// around fullscreen) and the show's tab navigating. It's started for a call and closed a while after.
+const callPort = () => [...ports].find((p) => p.name === 'call');
+let callStarting = null;
+let callWaiters = [];
+const callQueue = [];
+const CALL_SETTINGS = ['name', 'server', 'cameraId', 'micId', 'micOn', 'duckLevel', 'voiceVol'];
+function ensureCallPage() {
+  if (callPort()) return Promise.resolve();
+  callStarting ||= (async () => {
+    clearTimeout(callCloseTimer);
+    const exists = await chrome.offscreen.hasDocument?.().catch(() => false);
+    if (!exists) {
+      await chrome.offscreen
+        .createDocument({
+          url: 'offscreen.html',
+          reasons: ['WEB_RTC', 'USER_MEDIA'],
+          justification: 'Keeps your watch-party call going when the sidebar closes or the video goes fullscreen.',
+        })
+        .catch((e) => {
+          if (!/single offscreen/i.test(e?.message || '')) throw e; // (already being created)
+        });
+    }
+    if (!callPort()) await new Promise((resolve, reject) => {
+      callWaiters.push(resolve);
+      setTimeout(() => reject(new Error('call page did not start')), 8000);
+    });
+  })().finally(() => (callStarting = null));
+  return callStarting;
+}
+async function callConnected(port) {
+  const values = await chrome.storage.local.get(CALL_SETTINGS);
+  postTo(port, { type: 'call-config', config: values });
+  for (const msg of callQueue.splice(0)) postTo(port, msg);
+  callWaiters.splice(0).forEach((r) => r());
+}
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !CALL_SETTINGS.some((k) => k in changes)) return;
+  const port = callPort();
+  if (!port) return;
+  const config = Object.fromEntries(CALL_SETTINGS.filter((k) => k in changes).map((k) => [k, changes[k].newValue]));
+  postTo(port, { type: 'call-config', config });
+});
+// Closed two minutes after the last call or ring ends (started again for the next one).
+let callCloseTimer = null;
+function callBusy(busy) {
+  clearTimeout(callCloseTimer);
+  if (busy) return;
+  callCloseTimer = setTimeout(() => chrome.offscreen.closeDocument?.().catch(() => {}), 120000);
+}
+
 // ---- Incoming calls while the sidebar is closed ----
 // The call lives in the sidebar. If it's closed when they call, ring on the show's tab and with a
 // notification; opening the sidebar picks the call up.
@@ -923,7 +988,16 @@ function connect(server, room) {
     if (msg.type === 'joined' && msg.count > 1) setTimeout(announceShow, 500); // let a returning partner know
     if (msg.type === 'peer' && msg.joined) setTimeout(announceShow, 500);
     if (msg.type === 'companion-hello') setTimeout(announceShow, 300); // a phone joined: tell it what's on
-    if (msg.type === 'rtc') onCallSignal(msg);
+    if (msg.type === 'mic' && !callPort() && callQueue.length) callQueue.push(msg); // a call is starting up here
+    if (msg.type === 'rtc') {
+      onCallSignal(msg);
+      // An incoming call with no call page yet: start it, and hand it the messages once it's up.
+      if (!callPort()) {
+        if (callQueue.length < 100) callQueue.push(msg);
+        ensureCallPage().catch(console.error);
+        return;
+      }
+    }
     if (msg.type === 'goodnight') saveSpot(msg);
     if ((msg.type === 'joined' && msg.count > 1) || (msg.type === 'peer' && msg.joined)) shareGuides();
 

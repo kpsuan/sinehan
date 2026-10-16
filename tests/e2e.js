@@ -586,7 +586,7 @@ const vstate = (p) =>
           (await text(pB2, '#phText')).includes('is calling') && (await pB2.$eval('#decline', (b) => !b.hidden)),
       ),
     );
-    check('…and nothing connects until they pick up', await pB2.evaluate(() => !pc));
+    check('…and nothing connects until they pick up', await pB2.evaluate(async () => !(await callQuery())?.inCall));
     await pB2.click('#join');
     check('caller sees callee', await until(() => pA.$eval('#remote', (v) => v.videoWidth > 0), 10000), '\n' + firstLogs.filter((l) => !/addIceCandidate/.test(l)).slice(-40).join('\n'));
     check(
@@ -603,36 +603,20 @@ const vstate = (p) =>
     check('mic turns on', await until(() => pA.$eval('#mic', (b) => !b.classList.contains('off'))));
     check('…and their "Mic off" badge goes away', await until(() => pB2.$eval('#remoteMic', (b) => b.hidden)));
     check(
-      '…and the other side receives audio',
-      await until(
-        () =>
-          pB2.evaluate(() =>
-            document
-              .getElementById('remote')
-              .srcObject?.getAudioTracks()
-              .some((t) => t.readyState === 'live'),
-          ),
-        8000,
-      ),
+      '…and the other side receives audio, playing in the call page',
+      await until(() => pB2.evaluate(async () => { const s = await callQuery('stats'); return s?.audioIn > 0 && s.voicePlaying; }), 8000),
     );
 
-    // Chrome reopening the sidebar (fullscreen and back) mid-call: it reconnects by itself.
+    // Chrome closing and reopening the sidebar (fullscreen and back) mid-call: the call doesn't notice.
     await pA.close();
-    check('their side waits instead of hanging up', await until(async () => (await logLines(pB2)).some((l) => /stepped out of the call view/.test(l.text)), 8000));
+    await sleep(2500);
+    check('the call carries on with the sidebar closed', await pB2.evaluate(async () => (await callQuery())?.connection === 'connected'));
     pA = await openPanel(A);
-    check('the reopened sidebar reconnects the call', await until(async () => (await pA.$eval('#remote', (v) => v.videoWidth > 0)) && (await pB2.$eval('#remote', (v) => v.videoWidth > 0)), 30000),
-      JSON.stringify(await Promise.all([pA, pB2].map((p) => p.evaluate(() => ({ pc: pc?.connectionState, peerAway, cam: !!localStream, log: [...document.querySelectorAll('#log .line')].slice(-4).map((l) => l.textContent) }))))));
+    check('the reopened sidebar shows the call again', await until(async () => (await pA.$eval('#remote', (v) => v.videoWidth > 0)) && (await pB2.$eval('#remote', (v) => v.videoWidth > 0)), 15000));
     check('…with the mic still on', await until(() => pA.$eval('#mic', (b) => !b.hidden && !b.classList.contains('off'))));
 
     // Audio really flows (bytes arriving), in both directions.
-    const audioIn = (p) =>
-      p.evaluate(async () => {
-        let bytes = 0;
-        (await pc.getStats()).forEach((r) => {
-          if (r.type === 'inbound-rtp' && r.kind === 'audio') bytes += r.bytesReceived || 0;
-        });
-        return bytes;
-      });
+    const audioIn = (p) => p.evaluate(async () => (await callQuery('stats'))?.audioIn || 0);
     const flowing = async (p) => {
       const b1 = await audioIn(p);
       await sleep(1500);
@@ -647,7 +631,7 @@ const vstate = (p) =>
     check('mic turns off again', await until(() => pA.$eval('#mic', (b) => b.classList.contains('off'))));
     check(
       '…and is really released',
-      await pA.evaluate(() => !document.getElementById('local').srcObject?.getAudioTracks().length),
+      await pA.evaluate(async () => !(await callQuery())?.mic),
     );
 
     // Settings lists the real camera/mic and switches mid-call.
@@ -810,12 +794,10 @@ const vstate = (p) =>
       '…both connect, mics on, no cameras',
       await until(async () => {
         const side = (p) =>
-          p.evaluate(
-            () =>
-              pc?.connectionState === 'connected' &&
-              !!localStream?.getAudioTracks().length &&
-              !localStream.getVideoTracks().length,
-          );
+          p.evaluate(async () => {
+            const c = await callQuery();
+            return c?.connection === 'connected' && c.mic && !c.localVideo;
+          });
         return (await side(pA)) && (await side(pB2));
       }, 15000),
     );
@@ -867,7 +849,7 @@ const vstate = (p) =>
           (await pA.$eval('#remote', (v) => v.videoWidth > 0)) && (await pB2.$eval('#remote', (v) => v.videoWidth > 0)),
         25000,
       ),
-      '\n' + callLogs.filter((l) => !/addIceCandidate/.test(l)).slice(-40).join('\n') + '\n' + JSON.stringify(await Promise.all([pA, pB2].map((p) => p.evaluate(() => ({ pc: pc?.connectionState, sig: pc?.signalingState, peer: callPeer, incoming: !!incoming, cam: !!localStream, log: [...document.querySelectorAll('#log .line')].slice(-4).map((l) => l.textContent) }))))),
+      JSON.stringify(await Promise.all([pA, pB2].map((p) => p.evaluate(() => callQuery())))) + '\n' + callLogs.slice(-20).join('\n'),
     );
     check('the banner goes away once answered', await until(async () => !(await showingIn(vA))));
     await pA.click('#hangup');

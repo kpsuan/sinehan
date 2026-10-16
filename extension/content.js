@@ -552,20 +552,26 @@ function makeRinger() {
       ctx ||= new AudioContext();
       ctx.resume?.();
       const t = ctx.currentTime;
+      // A soft wooden knock (marimba-like: a quick tap that fades fast), twice. Not a sustained tone.
       [
-        [659.25, 0],
-        [880, 0.18],
+        [523.25, 0],
+        [659.25, 0.16],
       ].forEach(([freq, delay]) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0, t + delay);
-        gain.gain.linearRampToValueAtTime(0.12, t + delay + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, t + delay + 0.6);
-        osc.connect(gain).connect(ctx.destination);
-        osc.start(t + delay);
-        osc.stop(t + delay + 0.65);
+        for (const [mult, level] of [
+          [1, 0.11],
+          [3.9, 0.025],
+        ]) {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.value = freq * mult;
+          gain.gain.setValueAtTime(0, t + delay);
+          gain.gain.linearRampToValueAtTime(level, t + delay + 0.006);
+          gain.gain.exponentialRampToValueAtTime(0.0001, t + delay + (mult === 1 ? 0.42 : 0.12));
+          osc.connect(gain).connect(ctx.destination);
+          osc.start(t + delay);
+          osc.stop(t + delay + 0.45);
+        }
       });
     } catch {}
   };
@@ -618,7 +624,7 @@ function callBanner(name, ring) {
   const decline = btn('Decline', 'rgba(229,134,143,.18)', '#f0b4bb');
   decline.onclick = () => {
     callBannerOff();
-    post({ type: 'rtc', bye: true, declined: true, from: 'tab', name: me.name });
+    post({ local: true, type: 'call-cmd', cmd: 'decline' }); // the call page declines it
     ask({ type: 'call-handled' });
   };
   callEl.append(label, answer, decline);

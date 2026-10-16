@@ -96,10 +96,8 @@ function onMessage(msg) {
     addChat(msg.name, msg.text, msg.mine ? 'me' : 'them', msg.avatar, msg.vt, $('log'), msg.guide, msg.guess);
     if (!msg.mine) showTyping(null);
   } else if (msg.type === 'mic') {
-    if (pc && msg.on === false && theirMicOn !== false)
+    if (call.inCall && msg.on === false && call.theirMicOn !== false)
       addChat('', `${peer?.name ? `${peer.name}’s` : 'Their'} mic is off`, 'system');
-    theirMicOn = !!msg.on;
-    render();
   } else if (msg.type === 'hold' && msg.reason === 'break') {
     addChat('', msg.active ? `${msg.name || 'They'} is on a CR break` : `${msg.name || 'They'} is back`, 'system');
   } else if (msg.type === 'typing') {
@@ -154,9 +152,6 @@ function onMessage(msg) {
     peer = { name: String(msg.name || '').slice(0, 30) || 'Your person', avatar: Number(msg.avatar) || 0 };
     if (msg.ask) sendProfile(false);
     renderProfiles();
-  } else if (msg.type === 'rtc' && msg.from !== myId) {
-    // Setup hiccups (late duplicates, races) resolve themselves, so warn rather than error.
-    onSignal(msg).catch((e) => console.warn('[watch-party] call setup:', e?.name, e?.message));
   } else if (msg.type === 'peer') {
     if (msg.joined ?? msg.count > 1) {
       addChat('', `${peer?.name || 'They'} joined`, 'system');
@@ -170,7 +165,6 @@ function onMessage(msg) {
       if (msg.count < 2) {
         peer = null;
         renderProfiles();
-        if (pc) endCall('Call ended — they left');
       }
     }
   }
@@ -237,7 +231,7 @@ $('disconnect').onclick = async () => {
   const button = $('disconnect');
   button.disabled = $('connect').disabled = true;
   button.innerHTML = 'Leaving<span class="dots"><i>.</i><i>.</i><i>.</i></span>'; // fixed markup
-  if (pc) endCall('You left');
+  if (call.inCall || call.incoming) send({ local: true, type: 'call-cmd', cmd: 'hangup', reason: 'You left', notify: false });
   await new Promise((r) => setTimeout(r, 900));
   $('inviteBox').hidden = true;
   ask({ type: 'disconnect' }, showStatus);
@@ -424,20 +418,12 @@ $('wlJoin').onsubmit = (e) => {
   $('wlLink').value = '';
 };
 
-chrome.runtime.sendMessage({ type: 'pending-call' }, (call) => {
-  if (chrome.runtime.lastError || !call || pc) return;
-  startRinging(call.name);
-});
 
 function showStatus(s) {
   if (!s) return;
   const prev = status;
   const wasConnected = prev.connected;
   status = s;
-  if (!rejoinTried && s.connected && s.peers > 1) {
-    rejoinTried = true;
-    tryRejoin();
-  }
   // Tonight's "start a party first" follows the connection (after load: those are declared further down).
   if ((prev.connected && prev.peers > 1) !== (s.connected && s.peers > 1))
     setTimeout(() => episodesMode === 'tonight' && !$('bestView').hidden && !tonight && renderTonight());
@@ -471,7 +457,6 @@ function showStatus(s) {
         : 'In a party, waiting for them.';
   if (!leaving) $('disconnect').disabled = !s.room;
   if (!wasConnected && s.connected) $('settings').open = false;
-  if (!wasConnected && s.connected) setTimeout(() => loadIce());
   if (s.connected && s.peers > 1 && !peer && !askedPeer) {
     askedPeer = true;
     sendProfile(true);
@@ -2466,169 +2451,81 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeTrays();
 });
 
-// ---- Incoming call ----
-// Ringtone: a soft two-note chime every 2s, synthesized (no sound file).
-function makeRinger() {
-  let ctx = null;
-  let timer = null;
-  const chime = () => {
-    try {
-      ctx ||= new AudioContext();
-      ctx.resume?.();
-      const t = ctx.currentTime;
-      [
-        [659.25, 0],
-        [880, 0.18],
-      ].forEach(([freq, delay]) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0, t + delay);
-        gain.gain.linearRampToValueAtTime(0.12, t + delay + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, t + delay + 0.6);
-        osc.connect(gain).connect(ctx.destination);
-        osc.start(t + delay);
-        osc.stop(t + delay + 0.65);
-      });
-    } catch {}
-  };
-  return {
-    start() {
-      if (timer) return;
-      chime();
-      timer = setInterval(chime, 2000);
-    },
-    stop() {
-      clearInterval(timer);
-      timer = null;
-    },
-    get on() {
-      return !!timer;
-    },
-  };
-}
-
-const ringer = makeRinger();
-let incoming = null; // { name } while someone is calling and we haven't answered
-let ringTimeout = null;
-function startRinging(name) {
-  incoming = { name: name || 'They' };
-  ringer.start();
-  send({ local: true, type: 'ringing', name: incoming.name }); // the show's tab shows it in fullscreen
-  clearTimeout(ringTimeout);
-  ringTimeout = setTimeout(() => {
-    if (!incoming) return;
-    addChat('', `Missed call from ${incoming.name}`, 'system');
-    stopRinging();
-    if (pc && !localStream) endCall(null);
-  }, 40000);
-  render();
-}
-function stopRinging() {
-  if (!incoming && !ringer.on) return;
-  incoming = null;
-  ringer.stop();
-  clearTimeout(ringTimeout);
-  send({ local: true, type: 'ring-stop' });
-  chrome.runtime.sendMessage({ type: 'call-handled' }, () => void chrome.runtime.lastError);
-  render();
-}
-
 // ---- Video call ----
-// Video goes browser-to-browser over WebRTC; the relay only carries the setup messages.
-// Uses the "perfect negotiation" pattern so it doesn't matter who starts or turns on their camera first.
-const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
-// The relay may add a TURN server: it relays the call when your networks can't connect directly (common
-// on mobile data and on ISPs that share one address between many homes).
-let iceServers = ICE_SERVERS;
-let iceAt = 0;
-async function loadIce() {
-  if (Date.now() - iceAt < 3600 * 1000) return;
-  const server = $('server').value.trim().replace(/^ws/, 'http').replace(/\/+$/, '');
-  if (!server) return;
-  try {
-    const r = await fetch(`${server}/ice`, { signal: AbortSignal.timeout(2500) });
-    const { iceServers: list } = r.ok ? await r.json() : {};
-    if (Array.isArray(list) && list.length) {
-      iceServers = list;
-      iceAt = Date.now();
-    }
-  } catch {}
+// The call itself runs in a hidden page (offscreen.js), so it survives this sidebar closing or reloading
+// (Chrome does that around fullscreen). This sidebar is a screen and remote for it: it sends commands
+// ('call-cmd'), shows the state it reports ('call-state'), and gets the video over a connection inside this
+// browser ('cam-want' / 'cam-offer'). Their voice plays in the call page.
+let call = { inCall: false, incoming: null, hasCamera: false, camOn: false, localVideo: false, mic: false, seeingThem: false, theirMicOn: null, connection: '' };
+const viewId = crypto.randomUUID(); // this sidebar, as a screen
+let viewPc = null;
+let viewWanted = '';
+
+// Commands start the call page first if it isn't running.
+function callCmd(cmd, extra = {}) {
+  ask({ type: 'call-ensure' }, (ok) => {
+    if (!ok) return addChat('', 'Couldn’t start the call. Try again.', 'system');
+    send({ local: true, type: 'call-cmd', cmd, ...extra });
+  });
 }
-let pc = null;
-let localStream = null;
-let remoteStream = null;
-let makingOffer = false;
-let ignoreOffer = false;
-let awaitingOffer = false;
-let myOffer = ''; // the id of the offer we're waiting on an answer to
-let attachOnOffer = null; // picking up: adds our camera and mic once their offer arrives
-// Chrome can close and reopen this sidebar (going fullscreen and back). The call is remembered for the
-// browser session and picks up again when the sidebar is back; the other side waits rather than hanging up.
-let peerAway = false;
-let awayTimer = null;
-let rejoinTried = false;
-// `at` is refreshed every few seconds while the call is on here, so another open window doesn't take over a
-// call that's still running in this one.
-const rememberCall = () =>
-  chrome.storage.session
-    ?.set({ callLive: { room: status.room, voice: !localStream?.getVideoTracks().length, at: Date.now() } })
-    .catch(() => {});
-setInterval(() => pc && localStream && rememberCall(), 3000);
-const forgetCall = () => chrome.storage.session?.remove('callLive').catch(() => {});
-window.addEventListener('pagehide', () => {
-  if (pc && localStream) signal({ away: true }); // "back in a moment", not a hang-up
-});
-// Our camera (by addTrack) and mic (by its own slot) into a fresh connection.
-// The reopened sidebar: once the party is back with them in it, rejoin the remembered call (if the window
-// that had it has gone quiet: check again shortly if it only just stopped).
-async function tryRejoin() {
-  const { callLive } = (await chrome.storage.session?.get('callLive').catch(() => null)) || {};
-  if (!callLive || callLive.room !== status.room || pc) return;
-  const age = Date.now() - (callLive.at || 0);
-  if (age < 7000) return void setTimeout(tryRejoin, 7000 - age + 300);
-  addChat('', 'Reconnecting your call…', 'system');
-  turnOnCamera(!!callLive.voice, 'rejoin');
-}
-async function attachLocalTracks() {
-  for (const track of localStream.getVideoTracks()) pc.addTrack(track, localStream);
-  const tx = micTransceiver();
-  const mic = localStream.getAudioTracks()[0];
-  if (mic) await tx.sender.replaceTrack(mic);
-}
-// They're back after their sidebar reopened: start a new connection to that sidebar, keeping our camera and mic.
-async function restartFor(from) {
-  clearTimeout(awayTimer);
-  peerAway = false;
-  stopAllRelays();
-  stopVoiceMeter();
-  pc?.close();
-  audioTx = null;
-  myOffer = '';
-  attachOnOffer = null;
-  awaitingOffer = false;
-  createPeer();
-  callPeer = from;
-  $('remote').srcObject = remoteStream;
-  await attachLocalTracks(); // adding them starts our offer
+// Ask for the current call (a call page that's already running answers; none = no call).
+send({ local: true, type: 'call-state-request' });
+// For tests and the odd check: call details from the call page.
+const callQuery = (q = 'state') =>
+  new Promise((resolve) => chrome.runtime.sendMessage({ type: 'call-query', q }, (r) => resolve(chrome.runtime.lastError ? null : r)));
+
+function onCallState(s) {
+  const was = call;
+  call = { ...call, ...s };
+  if (call.incoming && !was.incoming) closeTrays();
+  // Video to show (theirs, or our own preview): ask the call page for it; none: let go of it.
+  const want = call.inCall && (call.seeingThem || call.localVideo) ? `${call.seeingThem}|${call.localVideo}` : '';
+  if (want !== viewWanted) {
+    viewWanted = want;
+    if (want) send({ local: true, type: 'cam-want', from: viewId, self: true });
+    else closeView();
+  }
   render();
 }
-let restartedIce = false;
-let failTimer = null;
-const offerOut = () => {
-  myOffer = crypto.randomUUID().slice(0, 8);
-  signal({ description: pc.localDescription.toJSON(), oid: myOffer });
-};
-let audioTx = null; // the transceiver our mic goes out on (track swapped without renegotiating)
-let theirMicOn = null; // what they told us (null = not in a call / unknown)
+function closeView() {
+  viewPc?.close();
+  viewPc = null;
+  if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
+  $('remote').srcObject = null;
+  $('local').srcObject = null;
+}
+window.addEventListener('pagehide', () => send({ local: true, type: 'cam-stop', from: viewId }));
+async function onViewMessage(msg) {
+  if (msg.to !== viewId) return;
+  if (msg.type === 'cam-offer') {
+    viewPc?.close();
+    const relay = (viewPc = new RTCPeerConnection());
+    const ids = msg.ids || {};
+    $('remote').srcObject = null;
+    $('local').srcObject = null;
+    relay.ontrack = ({ track, streams }) => {
+      const stream = streams[0] || new MediaStream([track]);
+      const el = stream.id === ids.local ? $('local') : $('remote');
+      el.srcObject = stream;
+      el.play().catch(() => {});
+      render();
+    };
+    relay.onicecandidate = ({ candidate }) => {
+      if (candidate) send({ local: true, type: 'cam-ice', from: viewId, candidate: candidate.toJSON() });
+    };
+    await relay.setRemoteDescription(msg.description);
+    await relay.setLocalDescription();
+    send({ local: true, type: 'cam-answer', from: viewId, description: relay.localDescription.toJSON() });
+  } else if (msg.type === 'cam-ice') {
+    await viewPc?.addIceCandidate(msg.candidate).catch(() => {});
+  } else if (msg.type === 'cam-bye') {
+    closeView();
+    viewWanted = '';
+  }
+}
 
-// Mic on/off is remembered. Off means the microphone is fully released, which keeps Bluetooth
-// headphones in high-quality mode and stops Windows from turning the show down "for a call".
-let micOn = false;
-chrome.storage.local.get('micOn').then(({ micOn: saved }) => (micOn = saved === true));
-
-// ---- Camera and mic choice ----
+// ---- Camera and mic choice (Settings) ----
+// Saved here; the call page picks up the change (mid-call too, without hanging up).
 let cameraId = '';
 let micId = '';
 chrome.storage.local.get(['cameraId', 'micId']).then((saved) => {
@@ -2636,581 +2533,69 @@ chrome.storage.local.get(['cameraId', 'micId']).then((saved) => {
   micId = saved.micId || '';
   listDevices();
 });
-
-const videoConstraints = () => ({ width: 640, height: 480, ...(cameraId ? { deviceId: { exact: cameraId } } : {}) });
-const audioConstraints = () => ({
-  echoCancellation: true,
-  noiseSuppression: true,
-  ...(micId ? { deviceId: { exact: micId } } : {}),
-});
-
-// Like getUserMedia, but if the chosen device is gone (unplugged), fall back to the default one.
-async function getMedia(kind) {
-  const constraints = () => (kind === 'video' ? { video: videoConstraints() } : { audio: audioConstraints() });
-  try {
-    return await navigator.mediaDevices.getUserMedia(constraints());
-  } catch (e) {
-    const chosen = kind === 'video' ? cameraId : micId;
-    if (!chosen || !['OverconstrainedError', 'NotFoundError', 'NotReadableError'].includes(e.name)) throw e;
-    if (kind === 'video') cameraId = '';
-    else micId = '';
-    chrome.storage.local.set({ cameraId, micId });
-    addChat(
-      '',
-      `Your chosen ${kind === 'video' ? 'camera' : 'mic'} isn’t available, so the default one is used.`,
-      'system',
-    );
-    return navigator.mediaDevices.getUserMedia(constraints());
-  }
-}
-
 async function listDevices() {
   const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
-
   // Chrome adds "default"/"communications" stand-ins for audio; "System default" covers those.
   const real = (kind) =>
     devices.filter((d) => d.kind === kind && d.deviceId && !['default', 'communications'].includes(d.deviceId));
   fillDevices($('camSelect'), real('videoinput'), cameraId, 'Camera');
   fillDevices($('micSelect'), real('audioinput'), micId, 'Microphone');
-
   // Without camera/mic permission, Chrome hides device names.
   $('devicePerm').hidden = devices.some((d) => d.label);
 }
-
 function fillDevices(select, list, chosen, noun) {
   const options = [new Option('System default', '')];
   list.forEach((d, i) => options.push(new Option(d.label || `${noun} ${i + 1}`, d.deviceId)));
   select.replaceChildren(...options);
   select.value = list.some((d) => d.deviceId === chosen) ? chosen : '';
 }
-
 navigator.mediaDevices.addEventListener('devicechange', listDevices);
 $('settings').addEventListener('toggle', () => $('settings').open && listDevices());
 $('devicePerm').onclick = () => chrome.tabs.create({ url: 'permission.html' });
-
-$('camSelect').onchange = async () => {
+$('camSelect').onchange = () => {
   cameraId = $('camSelect').value;
   chrome.storage.local.set({ cameraId });
-
-  // Mid-call: swap the camera in place, no hanging up.
-  const old = localStream?.getVideoTracks()[0];
-  if (!pc || !old) return;
-  try {
-    const [track] = (await getMedia('video')).getVideoTracks();
-    if (!pc || !localStream) return track.stop(); // the call ended meanwhile
-    track.enabled = old.enabled;
-    await pc
-      .getSenders()
-      .find((s) => s.track === old)
-      ?.replaceTrack(track);
-    old.stop();
-    if (!localStream) return track.stop();
-    localStream.removeTrack(old);
-    localStream.addTrack(track);
-    $('local').srcObject = localStream;
-  } catch (e) {
-    addChat('', `Couldn’t switch camera: ${e.message || e.name}`, 'system');
-  }
 };
-
-$('micSelect').onchange = async () => {
+$('micSelect').onchange = () => {
   micId = $('micSelect').value;
   chrome.storage.local.set({ micId });
-  if (pc && localStream?.getAudioTracks().length) {
-    await setMic(false);
-    await setMic(true); // reopen on the newly chosen mic
-  }
 };
-
-// ---- Call audio ----
-// Their voice volume, and turning the show down while they talk.
-let duckLevel = 0.5; // the show's volume while they talk, as a share of yours (0 = leave it alone)
-chrome.storage.local.get(['duckLevel', 'voiceVol']).then((saved) => {
-  if (typeof saved.duckLevel === 'number') duckLevel = saved.duckLevel;
-  $('duckSelect').value = String(duckLevel);
-  if (typeof saved.voiceVol === 'number') $('voiceVol').value = String(saved.voiceVol);
-  $('remote').volume = Number($('voiceVol').value);
+chrome.storage.onChanged.addListener((c) => {
+  if (c.cameraId || c.micId) {
+    cameraId = c.cameraId ? c.cameraId.newValue || '' : cameraId;
+    micId = c.micId ? c.micId.newValue || '' : micId;
+    listDevices();
+  }
 });
-$('duckSelect').onchange = () => {
-  duckLevel = Number($('duckSelect').value);
-  chrome.storage.local.set({ duckLevel });
-  if (!duckLevel) setDucked(false);
+
+// ---- Call audio (Settings) ----
+// Their voice volume, and how far the show is turned down while they talk.
+chrome.storage.local.get(['duckLevel', 'voiceVol']).then((saved) => {
+  if (typeof saved.duckLevel === 'number') $('duckSelect').value = String(saved.duckLevel);
+  if (typeof saved.voiceVol === 'number') $('voiceVol').value = String(saved.voiceVol);
+});
+$('duckSelect').onchange = () => chrome.storage.local.set({ duckLevel: Number($('duckSelect').value) });
+$('voiceVol').oninput = () => chrome.storage.local.set({ voiceVol: Number($('voiceVol').value) });
+
+// ---- Buttons ----
+$('start').onclick = () => {
+  callCmd('start', { voice: false });
+  addChat('', 'Calling…', 'system');
 };
-$('voiceVol').oninput = () => {
-  $('remote').volume = Number($('voiceVol').value);
-  chrome.storage.local.set({ voiceVol: Number($('voiceVol').value) });
+$('startVoice').onclick = () => {
+  callCmd('start', { voice: true });
+  addChat('', 'Voice calling…', 'system');
 };
-
-// Listens to their side of the call: a few loud moments in a row = talking; a second or so of quiet = done.
-let voiceMeter = null; // { ctx, timer, track }
-let ducked = false;
-function watchTheirVoice() {
-  const track = remoteStream?.getAudioTracks()[0];
-  if (!track || voiceMeter?.track === track) return;
-  stopVoiceMeter();
-  try {
-    const ctx = new AudioContext();
-    ctx.resume?.();
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 1024;
-    ctx.createMediaStreamSource(new MediaStream([track])).connect(analyser); // only measured, not played again
-    const samples = new Float32Array(analyser.fftSize);
-    let loud = 0;
-    let lastLoud = 0;
-    const timer = setInterval(() => {
-      analyser.getFloatTimeDomainData(samples);
-      let sum = 0;
-      for (const x of samples) sum += x * x;
-      const now = Date.now();
-      loud = Math.sqrt(sum / samples.length) > 0.025 ? loud + 1 : 0;
-      if (loud >= 2) lastLoud = now;
-      setDucked(duckLevel > 0 && theirMicOn !== false && now - lastLoud < 1200);
-    }, 100);
-    voiceMeter = { ctx, timer, track };
-  } catch (e) {
-    console.warn('[watch-party] voice meter', e);
-  }
-}
-let duckRepeat = 0;
-function setDucked(on) {
-  // While on, repeat every second, so the show comes back up by itself if this sidebar goes away.
-  if (on === ducked && (!on || Date.now() - duckRepeat < 1000)) return;
-  ducked = on;
-  duckRepeat = Date.now();
-  send({ local: true, type: 'duck', on, level: duckLevel });
-}
-function stopVoiceMeter() {
-  if (!voiceMeter) return;
-  clearInterval(voiceMeter.timer);
-  voiceMeter.ctx.close().catch(() => {});
-  voiceMeter = null;
-  setDucked(false);
-}
-
-// A call is between two sidebars. Once one has answered, setup goes only to it (`to`), and messages from any
-// other sidebar of theirs (a second window) are ignored, so two answers can't collide.
-let callPeer = null;
-function signal(data) {
-  send({ type: 'rtc', from: myId, name: myName(), ...(callPeer ? { to: callPeer } : {}), ...data });
-}
-
-function createPeer() {
-  pc = new RTCPeerConnection({ iceServers, iceCandidatePoolSize: 2 }); // starts finding routes before the offer
-  restartedIce = false;
-  remoteStream = new MediaStream();
-
-  pc.onnegotiationneeded = async () => {
-    if (awaitingOffer) return; // answering a call late: wait for their fresh offer instead of racing it
-    try {
-      makingOffer = true;
-      await pc.setLocalDescription();
-      if (pc.localDescription.type === 'offer') offerOut();
-      else signal({ description: pc.localDescription.toJSON() });
-    } catch (e) {
-      console.error('[watch-party] offer failed', e);
-    } finally {
-      makingOffer = false;
-    }
-  };
-  pc.onicecandidate = ({ candidate }) => {
-    if (candidate) signal({ candidate: candidate.toJSON() });
-  };
-  pc.ontrack = ({ track }) => {
-    if (!remoteStream) return; // a late track from a call that just ended
-    remoteStream.addTrack(track);
-    if (track.kind === 'audio') watchTheirVoice();
-    $('remote').srcObject = remoteStream;
-    $('remote')
-      .play()
-      .catch(() => {});
-    track.onunmute = render;
-    render();
-    if (track.kind === 'video') send({ local: true, type: 'cam-available' }); // a fullscreen tab may want it
-  };
-  pc.onconnectionstatechange = () => {
-    const state = pc?.connectionState;
-    if (state === 'connected') clearTimeout(failTimer);
-    if (state === 'failed' && peerAway) return render(); // they're coming back; restartFor() reconnects
-    if (state === 'failed') {
-      // Try once more on a fresh route before giving up.
-      if (!restartedIce) {
-        restartedIce = true;
-        addChat('', 'The call’s connection dropped. Reconnecting…', 'system');
-        pc.restartIce();
-        clearTimeout(failTimer);
-        failTimer = setTimeout(() => {
-          if (pc && pc.connectionState !== 'connected') endCall('Call dropped. Your networks couldn’t connect.', true);
-        }, 15000);
-      } else {
-        endCall('Call dropped. Your networks couldn’t connect.', true);
-      }
-    }
-    render();
-  };
-}
-
-async function onSignal({ description, candidate, bye, declined, want, from, name, oid, re, to, away, rejoin }) {
-  if (to && to !== myId) return; // for another of their sidebars
-  if (away && pc && from === callPeer) {
-    // Their sidebar closed (fullscreen, usually): keep our side of the call and wait for them.
-    peerAway = true;
-    clearTimeout(failTimer);
-    addChat('', `${name || 'They'} stepped out of the call view. It reconnects when they’re back.`, 'system');
-    clearTimeout(awayTimer);
-    awayTimer = setTimeout(() => peerAway && endCall('Call ended. They didn’t come back to it.', true), 60 * 60 * 1000);
-    render();
-    return;
-  }
-  if (want === 'offer' && rejoin && pc && localStream && from !== callPeer) {
-    addChat('', 'Reconnecting the call…', 'system');
-    return restartFor(from);
-  }
-  if (callPeer && from !== callPeer && from !== 'tab') return; // a second sidebar of theirs joining in
-  if (description && pc && !callPeer) callPeer = from;
-  // They picked up and want our offer: resend the one still waiting (nobody answered it; it carries our
-  // network candidates). Undoing it and making a new one raced with the browser's own renegotiation.
-  if (want === 'offer') {
-    if (!pc || !localStream) return;
-    if (pc.signalingState === 'have-local-offer' && pc.localDescription) return offerOut();
-    if (pc.signalingState !== 'stable' || makingOffer) return;
-    try {
-      makingOffer = true;
-      await pc.setLocalDescription(await pc.createOffer({ iceRestart: true }));
-      offerOut();
-    } catch (e) {
-      console.warn('[watch-party] fresh offer', e);
-    } finally {
-      makingOffer = false;
-    }
-    return;
-  }
-  if (bye) {
-    if (incoming && !localStream) {
-      addChat('', `Missed call from ${incoming.name}`, 'system');
-      stopRinging();
-      if (pc) endCall(null);
-    } else if (pc) {
-      endCall(declined ? `${name || 'They'} declined` : `${name || 'They'} hung up`);
-    }
-    return;
-  }
-  if (description) {
-    if (!pc) {
-      // A new call: just ring. Picking up asks them for a fresh offer, so only the sidebar you answer in
-      // takes part (not every window you have open).
-      if (description.type !== 'offer' || incoming) return;
-      addChat('', `${name || 'They'} started a call`, 'system');
-      startRinging(name);
-      return;
-    }
-    const polite = myId < from;
-    const collision = description.type === 'offer' && (makingOffer || pc.signalingState !== 'stable');
-    ignoreOffer = !polite && collision;
-    if (ignoreOffer) {
-      if (pc.localDescription?.type === 'offer') signal({ description: pc.localDescription.toJSON(), oid: myOffer });
-      return;
-    }
-
-    // An answer to an older offer (we've sent a newer one since), or after we've settled: nothing to answer.
-    if (description.type === 'answer' && (pc.signalingState !== 'have-local-offer' || (re && re !== myOffer))) return;
-    try {
-      await pc.setRemoteDescription(description);
-    } catch (e) {
-      // A mismatched answer: start over with a fresh offer rather than leaving the call stuck.
-      console.warn('[watch-party] call setup', e);
-      if (description.type === 'answer' && pc?.signalingState === 'have-local-offer') {
-        await pc.setLocalDescription({ type: 'rollback' }).catch(() => {});
-        pc.onnegotiationneeded?.();
-      }
-      return;
-    }
-    if (description.type === 'offer') awaitingOffer = false;
-    if (description.type === 'offer') {
-      if (attachOnOffer) {
-        const attach = attachOnOffer;
-        attachOnOffer = null;
-        await attach(); // our camera and mic join their offer's slots, in this answer
-        if (!pc) return;
-      }
-      await pc.setLocalDescription();
-      signal({ description: pc.localDescription.toJSON(), re: oid });
-    }
-    render();
-  } else if (candidate && pc) {
-    try {
-      await pc.addIceCandidate(candidate);
-    } catch (e) {
-      if (!ignoreOffer) throw e;
-    }
-  }
-}
-
-// voice = start (or answer) with just the mic; the camera can still be turned on later.
-// how: 'start' (we're calling), 'answer' (picking up) or 'rejoin' (the sidebar reopened mid-call).
-async function turnOnCamera(voice = false, how = 'start') {
-  let voiceTrack = null;
-  await loadIce();
-
-  // Picking up (or rejoining): ask them for their offer and answer it with our camera and mic, so only one
-  // side sets the call up. Asked right away, while the camera starts. If no offer comes within 5s, we offer.
-  const answering = !pc && how !== 'start';
-  let attachFn = null;
-  let openGate;
-  const gate = new Promise((r) => (openGate = r));
-  if (answering) {
-    awaitingOffer = true;
-    createPeer();
-    const mine = async () => {
-      if (await gate) await attachFn?.();
-    };
-    attachOnOffer = mine;
-    signal({ want: 'offer', ...(how === 'rejoin' ? { rejoin: true } : {}) });
-    setTimeout(async () => {
-      if (!awaitingOffer || !pc || attachOnOffer !== mine) return;
-      awaitingOffer = false;
-      attachOnOffer = null;
-      await mine(); // adding our tracks starts the offer
-    }, 5000);
-  }
-  try {
-    if (voice) {
-      [voiceTrack] = (await getMedia('audio')).getAudioTracks();
-      localStream = new MediaStream();
-    } else {
-      localStream = await getMedia('video');
-    }
-  } catch (e) {
-    if (e.name === 'NotAllowedError') {
-      // The side panel can't show Chrome's permission prompt, so ask once from a normal tab.
-      chrome.tabs.create({ url: 'permission.html' });
-      addChat('', 'Allow camera & mic in the tab that just opened, then click the call button again.', 'system');
-    } else {
-      addChat('', `Couldn’t start your camera: ${e.message || e.name}`, 'system');
-    }
-    if (answering) {
-      openGate(false);
-      endCall(null);
-    }
-    return false;
-  }
-  $('local').srcObject = localStream;
-
-  // Our camera and mic go into the call.
-  const attach = async () => {
-    if (!pc || !localStream) return;
-    for (const track of localStream.getTracks()) pc.addTrack(track, localStream);
-    micTransceiver(); // ready for the mic, even if it starts off
-    if (voiceTrack) {
-      // A voice call is for talking: the mic starts on.
-      localStream.addTrack(voiceTrack);
-      await micTransceiver().sender.replaceTrack(voiceTrack);
-      micOn = true;
-      chrome.storage.local.set({ micOn });
-    } else if (micOn) {
-      await setMic(true);
-    }
-    if (!localStream) return;
-    send({ type: 'mic', on: !!localStream.getAudioTracks().length });
-    if (!localStream.getAudioTracks().length) addChat('', 'Your mic is off. Click the mic button to talk.', 'system');
-    render();
-  };
-
-  attachFn = attach;
-  if (answering) openGate(true);
-  else {
-    // Calling: our offer goes out as soon as the camera is in.
-    if (!pc) createPeer();
-    await attach();
-  }
-  listDevices(); // names are visible now that we have permission
-  if (!localStream) return false; // the call ended while it was starting
-  rememberCall();
-  render();
-  return true;
-}
-
-// Reuse an audio slot the other side offered, or add one; either way we can swap the mic in later.
-function micTransceiver() {
-  if (audioTx && pc.getTransceivers().includes(audioTx)) return audioTx;
-  audioTx =
-    pc
-      .getTransceivers()
-      .find((t) => t.receiver.track?.kind === 'audio' && !t.sender.track && t.currentDirection !== 'stopped') ||
-    pc.addTransceiver('audio', { direction: 'sendrecv', streams: [localStream] });
-  if (audioTx.direction !== 'sendrecv') audioTx.direction = 'sendrecv';
-  audioTx.sender.setStreams?.(localStream);
-  return audioTx;
-}
-
-async function setMic(on) {
-  if (!pc || !localStream) return;
-  const current = localStream.getAudioTracks()[0];
-  if (on && !current) {
-    let track;
-    try {
-      [track] = (await getMedia('audio')).getAudioTracks();
-    } catch (e) {
-      addChat('', `Couldn’t turn on your mic: ${e.message || e.name}`, 'system');
-      return;
-    }
-    if (!pc || !localStream) return track.stop(); // the call ended while the mic was starting
-    localStream.addTrack(track);
-    await micTransceiver().sender.replaceTrack(track);
-  } else if (!on && current) {
-    await micTransceiver().sender.replaceTrack(null);
-    current.stop(); // releases the microphone itself
-    localStream?.removeTrack(current);
-  }
-  micOn = on;
-  chrome.storage.local.set({ micOn });
-  send({ type: 'mic', on });
-  render();
-}
-
-function endCall(reason, notify = false) {
-  if (incoming) stopRinging();
-  if (notify) signal({ bye: true });
-  stopAllRelays();
-  stopVoiceMeter();
-  if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
-  pc?.close();
-  pc = null;
-  clearTimeout(failTimer);
-  awaitingOffer = false;
-  attachOnOffer = null;
-  myOffer = '';
-  callPeer = null;
-  peerAway = false;
-  clearTimeout(awayTimer);
-  forgetCall();
-  audioTx = null;
-  theirMicOn = null;
-  localStream?.getTracks().forEach((t) => t.stop());
-  localStream = null;
-  remoteStream = null;
-  $('remote').srcObject = null;
-  $('local').srcObject = null;
-  if (reason) addChat('', reason, 'system');
-  render();
-}
-
-$('start').onclick = async () => {
-  if (await turnOnCamera()) addChat('', 'Calling. They need the sidebar open to pick up.', 'system');
-};
-$('startVoice').onclick = async () => {
-  if (await turnOnCamera(true)) addChat('', 'Voice calling. They need the sidebar open to pick up.', 'system');
-};
-$('join').onclick = () => {
-  stopRinging();
-  turnOnCamera(false, 'answer');
-};
-$('joinVoice').onclick = () => {
-  stopRinging();
-  turnOnCamera(true, 'answer');
-};
+$('join').onclick = () => callCmd('answer', { voice: false });
+$('joinVoice').onclick = () => callCmd('answer', { voice: true });
 $('decline').onclick = () => {
-  const who = incoming?.name;
-  stopRinging();
-  signal({ bye: true, declined: true });
-  if (pc) endCall(null);
+  const who = call.incoming;
+  callCmd('decline');
   addChat('', `You declined ${who ? `${who}’s` : 'the'} call`, 'system');
 };
-$('hangup').onclick = () => endCall('You hung up', true);
-
-$('mic').onclick = () => setMic(!localStream?.getAudioTracks().length);
-$('cam').onclick = () => toggleTrack('video', $('cam'));
-function toggleTrack(kind, button) {
-  const track = localStream?.getTracks().find((t) => t.kind === kind);
-  if (!track && kind === 'video') return addCamera();
-  if (!track) return;
-  track.enabled = !track.enabled;
-  button.classList.toggle('off', !track.enabled);
-  sendCallState();
-}
-
-// On a voice call: turn the camera on (it's added to the call, and they see you).
-async function addCamera() {
-  if (!pc || !localStream) return;
-  try {
-    const [track] = (await getMedia('video')).getVideoTracks();
-    if (!pc || !localStream) return track.stop(); // the call ended while the camera was starting
-    localStream.addTrack(track);
-    pc.addTrack(track, localStream);
-    $('local').srcObject = localStream;
-    rememberCall();
-  } catch (e) {
-    addChat('', `Couldn’t start your camera: ${e.message || e.name}`, 'system');
-  }
-  render();
-}
-
-// Keeps the fullscreen camera's mic/camera buttons matching the real state.
-let lastCallState = '';
-function sendCallState(force = false) {
-  const state = {
-    mic: !!localStream?.getAudioTracks().length,
-    cam: !!localStream?.getVideoTracks()[0]?.enabled,
-    hasCamera: !!localStream,
-  };
-  const key = JSON.stringify(state);
-  if (!force && key === lastCallState) return;
-  lastCallState = key;
-  send({ local: true, type: 'call-state', ...state });
-}
-
-// ---- Camera hand-off to fullscreen tabs ----
-// Fullscreen hides this sidebar, so a fullscreen tab asks for her camera and we forward the video
-// track to it over a second connection that stays inside this browser (messages marked `local`).
-const relays = new Map(); // tab view id -> RTCPeerConnection
-
-async function onLocal(msg) {
-  if (msg.type === 'bantay-streak') {
-    addChat('', `${msg.days} nights in a row together. Bantay is proud.`, 'system');
-    return;
-  }
-  if (msg.type === 'break-state') {
-    onBreak = !!msg.active;
-    return renderBreak();
-  }
-  const relay = relays.get(msg.from);
-  if (msg.type === 'call-control') {
-    // From the floating camera in fullscreen.
-    if (msg.action === 'mic') await setMic(!localStream?.getAudioTracks().length);
-    else if (msg.action === 'cam') toggleTrack('video', $('cam'));
-    return sendCallState(true);
-  }
-  if (msg.type === 'call-state-request') return sendCallState(true);
-  if (msg.type === 'cam-want') await startRelay(msg.from);
-  else if (msg.type === 'cam-answer') await relay?.setRemoteDescription(msg.description);
-  else if (msg.type === 'cam-ice') await relay?.addIceCandidate(msg.candidate).catch(() => {});
-  else if (msg.type === 'cam-stop') stopRelay(msg.from);
-}
-
-async function startRelay(viewId) {
-  const track = remoteStream?.getVideoTracks()[0];
-  if (!track) return; // no call yet; we'll announce 'cam-available' when there is one
-  stopRelay(viewId);
-  const relay = new RTCPeerConnection();
-  relays.set(viewId, relay);
-  relay.addTrack(track, new MediaStream([track]));
-  relay.onicecandidate = ({ candidate }) => {
-    if (candidate) send({ local: true, type: 'cam-ice', to: viewId, candidate: candidate.toJSON() });
-  };
-  await relay.setLocalDescription();
-  send({ local: true, type: 'cam-offer', to: viewId, description: relay.localDescription.toJSON() });
-}
-
-function stopRelay(viewId) {
-  relays.get(viewId)?.close();
-  relays.delete(viewId);
-}
-
-function stopAllRelays() {
-  for (const viewId of [...relays.keys()]) {
-    stopRelay(viewId);
-    send({ local: true, type: 'cam-bye', to: viewId });
-  }
-}
+$('hangup').onclick = () => callCmd('hangup', { reason: 'You hung up' });
+$('mic').onclick = () => callCmd('mic');
+$('cam').onclick = () => callCmd('cam');
 
 // Fullscreen hides the side panel, so pop her video out into a floating window first.
 $('pip').onclick = async () => {
@@ -3222,17 +2607,39 @@ $('pip').onclick = async () => {
   }
 };
 
+// ---- Messages from the call page and the show's tab (this browser only) ----
+async function onLocal(msg) {
+  if (msg.type === 'bantay-streak') {
+    addChat('', `${msg.days} nights in a row together. Bantay is proud.`, 'system');
+    return;
+  }
+  if (msg.type === 'break-state') {
+    onBreak = !!msg.active;
+    return renderBreak();
+  }
+  if (msg.type === 'call-state') return onCallState(msg);
+  if (msg.type === 'call-note') return addChat('', msg.text, 'system');
+  if (msg.type === 'call-error') {
+    if (msg.error === 'permission') {
+      // The side panel can't show Chrome's permission prompt, so ask once from a normal tab.
+      chrome.tabs.create({ url: 'permission.html' });
+      addChat('', 'Allow camera & mic in the tab that just opened, then click the call button again.', 'system');
+    } else {
+      addChat('', `Couldn’t start your camera: ${msg.error}`, 'system');
+    }
+    return;
+  }
+  if (msg.type === 'cam-offer' || msg.type === 'cam-ice' || msg.type === 'cam-bye') return onViewMessage(msg);
+}
+
 function render() {
   const bothHere = status.connected && status.peers > 1;
-  const inCall = !!pc;
-  const hasCamera = !!localStream;
-  const seeingThem = !!remoteStream?.getVideoTracks().length;
+  const { inCall, incoming, hasCamera, camOn, seeingThem } = call;
 
   $('start').disabled = $('startVoice').disabled = !bothHere;
   $('join').hidden = $('joinVoice').hidden = !(inCall || incoming) || hasCamera;
   $('decline').hidden = !incoming;
   $('start').hidden = $('startVoice').hidden = inCall || !!incoming;
-  const camOn = !!localStream?.getVideoTracks()[0]?.enabled;
   $('cam').classList.toggle('off', hasCamera && !camOn);
   $('cam').title = camOn ? 'Camera on: click to turn it off' : 'Turn your camera on';
 
@@ -3241,25 +2648,24 @@ function render() {
   callEl.classList.toggle('compact', !inCall && !incoming);
   callEl.classList.toggle('voice', inCall && !seeingThem && !camOn);
   $('mic').hidden = $('cam').hidden = !hasCamera;
-  $('mic').classList.toggle('off', !localStream?.getAudioTracks().length);
-  sendCallState();
-  $('mic').title = localStream?.getAudioTracks().length ? 'Mic on: click to turn it off' : 'Mic off: click to talk';
+  $('mic').classList.toggle('off', !call.mic);
+  $('mic').title = call.mic ? 'Mic on: click to turn it off' : 'Mic off: click to talk';
   $('pip').hidden = !seeingThem;
   $('hangup').hidden = !inCall || !!incoming;
-  $('local').hidden = !localStream?.getVideoTracks().length;
-  $('remoteMic').hidden = !(inCall && seeingThem && theirMicOn === false);
+  $('local').hidden = !call.localVideo;
+  $('remoteMic').hidden = !(inCall && seeingThem && call.theirMicOn === false);
 
   $('placeholder').hidden = seeingThem;
   $('faces').replaceChildren(avatarEl(me.avatar, 52), ...(peer ? [avatarEl(peer.avatar, 52)] : []));
   $('phText').textContent = incoming
-    ? `${incoming.name} is calling…`
+    ? `${incoming} is calling…`
     : !status.connected
       ? 'Not in a room yet. Use Invite to start one.'
       : !bothHere
         ? 'Waiting for them to join.'
         : !inCall
           ? 'Camera’s off.'
-          : pc.connectionState === 'connected'
+          : call.connection === 'connected'
             ? 'On a voice call'
             : 'Connecting…';
 }
