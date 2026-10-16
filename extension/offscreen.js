@@ -176,7 +176,7 @@ function createPeer() {
       if (pc.localDescription.type === 'offer') offerOut();
       else signal({ description: pc.localDescription.toJSON() });
     } catch (e) {
-      console.warn('[watch-party] offer failed', e);
+      console.warn('[watch-party] offer failed:', e?.name, e?.message);
     } finally {
       makingOffer = false;
     }
@@ -244,7 +244,7 @@ async function onSignal({ description, candidate, bye, declined, want, from, nam
       await pc.setLocalDescription(await pc.createOffer({ iceRestart: true }));
       offerOut();
     } catch (e) {
-      console.warn('[watch-party] fresh offer', e);
+      console.warn('[watch-party] fresh offer:', e?.name, e?.message);
     } finally {
       makingOffer = false;
     }
@@ -280,8 +280,9 @@ async function onSignal({ description, candidate, bye, declined, want, from, nam
     try {
       await pc.setRemoteDescription(description);
     } catch (e) {
-      // A mismatched answer: start over with a fresh offer rather than leaving the call stuck.
-      console.warn('[watch-party] call setup', e);
+      // A mismatched answer: start over with a fresh offer rather than leaving the call stuck. (Handled, so
+      // noted quietly rather than as a warning on the extension's errors page.)
+      console.info('[watch-party] call setup retried:', e?.name, e?.message);
       if (description.type === 'answer' && pc?.signalingState === 'have-local-offer') {
         await pc.setLocalDescription({ type: 'rollback' }).catch(() => {});
         pc.onnegotiationneeded?.();
@@ -587,7 +588,7 @@ function watchTheirVoice() {
     }, 100);
     voiceMeter = { ctx, timer, track };
   } catch (e) {
-    console.warn('[watch-party] voice meter', e);
+    console.warn('[watch-party] voice meter:', e?.name, e?.message);
   }
 }
 function setDucked(on) {

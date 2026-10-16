@@ -987,7 +987,7 @@ document.addEventListener('fullscreenchange', () => {
   if (isWatchTab && fs && video && fs !== video && fs.contains(video)) {
     overlay?.destroy();
     overlay = buildOverlay(fs);
-    post({ local: true, type: 'cam-want', from: viewId });
+    if (!pipOn) post({ local: true, type: 'cam-want', from: viewId }); // (the pop-out already shows them)
   } else if (overlay) {
     overlay.destroy();
     overlay = null;
@@ -1028,7 +1028,16 @@ async function onLocal(msg) {
   } else if (msg.type === 'call-state') {
     overlay?.setCallState(msg);
   } else if (msg.type === 'cam-available') {
-    if (overlay) post({ local: true, type: 'cam-want', from: viewId });
+    if (overlay && !pipOn) post({ local: true, type: 'cam-want', from: viewId });
+  } else if (msg.type === 'pip-state') {
+    pipOn = !!msg.on;
+    if (!overlay) return;
+    if (pipOn) {
+      closeCam();
+      post({ local: true, type: 'cam-stop', from: viewId });
+    } else {
+      post({ local: true, type: 'cam-want', from: viewId }); // pop-out closed: show them here again
+    }
   } else if (msg.type === 'cam-offer') {
     if (!overlay) return;
     closeCam();
@@ -1090,6 +1099,9 @@ function rampVolume(v, to) {
   }, 35);
 }
 
+// Their video popped out (the sidebar's picture-in-picture): the fullscreen overlay leaves its camera out,
+// or you'd see them twice.
+let pipOn = false;
 function closeCam() {
   camPc?.close();
   camPc = null;

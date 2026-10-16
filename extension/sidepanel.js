@@ -2609,6 +2609,9 @@ $('hangup').onclick = () => callCmd('hangup', { reason: 'You hung up' });
 $('mic').onclick = () => callCmd('mic');
 $('cam').onclick = () => callCmd('cam');
 
+// Tell the show's tab when their video is popped out, so its fullscreen camera doesn't show them twice.
+$('remote').addEventListener('enterpictureinpicture', () => send({ local: true, type: 'pip-state', on: true }));
+$('remote').addEventListener('leavepictureinpicture', () => send({ local: true, type: 'pip-state', on: false }));
 // Fullscreen hides the side panel, so pop her video out into a floating window first.
 $('pip').onclick = async () => {
   try {
