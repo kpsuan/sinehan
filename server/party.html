@@ -111,6 +111,9 @@
     body.typing #main { display: flex; flex-direction: column; flex: 1; min-height: 0; }
     body.typing #main > section:not(.chat), body.typing .leave, body.typing header { display: none; }
     body.typing .chat { margin-top: 0 !important; min-height: 0; }
+    .chat { position: relative; }
+    .chat-close { display: none; position: absolute; top: 6px; right: 8px; width: 40px; height: 36px; place-items: center; padding: 0; background: var(--raised); border-radius: 10px; color: var(--muted); }
+    body.typing .chat-close { display: grid; }
     .leave { align-self: center; padding: 8px 14px; background: none; color: var(--faint); font-size: 13px; }
   </style>
 </head>
@@ -159,6 +162,7 @@
 
       <section class="card chat" style="margin-top:10px">
         <p class="label">Chat</p>
+        <button type="button" class="chat-close" id="chatClose" aria-label="Close chat, back to the remote"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" /></svg></button>
         <div id="log"></div>
         <div id="typing"></div>
         <div class="guess-row"><button type="button" id="guessBtn"><svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2" /><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" /></svg>Who did it?</button></div>
@@ -194,14 +198,38 @@
       };
       vv?.addEventListener('resize', fit);
       vv?.addEventListener('scroll', fit);
+      // Leaving the chat: the chevron, Android's back button (which would otherwise leave the page, and the
+      // party), or the keyboard closing (back's first press closes only the keyboard).
+      const closeChat = () => {
+        msg.blur();
+        document.body.classList.remove('typing');
+      };
       msg.addEventListener('focus', () => {
         document.body.classList.add('typing');
+        if (!history.state?.typing) history.pushState({ typing: true }, '');
+        fullHeight = Math.max(fullHeight, innerHeight);
         fit();
         setTimeout(fit, 350); // after the keyboard has finished opening
       });
       msg.addEventListener('blur', () =>
-        setTimeout(() => document.activeElement !== msg && document.body.classList.remove('typing'), 120),
+        setTimeout(() => {
+          if (document.activeElement === msg) return;
+          document.body.classList.remove('typing');
+          if (history.state?.typing) history.back(); // drop the entry back would otherwise use
+        }, 120),
       );
+      window.addEventListener('popstate', () => document.body.classList.contains('typing') && closeChat());
+      document.getElementById('chatClose').addEventListener('click', closeChat);
+      let fullHeight = innerHeight;
+      let keyboardSeen = false;
+      vv?.addEventListener('resize', () => {
+        if (!document.body.classList.contains('typing')) return void (fullHeight = Math.max(fullHeight, innerHeight));
+        if (vv.height < fullHeight * 0.8) keyboardSeen = true;
+        else if (keyboardSeen) {
+          keyboardSeen = false;
+          closeChat(); // the keyboard went away (Android's back): the remote comes back
+        }
+      });
       // Send and the quick reactions keep the keyboard up (a tap would otherwise close it first).
       for (const el of [document.querySelector('#form button'), document.getElementById('reacts')])
         el.addEventListener('pointerdown', (e) => e.preventDefault());
@@ -334,10 +362,7 @@
           clearTimeout(ackTimer);
           show = { time: m.time, paused: !!m.paused, at: Date.now() }; renderShow();
         } else if (m.type === 'countdown' && typeof m.time === 'number') {
-          note('Counting down 3·2·1…', 3200);
-          show = { time: m.time, paused: true, at: Date.now() };
-          setTimeout(() => { show = { time: m.time, paused: false, at: Date.now() }; renderShow(); }, 3000);
-          renderShow();
+          countIn(m.time);
         } else if (m.type === 'now-watching') {
           showTitle = m.title || '';
           $('title').textContent = m.title || 'Something new';
@@ -387,6 +412,17 @@
       }
       setInterval(renderShow, 1000);
       renderShow();
+      // A 3·2·1 count-in: paused at that spot for three seconds, then playing. (Ours too: the relay doesn't
+      // send our own message back, and the laptops don't announce the play that ends a count-in.)
+      let countTimer = null;
+      function countIn(time) {
+        note('Counting down 3·2·1…', 3200);
+        clearTimeout(ackTimer);
+        clearTimeout(countTimer);
+        show = { time, paused: true, at: Date.now() };
+        renderShow();
+        countTimer = setTimeout(() => { show = { time, paused: false, at: Date.now() }; renderShow(); }, 3000);
+      }
       let noteTimer = null;
       function note(text, ms) {
         clearTimeout(noteTimer);
@@ -419,7 +455,11 @@
       $('playBtn').onclick = () => remote(show.paused ? 'play' : 'pause');
       $('backBtn').onclick = () => remote('back');
       $('fwdBtn').onclick = () => remote('forward');
-      $('countBtn').onclick = () => send({ type: 'countdown', time: now() ?? 0 });
+      $('countBtn').onclick = () => {
+        const time = now() ?? 0;
+        send({ type: 'countdown', time });
+        countIn(time);
+      };
       $('handBtn').onclick = () => { send({ type: 'hand', name: me.name }); note('Holding their hand', 1800); };
 
       // Pause both laptops and save the spot for next time.
@@ -432,7 +472,9 @@
         onBreak = !onBreak;
         if (onBreak) send({ type: 'hold', reason: 'break', active: true, name: me.name, time: now() ?? undefined });
         else {
-          send({ type: 'countdown', time: now() ?? 0 }); // both laptops count back in from the same spot
+          const time = now() ?? 0;
+          send({ type: 'countdown', time }); // both laptops count back in from the same spot
+          countIn(time);
           send({ type: 'hold', reason: 'break', active: false, name: me.name });
         }
         $('breakBtn').classList.toggle('on', onBreak);

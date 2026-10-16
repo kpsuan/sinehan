@@ -1284,7 +1284,6 @@ const vstate = (p) =>
       }, 7000),
       await both(),
     );
-
     // Faded-out pop-ups stay in the page invisibly, so only count what's showing.
     const showing = (p, re) =>
       p.evaluate(
@@ -1372,6 +1371,12 @@ const vstate = (p) =>
       return document.body.classList.contains('typing') && box.bottom <= innerHeight && box.top > 0;
     }));
     await phone.setViewportSize({ width: 390, height: 844 });
+    await phone.focus('#msg');
+    await phone.click('#chatClose');
+    check('phone: the chevron closes the chat, back to the remote', await until(async () => !(await phone.evaluate(() => document.body.classList.contains('typing'))) && (await phone.locator('#playBtn').isVisible())));
+    await phone.focus('#msg');
+    await phone.goBack();
+    check('phone: back closes the chat instead of leaving the party', await until(async () => phone.url().includes('/party') && !(await phone.evaluate(() => document.body.classList.contains('typing'))) && (await phone.locator('#playBtn').isVisible())), phone.url());
     await phone.fill('#msg', 'hi from my phone');
     await phone.press('#msg', 'Enter');
     check(
@@ -1432,6 +1437,8 @@ const vstate = (p) =>
       }, 7000),
       await both(),
     );
+    check('…and the phone shows it playing (its button switches to pause)', await until(async () => (await phone.textContent('#clock')).startsWith('Playing') && (await phone.getAttribute('#playBtn', 'aria-label')) !== null && (await phone.$eval('#playBtn svg path', (p) => p.getAttribute('d'))) === 'M9 5v14M15 5v14', 6000),
+      (await phone.textContent('#clock')) + ' | ' + JSON.stringify(await both()) + ' | ' + (await phone.textContent('#note')));
 
     await phone.click('#leave');
     await sleep(1500);
