@@ -1182,6 +1182,7 @@ const vstate = (p) =>
 
     // ---------------------------------------------------------------
     section('Bantay reacts');
+    await pA.evaluate(() => chrome.storage.local.set({ bantayCoat: 'black' }));
     const laughing = (v) => v.evaluate(() => [...document.querySelectorAll('[data-sinehan] svg.bantay')].some((x) => x.getAttribute('aria-label') === 'Bantay laughing'));
     await pA.fill('#msg', '😂');
     await pA.press('#msg', 'Enter');
@@ -1190,6 +1191,8 @@ const vstate = (p) =>
     await pB2.fill('#msg', '🤣');
     await pB2.press('#msg', 'Enter');
     check('you both laugh at once: Bantay laughs on both screens', await until(async () => (await laughing(vA2)) && (await laughing(vB)), 5000));
+    check('…in the coat picked in Settings', await vA2.evaluate(() => /--b-coat:\s*#3d3338/.test(document.querySelector('[data-sinehan] svg.bantay')?.getAttribute('style') || '')));
+    await pA.evaluate(() => chrome.storage.local.set({ bantayCoat: 'white' }));
     await pA.evaluate(() => chrome.storage.local.set({ bantayOnVideo: false }));
     await sleep(4000);
     await pA.fill('#msg', '😭');

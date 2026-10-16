@@ -1418,7 +1418,8 @@ function bantayPop(pose, ms, caption = '') {
   popEl.style.cssText = 'position:fixed;right:28px;bottom:84px;z-index:2147483646;width:116px;pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:4px';
   popEl.innerHTML = Bantay.svg(pose, { coat: bantayCoat }); // fixed markup from bantay.js
   const svg = popEl.querySelector('svg');
-  svg.style.cssText = 'width:100%;height:auto;display:block;filter:drop-shadow(0 6px 14px rgba(0,0,0,.45))';
+  // Added to (not replacing) his style: it carries the coat colours picked in Settings.
+  svg.style.cssText += ';width:100%;height:auto;display:block;filter:drop-shadow(0 6px 14px rgba(0,0,0,.45))';
   if (caption) {
     const c = document.createElement('div');
     c.textContent = caption;
