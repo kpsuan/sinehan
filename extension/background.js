@@ -537,7 +537,7 @@ function changeGuesses(fn) {
   return run;
 }
 // What the sidebar may show: their guesses only once revealed (they aren't even here before then).
-const guessView = (g) => ({ id: g.id, show: g.show, showName: g.showName, ep: g.ep, vt: g.vt, by: g.by, mine: g.mine, at: g.at,
+const guessView = (g) => ({ id: g.id, room: g.room, show: g.show, showName: g.showName, ep: g.ep, vt: g.vt, by: g.by, mine: g.mine, at: g.at,
   revealed: g.revealed, verified: g.verified, verdict: g.verdict,
   text: g.mine || g.revealed ? g.text : '', note: g.mine || g.revealed ? g.note : '', image: g.mine || g.revealed ? g.image : '' });
 async function fingerprint(salt, text, note) {

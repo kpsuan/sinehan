@@ -441,6 +441,7 @@ function showStatus(s) {
   // Tonight's "start a party first" follows the connection (after load: those are declared further down).
   if ((prev.connected && prev.peers > 1) !== (s.connected && s.peers > 1))
     setTimeout(() => episodesMode === 'tonight' && !$('bestView').hidden && !tonight && renderTonight());
+  if (prev.room !== s.room) setTimeout(() => drawSealedBar()); // a different party: its own sealed guesses
   // The link icon copies this party's invite; with no party yet, "Start a party" makes one.
   $('invite').disabled = !s.room;
   $('invite').title = s.room ? 'Copy invite link' : 'Start a party first';
@@ -2230,7 +2231,10 @@ loadGuesses();
 
 // Sealed guesses waiting to be revealed, pinned above the chat: reveal from here, or jump to the card.
 function drawSealedBar() {
-  const sealed = [...guesses.values()].filter((g) => !g.revealed && Date.now() - (g.at || 0) < 24 * 3600 * 1000);
+  // Only this party's (another party's guesses stay with that party, in Past parties).
+  const sealed = [...guesses.values()].filter(
+    (g) => !g.revealed && status.room && g.room === status.room && Date.now() - (g.at || 0) < 24 * 3600 * 1000,
+  );
   $('sealedBar').hidden = !sealed.length;
   if (!sealed.length) return;
   const show = sealed[sealed.length - 1].show;

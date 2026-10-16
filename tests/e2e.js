@@ -1127,6 +1127,13 @@ const vstate = (p) =>
     check('…they can’t see who you picked', !/butler|too quiet/i.test(await card(pB2).innerText()));
     check('…you can', await until(async () => /Your guess: The butler/.test(await card(pA).innerText())));
     check('a sealed guess is pinned above the chat, to reveal from there', await until(() => pB2.evaluate(() => !$('sealedBar').hidden && /1 sealed guess/.test($('sealedBar').textContent) && /Reveal/.test($('sealedBar').textContent))));
+    check('…but not another party’s sealed guesses', await pB2.evaluate(() => {
+      guesses.set('old', { id: 'old', room: 'some-other-party', show: 'x', showName: 'Old Show', revealed: false, at: Date.now() });
+      drawSealedBar();
+      const ok = /1 sealed guess/.test($('sealedBar').textContent) && !/Old Show/.test($('sealedBar').textContent);
+      guesses.delete('old');
+      return ok;
+    }));
     await card(pB2).locator('.gq-actions button').click();
     check('one side asking to reveal is shown to the other', await until(async () => /wants to reveal/i.test(await card(pA).innerText())));
     check('…but nothing opens yet', !/The butler/.test(await card(pB2).innerText()));
