@@ -220,7 +220,7 @@
     .profile { display: flex; align-items: flex-end; gap: 12px; }
     .profile .field { flex: 1; min-width: 0; }
     #myAvatar .avatar { box-shadow: 0 0 0 1px var(--card-edge); }
-    #avatars { display: flex; gap: 14px; margin-top: 14px; padding: 2px; }
+    #avatars { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 12px 10px; justify-items: center; margin-top: 14px; padding: 2px; }
     #avatars button { width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: none; display: block; box-shadow: none; }
     #avatars button .avatar { width: 100% !important; height: 100% !important; box-shadow: none; transition: transform .12s; }
     #avatars button:hover:not(:disabled) { background: none; }
@@ -428,7 +428,7 @@
     @media (prefers-reduced-motion: reduce) { .hop, .intro-step-in { animation: none; } }
     .wl-profile { display: flex; align-items: center; gap: 10px; }
     .wl-profile input { flex: 1; }
-    #wlAvatars { display: flex; gap: 12px; margin-top: 12px; }
+    #wlAvatars { display: grid; grid-template-columns: repeat(8, 38px); justify-content: space-between; gap: 10px 0; margin-top: 12px; }
     #wlAvatars button { width: 38px; height: 38px; padding: 0; border: 0; border-radius: 50%; background: none; display: block; }
     #wlAvatars button .avatar { width: 100% !important; height: 100% !important; box-shadow: none; }
     #wlAvatars button.selected { outline: 2px solid var(--accent); outline-offset: 2px; }

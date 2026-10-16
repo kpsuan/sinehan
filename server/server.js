@@ -16,10 +16,7 @@ const PRIVACY_PAGE = fs.readFileSync(path.join(__dirname, 'privacy.html'));
 // Only these exact files are served from public/.
 const STATIC_FILES = new Map([
   ['logo.png', 'image/png'],
-  ['avatar1.png', 'image/png'],
-  ['avatar2.png', 'image/png'],
-  ['avatar3.png', 'image/png'],
-  ['avatar4.png', 'image/png'],
+  ...Array.from({ length: 16 }, (_, i) => [`avatar${i + 1}.svg`, 'image/svg+xml']),
   ['film-bridge.webp', 'image/webp'],
   ['film-sintel.webp', 'image/webp'],
   ['film-action.webp', 'image/webp'],

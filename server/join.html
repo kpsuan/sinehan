@@ -89,7 +89,7 @@
   <main class="card">
     <div class="brand"><img src="/static/logo.png" alt="" /> Sinehan</div>
 
-    <div class="avatar" id="avatar"><img id="avatarImg" src="/static/avatar1.png" alt="" /></div>
+    <div class="avatar" id="avatar"><img id="avatarImg" src="/static/avatar1.svg" alt="" /></div>
     <svg class="hello" viewBox="0 0 520 96" role="img" aria-label="Someone" id="penSvg">
       <defs>
 
@@ -150,7 +150,7 @@
       const q = new URLSearchParams(location.search);
       const COLORS = ['#c9b6f2', '#f1c9b0', '#bfe0d0', '#c6d4ec'];
       const name = (q.get('n') || '').trim().slice(0, 30);
-      const avatar = Math.min(3, Math.max(0, parseInt(q.get('a'), 10) || 0));
+      const avatar = Math.min(15, Math.max(0, parseInt(q.get('a'), 10) || 0));
       const title = (q.get('t') || '').trim().slice(0, 120);
       if (name) {
         // The pen writes their name; long names are scaled to fit.
@@ -164,8 +164,8 @@
         document.getElementById('askWho').textContent = name;
         document.title = `${name} invited you · Sinehan`;
       }
-      document.getElementById('avatar').style.background = COLORS[avatar];
-      document.getElementById('avatarImg').src = `/static/avatar${avatar + 1}.png`;
+      document.getElementById('avatar').style.background = COLORS[avatar % COLORS.length];
+      document.getElementById('avatarImg').src = `/static/avatar${avatar + 1}.svg`;
 
       // Just the show's name ("Prime Video: The Mentalist - Season 3" -> "The Mentalist"); older links carry the rest.
       const showName = title

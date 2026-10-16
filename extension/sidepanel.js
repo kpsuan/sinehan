@@ -7,18 +7,18 @@ let me = { name: '', avatar: 0 };
 let peer = null; // { name, avatar } once the other side has said hello
 let askedPeer = false;
 
-// Premade profile pictures (avatars/1-4.png), each on a soft color.
+// Profile pictures (avatars/1-16.svg, Open Peeps by Pablo Stanley, CC0), each on a soft color.
 const AVATAR_COLORS = ['#c9b6f2', '#f1c9b0', '#bfe0d0', '#c6d4ec'];
-const AVATAR_COUNT = AVATAR_COLORS.length;
+const AVATAR_COUNT = 16;
 
 function avatarEl(index, size = 26) {
   const el = document.createElement('span');
   el.className = 'avatar';
   el.style.width = el.style.height = `${size}px`;
   const i = Number.isInteger(index) && index >= 0 && index < AVATAR_COUNT ? index : 0;
-  el.style.background = AVATAR_COLORS[i];
+  el.style.background = AVATAR_COLORS[i % AVATAR_COLORS.length];
   const img = document.createElement('img');
-  img.src = `avatars/${i + 1}.png`;
+  img.src = `avatars/${i + 1}.svg`;
   img.alt = '';
   el.append(img);
   return el;

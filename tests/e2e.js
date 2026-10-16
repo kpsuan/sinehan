@@ -304,8 +304,10 @@ const vstate = (p) =>
     );
     check(
       'avatar: other side sees new picture',
-      await until(() => pB.$eval('#who .avatar:nth-child(2) img', (i) => i.src.endsWith('avatars/3.png'))),
+      await until(() => pB.$eval('#who .avatar:nth-child(2) img', (i) => i.src.endsWith('avatars/3.svg'))),
     );
+    check('16 pictures to pick from', (await pA.$$eval('#avatars button', (b) => b.length)) === 16);
+    check('…and they all load', await pA.evaluate(() => Promise.all([...document.querySelectorAll('#avatars img')].map((img) => img.decode().then(() => img.naturalWidth > 0, () => false))).then((ok) => ok.every(Boolean))));
     check(
       'avatar images load',
       await until(() => pB.$$eval('#who img', (is) => is.every((i) => i.complete && i.naturalWidth > 0))),
