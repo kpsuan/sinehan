@@ -209,6 +209,12 @@
       art: SIT_UP + leg(87, 134, 74, 112, 'snb-67l') + leg(113, 134, 126, 112, 'snb-67r') +
         `<g class="snb-bob">${HEAD + EYES_HAPPY + TONGUE}</g>`,
     },
+    scuba: {
+      box: '40 -4 140 204',
+      label: 'Bantay doing the scuba dance',
+      art: SHADOW + `<g class="snb-knees">${HIND_FEET}</g>` +
+        `<g class="snb-dip">${TORSO + COLLAR + HEAD + EYES_HAPPY + leg(113, 134, 140, 110, 'snb-scuba') + leg(87, 136, 99, 89)}</g>`,
+    },
     gasp: {
       box: '40 0 130 200',
       label: 'Bantay with a paw over his mouth',
@@ -258,7 +264,12 @@
     '@keyframes snb-wave{from{transform:rotate(-14deg)}to{transform:rotate(6deg)}}' +
     '.snb-wobble{transform-box:view-box;transform-origin:100px 190px;animation:snb-wobble .8s ease-in-out infinite alternate}' +
     '@keyframes snb-wobble{from{transform:rotate(-3deg)}to{transform:rotate(3deg)}}' +
-    '@media (prefers-reduced-motion:reduce){.snb-tail,.snb-ear-r,.snb-ear-l,.snb-blink,.snb-look,.snb-breathe,.snb-laugh,.snb-tear,.snb-hearts,.snb-spin,.snb-dust,.snb-67l,.snb-67r,.snb-bob,.snb-shake,.snb-wave,.snb-wobble{animation:none}}' +
+    '.snb-scuba{transform-box:view-box;transform-origin:113px 134px;animation:snb-scuba .48s ease-in-out infinite alternate}' +
+    '@keyframes snb-scuba{from{transform:rotate(-18deg)}to{transform:rotate(14deg)}}' +
+    '.snb-knees{transform-box:view-box;transform-origin:100px 191px;animation:snb-knees .48s ease-in-out infinite alternate}' +
+    '@keyframes snb-knees{from{transform:scaleX(.8)}to{transform:scaleX(1.2)}}' +
+    '.snb-dip{animation:snb-dip .48s ease-in-out infinite alternate}@keyframes snb-dip{to{transform:translateY(3px)}}' +
+    '@media (prefers-reduced-motion:reduce){.snb-tail,.snb-ear-r,.snb-ear-l,.snb-blink,.snb-look,.snb-breathe,.snb-laugh,.snb-tear,.snb-hearts,.snb-spin,.snb-dust,.snb-67l,.snb-67r,.snb-bob,.snb-shake,.snb-wave,.snb-wobble,.snb-scuba,.snb-knees,.snb-dip{animation:none}}' +
     '</style>';
 
   // Coats picked in Settings; each overrides the --b-* colours the drawing reads.
@@ -314,10 +325,11 @@
     speak: { pose: 'happy', name: 'speak', ms: 2200, bark: 'Arf! Arf!' },
     dance: { pose: 'dance67', name: 'do the 6 7', ms: 3200, bark: '6 7!' },
     gasp: { pose: 'gasp', name: 'gasp', ms: 2600, bark: '(⊙ᴥ⊙)' },
+    scuba: { pose: 'scuba', name: 'do the scuba', ms: 3400, bark: 'Scuba! (˘ᴥ˘)' },
   };
   const ALIASES = {
     67: 'dance', '6-7': 'dance', dead: 'playdead', 'play-dead': 'playdead', shake: 'paw', lie: 'down', liedown: 'down',
-    bark: 'speak', omg: 'gasp', handovermouth: 'gasp', up: 'stand',
+    bark: 'speak', omg: 'gasp', 'scuba-dance': 'scuba', nick: 'scuba', handovermouth: 'gasp', up: 'stand',
   };
   // "/spin" → 'spin'; anything else → ''.
   const trickFor = (text) => {

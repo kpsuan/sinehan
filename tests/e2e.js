@@ -1092,6 +1092,7 @@ const vstate = (p) =>
     check('…you see it too', (await logLines(pA)).some((l) => /You asked Bantay to spin/.test(l.text)));
     await pA.fill('#msg', '/tricks');
     await pA.press('#msg', 'Enter');
+    check('/scuba does the scuba dance', await pA.evaluate(() => Bantay.trickFor('/scuba') === 'scuba' && /scuba dance/.test(Bantay.svg('scuba'))));
     check('/tricks lists them', await until(async () => (await logLines(pA)).some((l) => /Bantay knows: .*\/playdead/.test(l.text))));
     await sleep(2400);
     await pB2.fill('#msg', '67');
