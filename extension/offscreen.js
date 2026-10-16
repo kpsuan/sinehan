@@ -205,10 +205,12 @@ function createPeer() {
   pc.onsignalingstatechange = () => pc?.signalingState === 'stable' && tuneSenders();
   pc.onconnectionstatechange = () => {
     const state = pc?.connectionState;
+    if (partnerGone && (state === 'disconnected' || state === 'failed')) checkGone(); // they're gone: don't drag it out
     if (state === 'connected') {
       clearTimeout(failTimer);
       if (localStream) send({ type: 'mic', on: !!localStream.getAudioTracks().length }); // (in case they missed it)
     }
+    if (state === 'failed' && partnerGone) return emit(); // no point retrying; checkGone() ends it
     if (state === 'failed') {
       // Try once more on a fresh route before giving up.
       if (!restartedIce) {
@@ -516,6 +518,16 @@ async function switchMic() {
   }
 }
 
+let partnerGone = false;
+let goneTimer = null;
+function checkGone() {
+  clearTimeout(goneTimer);
+  if (!partnerGone || !pc) return;
+  goneTimer = setTimeout(() => {
+    if (partnerGone && pc && pc.connectionState !== 'connected') endCall('Call ended. Their connection dropped.');
+  }, pc.connectionState === 'connected' ? 20000 : 8000);
+}
+
 function endCall(reason, notify = false) {
   if (incoming) stopRinging();
   if (notify) signal({ bye: true });
@@ -524,6 +536,7 @@ function endCall(reason, notify = false) {
   pc?.close();
   pc = null;
   clearTimeout(failTimer);
+  clearTimeout(goneTimer);
   awaitingOffer = false;
   attachOnOffer = null;
   myOffer = '';
@@ -682,6 +695,19 @@ async function onMessage(msg) {
   if (msg.type === 'peer' && !(msg.joined ?? msg.count > 1) && !msg.dropped && msg.count < 2) {
     if (pc) endCall('Call ended. They left.');
     else if (incoming) stopRinging();
+    return;
+  }
+  // Their connection to the party dropped (closed the browser, lost Wi-Fi): like Messenger, a few seconds to
+  // come back, then the call ends. If the call itself is still connected, it carries on.
+  if (msg.type === 'peer' && msg.dropped && msg.count < 2) {
+    partnerGone = true;
+    if (incoming) stopRinging();
+    checkGone();
+    return;
+  }
+  if ((msg.type === 'peer' && (msg.joined ?? msg.count > 1)) || (msg.type === 'joined' && msg.count > 1)) {
+    partnerGone = false;
+    clearTimeout(goneTimer);
     return;
   }
   if (!msg.local) return;

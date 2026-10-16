@@ -1371,6 +1371,8 @@ const vstate = (p) =>
       return document.body.classList.contains('typing') && box.bottom <= innerHeight && box.top > 0;
     }));
     await phone.setViewportSize({ width: 390, height: 844 });
+    check('phone: the keyboard closing brings the remote back', await until(() => phone.evaluate(() => !document.body.classList.contains('typing'))));
+    await sleep(300);
     await phone.focus('#msg');
     await phone.click('#chatClose');
     check('phone: the chevron closes the chat, back to the remote', await until(async () => !(await phone.evaluate(() => document.body.classList.contains('typing'))) && (await phone.locator('#playBtn').isVisible())));
