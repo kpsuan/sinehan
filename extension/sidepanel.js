@@ -481,6 +481,10 @@ function showStatus(s) {
   renderWelcome();
 }
 const pollStatus = () => ask({ type: 'status' }, showStatus);
+setTimeout(() => {
+  const server = $('server').value.trim().replace(/^ws/, 'http').replace(/\/+$/, '');
+  if (server) fetch(`${server}/health`, { cache: 'no-store' }).catch(() => {});
+}, 300);
 pollStatus();
 setInterval(pollStatus, 1000);
 
@@ -2581,7 +2585,7 @@ async function tryRejoin() {
   const age = Date.now() - (callLive.at || 0);
   if (age < 7000) return void setTimeout(tryRejoin, 7000 - age + 300);
   addChat('', 'Reconnecting your call…', 'system');
-  turnOnCamera(!!callLive.voice, true);
+  turnOnCamera(!!callLive.voice, 'rejoin');
 }
 async function attachLocalTracks() {
   for (const track of localStream.getVideoTracks()) pc.addTrack(track, localStream);
@@ -2787,7 +2791,7 @@ function signal(data) {
 }
 
 function createPeer() {
-  pc = new RTCPeerConnection({ iceServers });
+  pc = new RTCPeerConnection({ iceServers, iceCandidatePoolSize: 2 }); // starts finding routes before the offer
   restartedIce = false;
   remoteStream = new MediaStream();
 
@@ -2938,9 +2942,32 @@ async function onSignal({ description, candidate, bye, declined, want, from, nam
 }
 
 // voice = start (or answer) with just the mic; the camera can still be turned on later.
-async function turnOnCamera(voice = false, rejoin = false) {
+// how: 'start' (we're calling), 'answer' (picking up) or 'rejoin' (the sidebar reopened mid-call).
+async function turnOnCamera(voice = false, how = 'start') {
   let voiceTrack = null;
   await loadIce();
+
+  // Picking up (or rejoining): ask them for their offer and answer it with our camera and mic, so only one
+  // side sets the call up. Asked right away, while the camera starts. If no offer comes within 5s, we offer.
+  const answering = !pc && how !== 'start';
+  let attachFn = null;
+  let openGate;
+  const gate = new Promise((r) => (openGate = r));
+  if (answering) {
+    awaitingOffer = true;
+    createPeer();
+    const mine = async () => {
+      if (await gate) await attachFn?.();
+    };
+    attachOnOffer = mine;
+    signal({ want: 'offer', ...(how === 'rejoin' ? { rejoin: true } : {}) });
+    setTimeout(async () => {
+      if (!awaitingOffer || !pc || attachOnOffer !== mine) return;
+      awaitingOffer = false;
+      attachOnOffer = null;
+      await mine(); // adding our tracks starts the offer
+    }, 5000);
+  }
   try {
     if (voice) {
       [voiceTrack] = (await getMedia('audio')).getAudioTracks();
@@ -2955,6 +2982,10 @@ async function turnOnCamera(voice = false, rejoin = false) {
       addChat('', 'Allow camera & mic in the tab that just opened, then click the call button again.', 'system');
     } else {
       addChat('', `Couldn’t start your camera: ${e.message || e.name}`, 'system');
+    }
+    if (answering) {
+      openGate(false);
+      endCall(null);
     }
     return false;
   }
@@ -2980,21 +3011,11 @@ async function turnOnCamera(voice = false, rejoin = false) {
     render();
   };
 
-  // Picking up a ringing call: ask them for a fresh offer and answer it with our camera and mic, so only
-  // one side sets the call up (both doing it at once is what used to break calls). If no offer comes
-  // within 5s, we offer instead.
-  if (!pc) {
-    awaitingOffer = true;
-    createPeer();
-    attachOnOffer = attach;
-    signal({ want: 'offer', ...(rejoin ? { rejoin: true } : {}) });
-    setTimeout(async () => {
-      if (!awaitingOffer || !pc || attachOnOffer !== attach) return;
-      awaitingOffer = false;
-      attachOnOffer = null;
-      await attach(); // adding our tracks starts the offer
-    }, 5000);
-  } else {
+  attachFn = attach;
+  if (answering) openGate(true);
+  else {
+    // Calling: our offer goes out as soon as the camera is in.
+    if (!pc) createPeer();
     await attach();
   }
   listDevices(); // names are visible now that we have permission
@@ -3077,11 +3098,11 @@ $('startVoice').onclick = async () => {
 };
 $('join').onclick = () => {
   stopRinging();
-  turnOnCamera();
+  turnOnCamera(false, 'answer');
 };
 $('joinVoice').onclick = () => {
   stopRinging();
-  turnOnCamera(true);
+  turnOnCamera(true, 'answer');
 };
 $('decline').onclick = () => {
   const who = incoming?.name;

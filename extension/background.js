@@ -860,8 +860,9 @@ chrome.notifications?.onClicked.addListener(async (id) => {
 // ---- Relay connection ----
 // A connection can die without closing (Wi-Fi gone, laptop asleep): the relay answers our pings, and
 // if nothing comes back for a while we drop it ourselves and reconnect.
-const SILENCE_LIMIT = 25000;
+const SILENCE_LIMIT = 15000; // no pong for this long: the connection is dead (Wi-Fi gone, laptop slept)
 let retrying = false; // lost the connection and trying to get it back
+let retryCount = 0;
 function connect(server, room) {
   disconnect();
   status = { connected: false, peers: 0, room, server };
@@ -869,7 +870,17 @@ function connect(server, room) {
   let lastHeard = Date.now();
   let answersPings = false; // relays that don't answer pings rely on the socket closing instead
 
+  // A connection that never opens (stuck handshake) is retried instead of waited on.
+  const openTimer = setTimeout(() => {
+    if (ws === sock && sock.readyState !== WebSocket.OPEN) {
+      sock.onclose = null;
+      sock.close();
+      lost();
+    }
+  }, 8000);
   sock.onopen = () => {
+    clearTimeout(openTimer);
+    retryCount = 0;
     status.connected = true;
     retrying = false;
     lastHeard = Date.now();
@@ -884,7 +895,7 @@ function connect(server, room) {
         sock.close();
         lost();
       }
-    }, 10000);
+    }, 5000);
   };
 
   sock.onmessage = (e) => {
@@ -971,7 +982,9 @@ function connect(server, room) {
     chrome.storage.local.get('active').then(({ active }) => {
       if (!active || ws !== sock) return;
       retrying = true;
-      setTimeout(() => ws === sock && connect(server, room), 3000);
+      // Quick first retries (a blip), then backing off so a dead network isn't hammered.
+      const wait = [400, 1000, 2000, 4000, 8000][Math.min(retryCount++, 4)];
+      setTimeout(() => ws === sock && connect(server, room), wait);
     });
   }
   sock.onclose = lost;
