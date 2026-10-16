@@ -589,6 +589,7 @@ const vstate = (p) =>
     check('…and nothing connects until they pick up', await pB2.evaluate(async () => !(await callQuery())?.inCall));
     await pB2.click('#join');
     check('caller sees callee', await until(() => pA.$eval('#remote', (v) => v.videoWidth > 0), 10000), '\n' + firstLogs.filter((l) => !/addIceCandidate/.test(l)).slice(-40).join('\n'));
+    check('the call’s video is capped so the show keeps its bandwidth', await until(() => pA.evaluate(async () => { const b = (await callQuery('stats'))?.videoMaxBitrate; return b > 0 && b <= 800000; }), 8000));
     check(
       'call controls visible',
       (await pA.$eval('#mic', (b) => !b.hidden)) && (await pA.$eval('#hangup', (b) => !b.hidden)),

@@ -184,6 +184,8 @@ function createPeer() {
       send({ local: true, type: 'cam-available' }); // a fullscreen tab may want it
     }
   };
+  // Settings stick once the connection has negotiated them (and again after a camera is added or switched).
+  pc.onsignalingstatechange = () => pc?.signalingState === 'stable' && tuneSenders();
   pc.onconnectionstatechange = () => {
     const state = pc?.connectionState;
     if (state === 'connected') {
@@ -289,7 +291,38 @@ async function onSignal({ description, candidate, bye, declined, want, from, nam
 }
 
 // ---- Camera and mic ----
-const videoConstraints = () => ({ width: 640, height: 480, ...(config.cameraId ? { deviceId: { exact: config.cameraId } } : {}) });
+const videoConstraints = () => ({
+  width: 640,
+  height: 480,
+  frameRate: { ideal: 24, max: 30 },
+  ...(config.cameraId ? { deviceId: { exact: config.cameraId } } : {}),
+});
+
+// The call shares your internet with the show you're streaming. So the camera is capped (~700 kbps, 24 fps;
+// smooth first, sharpness drops when the connection is tight) and the voice goes first, which keeps
+// Netflix/Prime from dropping to low quality or buffering because of the call.
+const VIDEO_MAX_BITRATE = 700_000;
+async function tuneSenders() {
+  if (!pc) return;
+  for (const sender of pc.getSenders()) {
+    const kind = sender.track?.kind;
+    if (!kind) continue;
+    const params = sender.getParameters();
+    if (!params.encodings?.length) continue;
+    const e = params.encodings[0];
+    if (kind === 'video') {
+      if (e.maxBitrate === VIDEO_MAX_BITRATE) continue;
+      e.maxBitrate = VIDEO_MAX_BITRATE;
+      e.maxFramerate = 24;
+      params.degradationPreference = 'maintain-framerate';
+    } else {
+      if (e.priority === 'high') continue;
+      e.priority = 'high';
+      e.networkPriority = 'high';
+    }
+    await sender.setParameters(params).catch((err) => console.warn('[watch-party] tune', kind, err?.message));
+  }
+}
 const audioConstraints = () => ({ echoCancellation: true, noiseSuppression: true, ...(config.micId ? { deviceId: { exact: config.micId } } : {}) });
 // Like getUserMedia, but if the chosen device is gone (unplugged), fall back to the default one.
 async function getMedia(kind) {
@@ -679,7 +712,8 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     (async () => {
       let audioIn = 0;
       if (pc) (await pc.getStats()).forEach((r) => r.type === 'inbound-rtp' && r.kind === 'audio' && (audioIn += r.bytesReceived || 0));
-      reply({ ...state(), audioIn, voicePlaying: !$voice.paused, id: myId });
+      const video = pc?.getSenders().find((x) => x.track?.kind === 'video')?.getParameters().encodings?.[0];
+      reply({ ...state(), audioIn, voicePlaying: !$voice.paused, id: myId, videoMaxBitrate: video?.maxBitrate || 0 });
     })();
     return true;
   }
