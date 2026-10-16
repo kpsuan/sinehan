@@ -139,7 +139,24 @@ let theirMicOn = null; // what they told us (null = not in a call / unknown)
 let callPeer = null;
 
 function signal(data) {
+  if (data.description?.sdp) data = { ...data, description: { ...data.description, sdp: tuneVoice(data.description.sdp) } };
   send({ type: 'rtc', from: myId, name: config.name || 'Guest', ...(callPeer ? { to: callPeer } : {}), ...data });
+}
+// What we ask of their voice (Opus): error correction, so a lost packet is patched from the next one
+// instead of cutting out on patchy Wi-Fi; and silence sent as (almost) nothing, leaving that bandwidth
+// to the show. Each side asks this in the setup it sends, and the other side sends that way.
+function tuneVoice(sdp) {
+  const pt = sdp.match(/a=rtpmap:(\d+) opus\/48000/i)?.[1];
+  if (!pt) return sdp;
+  const want = { useinbandfec: '1', usedtx: '1' };
+  const fmtp = new RegExp(`^a=fmtp:${pt} ([^\r\n]*)`, 'm');
+  if (fmtp.test(sdp)) {
+    return sdp.replace(fmtp, (line, params) => {
+      const have = Object.fromEntries(params.split(';').map((p) => p.trim().split('=')).filter(([k]) => k));
+      return `a=fmtp:${pt} ${Object.entries({ ...have, ...want }).map(([k, v]) => `${k}=${v}`).join(';')}`;
+    });
+  }
+  return sdp.replace(new RegExp(`(a=rtpmap:${pt} opus/48000[^\r\n]*)`, 'i'), `$1\r\na=fmtp:${pt} useinbandfec=1;usedtx=1`);
 }
 const offerOut = () => {
   myOffer = crypto.randomUUID().slice(0, 8);
@@ -713,7 +730,9 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       let audioIn = 0;
       if (pc) (await pc.getStats()).forEach((r) => r.type === 'inbound-rtp' && r.kind === 'audio' && (audioIn += r.bytesReceived || 0));
       const video = pc?.getSenders().find((x) => x.track?.kind === 'video')?.getParameters().encodings?.[0];
-      reply({ ...state(), audioIn, voicePlaying: !$voice.paused, id: myId, videoMaxBitrate: video?.maxBitrate || 0 });
+      const asked = pc?.remoteDescription?.sdp || '';
+      reply({ ...state(), audioIn, voicePlaying: !$voice.paused, id: myId, videoMaxBitrate: video?.maxBitrate || 0,
+        voiceFec: /useinbandfec=1/.test(asked), voiceDtx: /usedtx=1/.test(asked) });
     })();
     return true;
   }
