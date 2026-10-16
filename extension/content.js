@@ -55,7 +55,9 @@ window.addEventListener('pagehide', (e) => {
   if (!e.persisted || !port) return;
   const p = port;
   port = null;
-  p.disconnect();
+  try {
+    p.disconnect();
+  } catch {} // the extension was reloaded/updated while this tab stayed open: nothing to let go of
 });
 window.addEventListener('pageshow', (e) => {
   if (e.persisted && !port) connectPort();
@@ -1381,7 +1383,9 @@ function toast(text) {
 const FONT = "'WatchPartyInter',system-ui,sans-serif";
 let fontRequested = false;
 function ensureFont() {
-  if (fontRequested || !extensionAlive()) return;
+  // Only in the page itself: frames inside it (ads, embeds) can be blocked from extension files, and
+  // that shows up as an error even though system-ui is used instead.
+  if (fontRequested || !extensionAlive() || window.top !== window) return;
   fontRequested = true;
   fetch(chrome.runtime.getURL('fonts/inter.woff2'))
     .then((r) => r.arrayBuffer())
