@@ -999,6 +999,9 @@ function connect(server, room) {
       }
     }
     if (msg.type === 'goodnight') saveSpot(msg);
+    // "Reveal" from your own phone counts as your tap.
+    if (msg.type === 'phone-reveal')
+      chrome.storage.local.get('name').then(({ name }) => name && name === msg.for && wantReveal('me', str(msg.show, 100)));
     if ((msg.type === 'joined' && msg.count > 1) || (msg.type === 'peer' && msg.joined)) shareGuides();
 
     // Tell the relay about this party's guides, so their pages can sync even before anyone ticks.

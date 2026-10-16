@@ -42,6 +42,10 @@
     /* First visit: who are you */
     #setup h1 { margin: 6px 0 4px; font-size: 26px; letter-spacing: -0.02em; }
     #setup p { margin: 0 0 16px; color: var(--muted); }
+    .roster { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 6px; }
+    .roster button { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: var(--raised); font-size: 16px; font-weight: 600; text-align: left; }
+    .roster-wait { color: var(--muted); font-size: 14px; }
+    .link { padding: 6px 0; background: none; color: var(--muted); font-size: 13px; text-decoration: underline; }
     .avatars { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 12px; justify-items: center; margin: 14px 0 18px; }
     .avatars button { width: 52px; height: 52px; padding: 0; border-radius: 50%; overflow: hidden; background: none; }
     .avatars button.on { outline: 2px solid var(--accent); outline-offset: 3px; }
@@ -119,11 +123,15 @@
     </header>
 
     <section class="card" id="setup" hidden>
-      <h1>Chat and remote</h1>
-      <p>Chat and control the show playing on the laptop. Nothing to install.</p>
-      <input id="name" maxlength="30" placeholder="Your name" autocomplete="nickname" />
-      <div class="avatars" id="avatars" role="radiogroup" aria-label="Picture"></div>
-      <button class="primary" id="go">Join the party</button>
+      <h1>Who are you?</h1>
+      <p>This phone becomes your remote and chat: it controls your laptop, and your messages are yours.</p>
+      <div class="roster" id="roster"><span class="roster-wait">Finding who’s in the party…</span></div>
+      <button type="button" class="link" id="someoneElse">I’m not one of them</button>
+      <div id="newMe" hidden>
+        <input id="name" maxlength="30" placeholder="Your name" autocomplete="nickname" />
+        <div class="avatars" id="avatars" role="radiogroup" aria-label="Picture"></div>
+        <button class="primary" id="go">Join the party</button>
+      </div>
     </section>
 
     <div id="main" hidden>
@@ -254,19 +262,54 @@
       renderAvatars();
       $('go').onclick = () => {
         me.name = $('name').value.trim() || 'Guest';
+        me.owner = false;
         store.set('sinehan-name', me.name);
         store.set('sinehan-avatar', String(me.avatar));
+        store.set('sinehan-owner', '');
         start();
       };
-      if (me.name) start();
-      else { $('setup').hidden = false; $('status').textContent = 'Not joined yet'; }
+      // Who this phone is: one of the people in the party (their laptop takes its remote commands, and its
+      // messages are theirs), picked from the laptops' profiles. Remembered for next time.
+      const roster = new Map(); // name -> avatar
+      let started = false;
+      const lastOwner = store.get('sinehan-owner') || '';
+      function pickMe(name) {
+        me = { name, avatar: roster.get(name) || 0, owner: true };
+        store.set('sinehan-owner', name);
+        start();
+      }
+      function drawRoster() {
+        if (!roster.size) return;
+        $('roster').replaceChildren(...[...roster].map(([name, avatar]) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.append(avatarEl(avatar, 36), name);
+          b.onclick = () => pickMe(name);
+          return b;
+        }));
+      }
+      $('someoneElse').onclick = () => { $('newMe').hidden = false; $('someoneElse').hidden = true; };
+      function gotProfile(name, avatar) {
+        name = String(name || '').slice(0, 30);
+        if (!name) return;
+        roster.set(name, Math.min(15, Math.max(0, Number(avatar) || 0)));
+        if (started && me.owner && me.name === name && me.avatar !== roster.get(name)) {
+          me.avatar = roster.get(name);
+          $('meAvatar').replaceChildren(avatarEl(me.avatar, 34));
+        }
+        if (!started && name === lastOwner) return pickMe(name);
+        drawRoster();
+      }
+      $('setup').hidden = false;
+      $('status').textContent = 'Not joined yet';
+      connect();
 
       function start() {
+        started = true;
         $('setup').hidden = true;
         $('main').hidden = false;
         $('meAvatar').hidden = false;
         $('meAvatar').replaceChildren(avatarEl(me.avatar, 34));
-        connect();
       }
 
       // ---- Connection ----
@@ -286,6 +329,7 @@
       function onMessage(m) {
         if (m.type === 'joined' || m.type === 'peer') { watchers = m.count; renderStatus(true); }
         if (m.type === 'room-full') note('This party is full. Ask for a new invite link.');
+        else if (m.type === 'profile') gotProfile(m.name, m.avatar);
         else if (['play', 'pause', 'seeked', 'state'].includes(m.type) && typeof m.time === 'number') {
           clearTimeout(ackTimer);
           show = { time: m.time, paused: !!m.paused, at: Date.now() }; renderShow();
@@ -312,6 +356,11 @@
         } else if (m.type === 'hand') {
           const c = $('handBtn'); c.classList.remove('glow'); void c.offsetWidth; c.classList.add('glow');
           note(`${m.name || 'They'} is holding your hand`, 2600);
+        } else if (m.type === 'guess-lock') {
+          lockedBy.set(String(m.id || ''), String(m.by || 'Someone').slice(0, 30));
+        } else if (m.type === 'guess-open') {
+          const by = lockedBy.get(String(m.id || ''));
+          if (by && m.text) addChat('', `${by} guessed ${String(m.text).slice(0, 80)}`, false, 0, true);
         } else if (m.type === 'guess-reveal-ask') {
           revealAsked(String(m.show || ''));
         } else if (m.type === 'show-closed') {
@@ -360,7 +409,7 @@
       // Remote commands are done by the laptop's show tab. If nothing changes shortly after, say why.
       let ackTimer = null;
       function remote(action) {
-        send({ type: 'remote', action });
+        send({ type: 'remote', action, ...(me.owner ? { for: me.name } : {}) });
         if (action === 'play' || action === 'pause') { show = { time: now() ?? show.time, paused: action === 'pause', at: Date.now() }; renderShow(); }
         clearTimeout(ackTimer);
         ackTimer = setTimeout(() => note(watchers ? 'The laptop didn’t respond. Make sure Sinehan is updated (2.8 or newer) and the show’s tab is open.' : 'No laptop is watching yet.', 6000), 2500);
@@ -403,11 +452,17 @@
         const id = (crypto.randomUUID && crypto.randomUUID()) || String(Math.random());
         seen.add(id);
         const vt = now();
-        send({ type: 'chat', id, name: me.name, avatar: me.avatar, text, ...(vt == null ? {} : { vt }) });
+        send({ type: 'chat', id, name: me.name, avatar: me.avatar, text, phone: true, ...(vt == null ? {} : { vt }) });
         addChat(me.name, text, true, me.avatar);
       }
       const emojiOnly = (t) => /\p{Extended_Pictographic}/u.test(t) && /^(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\p{Emoji_Component}|‍|️|\s)+$/u.test(t) && !/[0-9#*]/.test(t) && [...t.replace(/\s/g, '')].length <= 8;
-      function addChat(name, text, mine, avatar) {
+      function addChat(name, text, mine, avatar, system) {
+        if (system) {
+          const line = Object.assign(document.createElement('div'), { className: 'line system', textContent: text });
+          $('log').append(line);
+          $('log').scrollTop = $('log').scrollHeight;
+          return;
+        }
         const line = document.createElement('div');
         line.className = `line${mine ? ' me' : ''}`;
         const bubble = document.createElement('div');
@@ -459,15 +514,35 @@
           }));
         } catch {}
       }
+      const lockedBy = new Map(); // guess id -> who locked it (to name answers as they open)
       function drawSealed() {
         const sealed = myGuesses().filter((g) => !g.revealed && Date.now() - g.at < 24 * 3600 * 1000);
-        $('sealedList').replaceChildren(...sealed.map((g) => {
+        const rows = sealed.map((g) => {
           const row = document.createElement('div');
           row.className = 'sealed';
           row.innerHTML = '<svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2" /><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" /></svg>'; // fixed icon
-          row.append(`Sealed: ${g.text} (${g.showName}). Reveal it from the laptops.`);
+          row.append(`Sealed: ${g.text} (${g.showName})`);
           return row;
-        }));
+        });
+        // Reveal, for this phone's person: their laptop counts it as their tap.
+        if (me.owner) {
+          const show = norm(showName());
+          if (show) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'primary';
+            b.textContent = 'Reveal our guesses';
+            b.onclick = () => {
+              send({ type: 'phone-reveal', for: me.name, show });
+              b.textContent = 'Waiting for the other one to reveal…';
+              b.disabled = true;
+            };
+            rows.push(b);
+          }
+        } else if (sealed.length) {
+          rows.push(Object.assign(document.createElement('small'), { textContent: 'Reveal it from the laptops.' }));
+        }
+        $('sealedList').replaceChildren(...rows);
       }
       $('guessBtn').onclick = () => {
         $('guess').hidden = !$('guess').hidden;
@@ -489,6 +564,7 @@
         g.hash = await fingerprint(salt, text, noteText);
         saveGuesses([...myGuesses(), g]);
         const vt = now();
+        lockedBy.set(g.id, me.name);
         send({ type: 'guess-lock', id: g.id, show: g.show, showName: name, ep: '', vt, by: me.name, at: g.at, hash: g.hash });
         const chatId = uid();
         seen.add(chatId);

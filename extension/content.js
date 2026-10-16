@@ -244,7 +244,8 @@ function onRemote(msg) {
     return;
   }
   if (msg.type === 'sync-request') return sendState('state');
-  if (msg.type === 'remote') return remote(msg.action);
+  // A phone remote acts for its person: only their laptop does it (then it syncs to the other as usual).
+  if (msg.type === 'remote') return !msg.for || msg.for === me.name ? remote(msg.action) : undefined;
   if (msg.type === 'hold') return onTheirHold(msg.reason, !!msg.active, msg.time, msg.name);
   if (msg.type === 'hand') return holdHand(msg.name);
   if (msg.type === 'countdown') return startCountdown(msg.time);

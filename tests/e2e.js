@@ -1340,8 +1340,13 @@ const vstate = (p) =>
     await phone.setViewportSize({ width: 390, height: 844 });
     await phone.goto(`http://localhost:${RELAY_PORT}/party?room=r1`);
     check('phone: asks who you are first', await phone.locator('#setup').isVisible());
-    await phone.fill('#name', 'Phone');
-    await phone.click('#go');
+    const aName = await pA.evaluate(() => myName());
+    const bName = await pB2.evaluate(() => myName());
+    check('phone: “who are you?” lists the people in the party', await until(async () => {
+      const names = await phone.$$eval('#roster button', (b) => b.map((x) => x.textContent.trim()));
+      return names.includes(aName) && names.includes(bName);
+    }, 8000));
+    await phone.locator('#roster button', { hasText: aName }).click();
     check(
       'phone: joins and sees both of you watching',
       await until(async () => (await phone.textContent('#status')) === 'Both of you are watching'),
@@ -1373,6 +1378,7 @@ const vstate = (p) =>
       'phone: chat reaches the laptops',
       await until(async () => (await logLines(pB2)).some((l) => l.text.includes('hi from my phone'))),
     );
+    check('…and shows as yours on your own laptop', await until(async () => (await logLines(pA)).some((l) => l.text.includes('hi from my phone') && l.cls.includes('me'))));
     await chat(pB2, 'hello phone');
     check(
       'phone: chat from the laptops arrives',

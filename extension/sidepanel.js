@@ -93,13 +93,18 @@ function onMessage(msg) {
     seenChat.add(msg.id);
 
     // `mine` = sent from this browser's fullscreen chat rather than this sidebar.
-    addChat(msg.name, msg.text, msg.mine ? 'me' : 'them', msg.avatar, msg.vt, $('log'), msg.guide, msg.guess);
+    // From your own phone (it joined as you): yours.
+    const fromMyPhone = msg.phone && msg.name === myName();
+    addChat(msg.name, msg.text, msg.mine || fromMyPhone ? 'me' : 'them', msg.avatar, msg.vt, $('log'), msg.guide, msg.guess);
     if (!msg.mine) showTyping(null);
   } else if (msg.type === 'mic') {
     if (call.inCall && msg.on === false && call.theirMicOn !== false)
       addChat('', `${peer?.name ? `${peer.name}’s` : 'Their'} mic is off`, 'system');
   } else if (msg.type === 'hold' && msg.reason === 'break') {
-    addChat('', msg.active ? `${msg.name || 'They'} is on a CR break` : `${msg.name || 'They'} is back`, 'system');
+    const who = msg.name && msg.name === myName() ? 'You' : msg.name || 'They';
+    addChat('', msg.active ? `${who} ${who === 'You' ? 'are' : 'is'} on a CR break` : `${who} ${who === 'You' ? 'are' : 'is'} back`, 'system');
+  } else if (msg.type === 'companion-hello') {
+    sendProfile(false); // a phone joined: tell it who's here, so its person can pick themselves
   } else if (msg.type === 'typing') {
     showTyping(msg.name);
   } else if (msg.type === 'bantay-trick') {
