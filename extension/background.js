@@ -133,8 +133,23 @@ function broadcastLocal(msg) {
 }
 
 // ---- One-off requests (sidebar, invite page, banners) ----
+let fontB64 = null;
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg.type === 'call-query') return; // the call page answers these
+  if (msg.type === 'font') {
+    // The show's tab's font (Inter), as base64: the page can't load extension files itself.
+    fontB64 ||= fetch(chrome.runtime.getURL('fonts/inter.woff2'))
+      .then((r) => r.arrayBuffer())
+      .then((buf) => {
+        const bytes = new Uint8Array(buf);
+        let bin = '';
+        for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
+        return btoa(bin);
+      })
+      .catch(() => '');
+    fontB64.then(reply);
+    return true;
+  }
   if (msg.type === 'history') {
     // Wait for pending writes so the sidebar doesn't miss the newest message.
     historyWrite.then(() => chrome.storage.local.get('history')).then(({ history = [] }) => reply(history));

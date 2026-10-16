@@ -1387,11 +1387,16 @@ function ensureFont() {
   // that shows up as an error even though system-ui is used instead.
   if (fontRequested || !extensionAlive() || window.top !== window) return;
   fontRequested = true;
-  fetch(chrome.runtime.getURL('fonts/inter.woff2'))
-    .then((r) => r.arrayBuffer())
-    .then((bytes) => new FontFace('WatchPartyInter', bytes, { weight: '100 900' }).load())
-    .then((face) => document.fonts.add(face))
-    .catch(() => {}); // system-ui is the fallback
+  // The background hands us the font's bytes: pages loading extension files directly gets blocked
+  // ("Unsafe attempt to load URL") on some sites.
+  ask({ type: 'font' }, (b64) => {
+    if (!b64) return;
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    new FontFace('WatchPartyInter', bytes, { weight: '100 900' })
+      .load()
+      .then((face) => document.fonts.add(face))
+      .catch(() => {}); // system-ui is the fallback
+  });
 }
 
 function isEmojiOnly(text) {
