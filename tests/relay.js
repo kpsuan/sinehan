@@ -1,8 +1,7 @@
 // Relay limits: oversized messages, flooding, and full rooms.
 // Run: node tests/relay.js
 const WebSocket = require('../server/node_modules/ws');
-const { spawn } = require('child_process');
-const path = require('path');
+const { startServer } = require('./server');
 
 const PORT = 18391;
 let passed = 0;
@@ -16,7 +15,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function client(room) {
   return new Promise((resolve) => {
-    const ws = new WebSocket(`ws://localhost:${PORT}`);
+    const ws = new WebSocket(`ws://127.0.0.1:${PORT}`);
     ws.got = [];
     ws.on('message', (raw) => ws.got.push(JSON.parse(raw)));
     ws.on('open', () => {
@@ -30,10 +29,7 @@ const closed = (ws) =>
   new Promise((r) => (ws.readyState === WebSocket.CLOSED ? r(true) : ws.once('close', () => r(true))));
 
 (async () => {
-  const relay = spawn('node', [path.join(__dirname, '../server/server.js')], {
-    env: { ...process.env, PORT: String(PORT), TMDB_KEY: '', CF_TURN_KEY_ID: '', TURN_URLS: '' },
-  });
-  await sleep(800);
+  const relay = await startServer(PORT, { TMDB_KEY: '', CF_TURN_KEY_ID: '', TURN_URLS: '' });
   try {
     // A normal pair still works.
     const a = await client('limits-1');
@@ -125,13 +121,13 @@ const closed = (ws) =>
     );
 
     // Calls: with no TURN configured, the relay hands out just the STUN server.
-    const iceRes = await (await fetch(`http://localhost:${PORT}/ice`)).json();
+    const iceRes = await (await fetch(`http://127.0.0.1:${PORT}/ice`)).json();
     check('/ice gives call servers (STUN only without TURN)', iceRes.iceServers.length === 1 && /^stun:/.test(iceRes.iceServers[0].urls));
     // Tonight's deck: with no TMDB key the relay says so (the extension then uses TVmaze).
-    const deckRes = await fetch(`http://localhost:${PORT}/deck?country=PH&platform=Netflix`);
+    const deckRes = await fetch(`http://127.0.0.1:${PORT}/deck?country=PH&platform=Netflix`);
     check('the deck needs a TMDB key (and says so)', deckRes.status === 503 && (await deckRes.json()).error === 'no-key');
   } finally {
-    relay.kill();
+    await relay.stop();
   }
   console.log(`\n${passed}/${passed + failed} passed`);
   process.exit(failed ? 1 : 0);

@@ -2,6 +2,7 @@
 // talking through a local relay, playing a local test video. Run: npm test (in /tests).
 const { chromium } = require('playwright');
 const { spawn } = require('child_process');
+const { startServer } = require('./server');
 const fs = require('fs');
 const http = require('http');
 const os = require('os');
@@ -96,18 +97,14 @@ const site = http.createServer((req, res) => {
 
 // ---- Relay ----
 // The real server.js.
+// (RELAY=cf runs the Cloudflare version instead, in wrangler's local simulator.)
 let relay = null;
-function startRelay() {
-  relay = spawn(process.execPath, [SERVER], {
-    env: { ...process.env, PORT: String(RELAY_PORT), KLIPY_API_KEY: '' },
-    stdio: 'ignore',
-  });
-  return sleep(700);
+async function startRelay() {
+  relay = await startServer(RELAY_PORT, { KLIPY_API_KEY: '' });
 }
-function stopRelay() {
-  relay?.kill();
+async function stopRelay() {
+  await relay?.stop();
   relay = null;
-  return sleep(300);
 }
 
 // ---- Browsers ----

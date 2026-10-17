@@ -1,0 +1,22 @@
+# Sinehan on Cloudflare: the website, the APIs (Tonight's deck, call relay logins, GIFs) and the live relay.
+# The relay is one Durable Object ("Relay"), placed in Asia; it sleeps between messages (hibernation), and
+# the clients' keep-alive pings are answered without waking it.
+name = "sinehan"
+main = "src/worker.js"
+compatibility_date = "2025-09-01"
+
+# The web pages and files, copied in by build.js (pages from server/, files from server/public/).
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+run_worker_first = true
+
+[[durable_objects.bindings]]
+name = "RELAY"
+class_name = "Relay"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Relay"]
+
+# Secrets (set with `npx wrangler secret put NAME`): TMDB_KEY, CF_TURN_KEY_ID, CF_TURN_API_TOKEN, KLIPY_API_KEY.

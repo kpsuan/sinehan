@@ -1,3 +1,5 @@
 node_modules/
 /sinehan-extension.zip
 sinehan-store.zip
+cloudflare/dist/
+.wrangler/

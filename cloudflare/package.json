@@ -1,0 +1,13 @@
+{
+  "name": "sinehan-cloudflare",
+  "private": true,
+  "description": "Sinehan's relay and website on Cloudflare (Workers + a Durable Object)",
+  "scripts": {
+    "build": "node build.js",
+    "dev": "node build.js && wrangler dev",
+    "deploy": "node build.js && wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.151.1"
+  }
+}
