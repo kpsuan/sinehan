@@ -3,17 +3,27 @@
 import { gifs, deck, ice } from './api.js';
 export { Relay } from './relay.js';
 
+// The relay's name. A Durable Object lives where it was first created (near whoever reached it first);
+// this one was created from Singapore, next to where Sinehan's people connect.
+const RELAY_NAME = 'sin-2';
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
     // The live relay: one Durable Object for all parties, created in Asia (where Sinehan's people are).
     if (request.headers.get('Upgrade')?.toLowerCase() === 'websocket') {
-      const stub = env.RELAY.get(env.RELAY.idFromName('relay'), { locationHint: 'apac' });
-      return stub.fetch(request);
+      return env.RELAY.get(env.RELAY.idFromName(RELAY_NAME)).fetch(request);
     }
 
     if (url.pathname === '/health') return new Response('watch-party relay ok');
+    // Where the relay (and this request's Cloudflare entry point) actually are: for checking speed.
+    if (url.pathname === '/where') {
+      const name = url.searchParams.get('name') || RELAY_NAME;
+      const stub = env.RELAY.get(env.RELAY.idFromName(name));
+      const relay = await (await stub.fetch(new Request('https://relay/where'))).text();
+      return Response.json({ entry: request.cf?.colo || '', relay });
+    }
     if (url.pathname === '/gifs') return gifs(url, env);
     if (url.pathname === '/deck') return deck(url, request, env);
     if (url.pathname === '/ice') return ice(env);

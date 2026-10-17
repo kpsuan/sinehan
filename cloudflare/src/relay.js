@@ -34,7 +34,12 @@ export class Relay extends DurableObject {
   }
 
   // ---- Connections ----
-  async fetch() {
+  async fetch(request) {
+    if (new URL(request.url).pathname === '/where') {
+      // Cloudflare's trace shows which data center this object runs in.
+      const trace = await (await fetch('https://www.cloudflare.com/cdn-cgi/trace')).text();
+      return new Response(trace.match(/colo=(\w+)/)?.[1] || '?');
+    }
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
     server.serializeAttachment({ room: null, companion: false, channel: null, left: false, at: Date.now() });
