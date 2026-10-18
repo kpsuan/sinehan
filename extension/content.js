@@ -941,13 +941,16 @@ function showKey(url) {
   }
 }
 let bannerEl = null;
+// Auto-follow at most every 20s: two sites bouncing addresses can't turn into an endless reload.
+let lastAutoFollow = 0;
 function showFollowBanner(url, title, from) {
   if (!/^https?:\/\//.test(url || '') || showKey(url) === showKey(location.href)) return; // already here
 
   // We were watching the same thing and they moved on (clicked another video, next episode): follow.
-  if (from && showKey(from) === showKey(location.href)) {
+  if (from && showKey(from) === showKey(location.href) && Date.now() - lastAutoFollow > 20000) {
+    lastAutoFollow = Date.now();
     toast(`Following them to ${title ? `“${title}”` : 'the next video'}`);
-    ask({ type: 'follow', url });
+    ask({ type: 'follow', url, auto: true }, (r) => r?.refused && showFollowBanner(url, title, null));
     return;
   }
   ensureFont();

@@ -306,6 +306,12 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     setWatchTab(msg.tabId, true).then(() => reply(statusView()));
     return true;
   } else if (msg.type === 'follow') {
+    // Following them automatically (they moved on) is refused if we only just followed: sites that rewrite
+    // their address after loading (Disney+) would otherwise bounce both tabs back and forth forever.
+    if (msg.auto && Date.now() - followedAt < FOLLOW_SETTLE * 2) {
+      reply({ ...statusView(), refused: true });
+      return;
+    }
     follow(msg.url).then(() => reply(statusView()));
     return true;
   }
@@ -769,8 +775,13 @@ function announceShow(from) {
 }
 
 // Go where they are: reuse the show's tab if we have one, otherwise open a new one.
+// After we go to a page, the site may change its address again by itself (a redirect, a language prefix):
+// for this long that's still "the same show", not something to tell the other side about.
+const FOLLOW_SETTLE = 10000;
+let followedAt = 0;
 async function follow(url) {
   if (!/^https?:\/\//.test(url || '')) return;
+  followedAt = Date.now();
   if (watch) {
     await chrome.tabs.update(watch.tabId, { url, active: true }).catch(() => clearWatch());
     if (watch) return;
@@ -790,7 +801,8 @@ let announceTimer = null;
 let announceFrom = null;
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
   if (tabId !== watch?.tabId) return;
-  const urlChanged = info.url && showKey(info.url) !== showKey(watch.url);
+  const settling = Date.now() - followedAt < FOLLOW_SETTLE; // the site redirecting after we followed
+  const urlChanged = info.url && showKey(info.url) !== showKey(watch.url) && !settling;
   if (urlChanged && !announceTimer) announceFrom = watch.url; // where we were before this run of changes
   watch = {
     tabId,

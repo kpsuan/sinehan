@@ -897,6 +897,18 @@ const vstate = (p) =>
       }),
     );
     check('B follows to the new show automatically', await until(() => vB.url().endsWith('/other'), 10000), vB.url());
+    // Some sites (Disney+) rewrite their address right after loading. That mustn't bounce A over too, or
+    // both tabs reload each other forever.
+    await vB.evaluate(() => history.replaceState(null, '', '/other?lang=en-gb&rewritten=1'));
+    await vB.evaluate(() => history.pushState(null, '', '/other-rewritten'));
+    await sleep(3000);
+    check('a site rewriting its address after a follow doesn’t pull the other side along', vA2.url().endsWith('/other'), vA2.url());
+    // (back, for the tests after: the test page has no <title>, so Chrome names it after its address)
+    await vB.evaluate(() => {
+      history.replaceState(null, '', '/other');
+      document.title = `${location.host}/other`;
+    });
+    await sleep(1500);
     await vB.waitForFunction(() => document.getElementById('v').readyState >= 1);
     await sleep(2500);
     await vA2.evaluate(() => document.getElementById('v').play());
@@ -927,7 +939,7 @@ const vstate = (p) =>
       await until(() => pB2.$eval('#followBar', (b) => !b.hidden && b.textContent.includes('Another Show'))),
     );
     check('…and on the video', await until(() => shown(vB, /Another Show/)));
-    check('…without moving anyone', vB.url().endsWith('/other'));
+    check('…without moving anyone', !vB.url().includes('somewhere-else'), vB.url());
     await pB2.click('#followClose');
     check('prompt can be dismissed', await pB2.$eval('#followBar', (b) => b.hidden));
     raw.close();
@@ -1137,7 +1149,8 @@ const vstate = (p) =>
     await until(async () => /The gardener/.test(await card(pA).innerText()) && (await card(pA).locator('.gq-actions button', { hasText: 'Right' }).count()) > 0);
     await card(pA).locator('.gq-actions button', { hasText: 'Right' }).click();
     const firstCard = (p) => p.locator('#log .guess-card').first();
-    check('only one guess per round can be right', await until(async () => /Not this time/.test(await firstCard(pA).innerText()) && /Not this time/.test(await firstCard(pB2).innerText())));
+    check('only one guess per round can be right', await until(async () => /Not this time/.test(await firstCard(pA).innerText()) && /Not this time/.test(await firstCard(pB2).innerText())),
+      JSON.stringify(await Promise.all([pA, pB2].map((p) => p.evaluate(() => [...guesses.values()].map((g) => [g.show, g.ep, g.text, g.verdict, g.revealed, g.mine]))))));
 
     // ---------------------------------------------------------------
     section('Tonight: swipe to match');
