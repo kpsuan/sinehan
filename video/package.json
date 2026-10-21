@@ -5,6 +5,7 @@
     "studio": "remotion studio src/index.tsx",
     "render": "remotion render src/index.tsx Sinehan out/sinehan.mp4",
     "reel": "remotion render src/index.tsx Reel out/reel.mp4",
+    "reel-light": "node scripts/synth-happy.mjs 60 && remotion render src/index.tsx ReelLight out/reel-light.mp4",
     "comic": "remotion render src/index.tsx Comic out/comic.mp4",
     "matisse": "node scripts/synth.mjs 45 && remotion render src/index.tsx Matisse out/matisse.mp4",
     "vangogh": "node scripts/synth-waltz.mjs 52 && remotion render src/index.tsx VanGogh out/vangogh.mp4",
