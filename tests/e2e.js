@@ -945,6 +945,33 @@ const vstate = (p) =>
     });
     await sleep(1500);
 
+    // Joining mid-show: the newcomer lands where the other one is, even when their player resets to the start
+    // right after the first jump (as streaming players do while loading), and never drags the other one back.
+    await vB.addInitScript(() => {
+      if (!location.search.includes('resetonce')) return;
+      let done = false;
+      document.addEventListener('seeked', (e) => {
+        if (done || !(e.target instanceof HTMLVideoElement) || e.target.currentTime < 2) return;
+        done = true;
+        setTimeout(() => (e.target.currentTime = 0), 300);
+      }, true);
+    });
+    await vA2.evaluate(() => document.getElementById('v').play());
+    await until(async () => !(await vstate(vB)).paused);
+    await sleep(3000);
+    const hostAt = (await vstate(vA2)).t;
+    await vB.goto(`${SITE}/other?resetonce=1`);
+    check('joining mid-show: the newcomer catches up to where they are', await until(async () => {
+      const a = await vstate(vA2);
+      const b = await vstate(vB);
+      return !b.paused && Math.abs(a.t - b.t) < 1.5;
+    }, 20000), await both());
+    check('…and doesn’t drag the other one back to the start', (await vstate(vA2)).t > hostAt, JSON.stringify(await vstate(vA2)));
+    await vA2.evaluate(() => document.getElementById('v').pause());
+    await until(async () => (await vstate(vB)).paused);
+    await vB.goto(`${SITE}/other`);
+    await sleep(2500);
+
     // Not watching the same thing: a prompt instead of moving them.
     const WS = require('../server/node_modules/ws');
     const raw = new WS(RELAY);

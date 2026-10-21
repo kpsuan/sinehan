@@ -159,7 +159,10 @@ function attach(v) {
   for (const ev of VIDEO_EVENTS) v.addEventListener(ev, onVideoEvent);
 
   // Just opened the show? Ask where they are, unless an ad's own player took over (we re-sync after the ad).
-  if (isWatchTab && !detectAd()) post({ type: 'sync-request' });
+  if (isWatchTab && !detectAd()) {
+    if (partnerHere) startCatchUp();
+    post({ type: 'sync-request' });
+  }
   if (isWatchTab) post({ type: 'arrived', key: showKey(location.href) });
   if (episodeWait) holdAtStart();
   if (isWatchTab) checkResume();
@@ -194,6 +197,9 @@ function sendState(type) {
   }
   if (type !== 'state' && Date.now() - switchedAt < 2500) return; // replies to sync requests still go out
   if (type !== 'state' && episodeWait) return; // regrouping at the next episode: the count-in starts us
+  // Catching up: our own player's start-up moves (from 0) aren't ours to share, nor is our position once we
+  // know theirs and are on the way there.
+  if (catchUp && (type !== 'state' || catchUp.target)) return;
   post({ type, time: video.currentTime, paused: video.paused });
 }
 
@@ -213,7 +219,10 @@ function onRemote(msg) {
     isWatchTab = !!msg.watching;
     hasWatch = !!msg.hasWatch;
     if (typeof msg.together === 'boolean') partnerHere = msg.together; // (a tab opened mid-party)
-    if (isWatchTab && !was && video && !detectAd()) post({ type: 'sync-request' });
+    if (isWatchTab && !was && video && !detectAd()) {
+      if (partnerHere) startCatchUp();
+      post({ type: 'sync-request' });
+    }
     if (isWatchTab && !was && video) checkResume();
     if (!isWatchTab && overlay) {
       overlay.destroy();
@@ -250,7 +259,7 @@ function onRemote(msg) {
     }
     return;
   }
-  if (msg.type === 'sync-request') return sendState('state');
+  if (msg.type === 'sync-request') return catchUp?.target ? undefined : sendState('state'); // (mid catch-up: not where we'll be)
   if (msg.type === 'arrived') return theyArrived(String(msg.key || ''));
   // A phone remote acts for its person: only their laptop does it (then it syncs to the other as usual).
   if (msg.type === 'remote') return !msg.for || msg.for === me.name ? remote(msg.action) : undefined;
@@ -308,6 +317,11 @@ function onRemote(msg) {
   if (myAd) return; // we're in an ad; we'll ask where they are once it ends
 
   const delta = msg.time - video.currentTime;
+  if (catchUp) {
+    catchUp.target = { time: msg.time, paused: !!msg.paused, at: Date.now() };
+    clearTimeout(catchUp.check);
+    catchUp.check = setTimeout(checkCatchUp, 1500);
+  }
   applied = { paused: !!msg.paused, time: msg.time, until: Date.now() + 2500, seek: Math.abs(delta) > 1 };
   if (Math.abs(delta) > 1) seek(msg.time);
   if (msg.paused) video.pause();
@@ -399,6 +413,7 @@ const HOLD_MESSAGES = {
   break: (name) => `${name || 'They'} is on a CR break`,
 };
 function onTheirHold(reason, active, time, name) {
+  if (active) catchUp = null; // a hold settles where we are (see checkCatchUp)
   if (active && reason === 'buffer' && episodeWait) return; // they're loading the next episode too
   if (active) {
     theirHolds.add(reason);
@@ -671,7 +686,7 @@ function goodnight(time, name) {
 // Opened from "Pick up where you left off": go to the saved spot, paused, once the player is ready.
 function checkResume() {
   setTimeout(() => {
-    if (!isWatchTab || !video) return;
+    if (!isWatchTab || !video || partnerHere) return;
     ask({ type: 'resume-check', url: location.href }, (r) => {
       if (typeof r?.time !== 'number' || !video) return;
       applied = { paused: true, time: r.time, until: Date.now() + 2000 };
@@ -759,6 +774,44 @@ function topBar(top) {
     tick = setInterval(update, 1000);
   };
   return { show, hide };
+}
+
+// ---- Catching up when you join mid-show ----
+// Streaming players often aren't ready when we first jump to where they are, or reset to the start while
+// loading. So for up to 20 seconds we keep asking and re-jumping until we're within a moment of them, and
+// meanwhile don't share our own position (it would drag them back to the start).
+let catchUp = null; // { until, target: { time, paused, at }, check }
+function startCatchUp() {
+  clearTimeout(catchUp?.check);
+  const mine = (catchUp = { until: Date.now() + 20000, target: null, check: null });
+  setTimeout(() => catchUp === mine && !mine.target && post({ type: 'sync-request' }), 1500);
+  // No answer: nobody's ahead of us (we're first, or they're starting too), so there's nothing to catch up to.
+  setTimeout(() => catchUp === mine && !mine.target && (catchUp = null), 3000);
+  setTimeout(() => catchUp === mine && (catchUp = null), 20500);
+}
+function checkCatchUp() {
+  if (!catchUp?.target || !video) return;
+  // Something is holding playback on purpose (their ad, loading, a break, a count-in): that wins.
+  if (theirHolds.size || countingDown || episodeWait || myAd) {
+    catchUp = null;
+    return;
+  }
+  const t = catchUp.target;
+  const expected = t.paused ? t.time : t.time + (Date.now() - t.at) / 1000;
+  if (Math.abs(video.currentTime - expected) <= 1.5 && video.paused === t.paused) {
+    catchUp = null;
+    return;
+  }
+  if (Date.now() > catchUp.until) {
+    catchUp = null;
+    return;
+  }
+  // Not there yet (the player wasn't ready, or went back to the start): jump again.
+  applied = { paused: t.paused, time: expected, until: Date.now() + 2500, seek: true };
+  seek(expected);
+  if (t.paused) video.pause();
+  else video.play().catch(() => {});
+  catchUp.check = setTimeout(checkCatchUp, 1500);
 }
 
 // ---- Next episode ----
