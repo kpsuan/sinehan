@@ -69,7 +69,7 @@ const musicVolume = (f: number) => {
 };
 
 // Inter, the sidebar's font, loaded before the first frame renders.
-const useInter = () => {
+export const useInter = () => {
   const [handle] = useState(() => delayRender('Loading Inter'));
   useState(() => {
     new FontFace('Inter', `url(${staticFile('inter.woff2')}) format('woff2')`, { weight: '100 900' })
