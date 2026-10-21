@@ -126,7 +126,7 @@ const isWatchTab = (port) => watch != null && port.tabId === watch.tabId;
 const wantsMessage = (port) => port.name === 'panel' || port.name === 'call' || isWatchTab(port);
 
 function sendRole(port) {
-  postTo(port, { type: 'role', watching: isWatchTab(port), hasWatch: !!watch });
+  postTo(port, { type: 'role', watching: isWatchTab(port), hasWatch: !!watch, together: status.connected && status.peers > 1 });
 }
 function broadcastLocal(msg) {
   for (const p of ports) if (wantsMessage(p)) postTo(p, msg);

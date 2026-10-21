@@ -135,6 +135,7 @@ function mainVideo() {
 const VIDEO_EVENTS = ['play', 'pause', 'seeked', 'waiting', 'playing'];
 function onVideoEvent(e) {
   if (e.target !== video) return;
+  if (episodeWait && !countingDown && (e.type === 'play' || e.type === 'playing')) return holdAtStart();
   if (e.type === 'waiting') return onWaiting();
   if (e.type === 'playing') return onPlaying();
   if (e.type === 'pause') clearTimeout(stallTimer);
@@ -159,6 +160,8 @@ function attach(v) {
 
   // Just opened the show? Ask where they are, unless an ad's own player took over (we re-sync after the ad).
   if (isWatchTab && !detectAd()) post({ type: 'sync-request' });
+  if (isWatchTab) post({ type: 'arrived', key: showKey(location.href) });
+  if (episodeWait) holdAtStart();
   if (isWatchTab) checkResume();
 }
 
@@ -190,6 +193,7 @@ function sendState(type) {
     switchedAt = Date.now();
   }
   if (type !== 'state' && Date.now() - switchedAt < 2500) return; // replies to sync requests still go out
+  if (type !== 'state' && episodeWait) return; // regrouping at the next episode: the count-in starts us
   post({ type, time: video.currentTime, paused: video.paused });
 }
 
@@ -208,6 +212,7 @@ function onRemote(msg) {
     const was = isWatchTab;
     isWatchTab = !!msg.watching;
     hasWatch = !!msg.hasWatch;
+    if (typeof msg.together === 'boolean') partnerHere = msg.together; // (a tab opened mid-party)
     if (isWatchTab && !was && video && !detectAd()) post({ type: 'sync-request' });
     if (isWatchTab && !was && video) checkResume();
     if (!isWatchTab && overlay) {
@@ -246,6 +251,7 @@ function onRemote(msg) {
     return;
   }
   if (msg.type === 'sync-request') return sendState('state');
+  if (msg.type === 'arrived') return theyArrived(String(msg.key || ''));
   // A phone remote acts for its person: only their laptop does it (then it syncs to the other as usual).
   if (msg.type === 'remote') return !msg.for || msg.for === me.name ? remote(msg.action) : undefined;
   if (msg.type === 'hold') return onTheirHold(msg.reason, !!msg.active, msg.time, msg.name);
@@ -267,6 +273,7 @@ function onRemote(msg) {
   }
   if (msg.type === 'peer') {
     const joined = msg.joined ?? msg.count > 1;
+    partnerHere = !!joined || msg.count > 1;
     if (joined) {
       if (dropped === 'them' || dropResumeFresh()) return theyreBack();
       toast('They joined');
@@ -279,6 +286,7 @@ function onRemote(msg) {
     return;
   }
   if (msg.type === 'joined') {
+    partnerHere = msg.count > 1;
     if (dropped === 'me') {
       netBar.hide();
       if (msg.count > 1) {
@@ -367,6 +375,7 @@ every(500, () => {
 let stallTimer = null;
 function onWaiting() {
   if (!isWatchTab || myAd || video.paused) return;
+  if (episodeWait || Date.now() - keyChangedAt < 15000) return; // a new episode loading on both sides
   clearTimeout(stallTimer);
   const stalledAt = video.currentTime;
   stallTimer = setTimeout(() => {
@@ -390,6 +399,7 @@ const HOLD_MESSAGES = {
   break: (name) => `${name || 'They'} is on a CR break`,
 };
 function onTheirHold(reason, active, time, name) {
+  if (active && reason === 'buffer' && episodeWait) return; // they're loading the next episode too
   if (active) {
     theirHolds.add(reason);
     if (reason === 'break') breakBanner(`${name || 'They'} is on a CR break`);
@@ -504,6 +514,7 @@ let countEl = null;
 let countingDown = false;
 function startCountdown(time) {
   if (!video || myAd) return;
+  endEpisodeWait(false);
   clearInterval(countdownTimer);
   countingDown = true;
   pausedForHold = false;
@@ -750,6 +761,59 @@ function topBar(top) {
   return { show, hide };
 }
 
+// ---- Next episode ----
+// When the show moves on in this tab (the next episode, autoplay, another video), both of you get there at
+// different moments. So: wait at the start, and once you're both there, count in together with 3·2·1.
+// If they don't get there within 25 seconds (stopped watching, or an older Sinehan), we carry on.
+let partnerHere = false;
+let episodeWait = null; // { key, timer }
+let lastKey = showKey(location.href);
+let keyChangedAt = 0;
+every(1000, () => {
+  if (!isWatchTab || window.top !== window) return;
+  const key = showKey(location.href);
+  if (key === lastKey) return;
+  lastKey = key;
+  keyChangedAt = Date.now();
+  // Only a move mid-watch (it was playing, or just ended) is a new episode; not the site tidying its
+  // address right after the page loads.
+  const wasWatching = video && (!video.paused || video.ended || Date.now() - lastPlayedAt < 8000);
+  if (partnerHere && wasWatching && !myAd && performance.now() > 10000) startEpisodeWait(key);
+});
+// When this tab's video last played (for telling an episode change from an address tidy-up).
+let lastPlayedAt = 0;
+every(1000, () => video && !video.paused && (lastPlayedAt = Date.now()));
+function startEpisodeWait(key) {
+  clearTimeout(episodeWait?.timer);
+  episodeWait = { key, timer: setTimeout(() => endEpisodeWait(true), 25000) };
+  holdAtStart();
+  netBar.show('New episode: waiting for them…', null, 'head-tilt');
+  post({ type: 'arrived', key });
+}
+function holdAtStart() {
+  if (!episodeWait || !video || video.paused) return;
+  applied = { paused: true, time: video.currentTime, until: Date.now() + 1500 };
+  video.pause();
+}
+function endEpisodeWait(timedOut) {
+  if (!episodeWait) return;
+  clearTimeout(episodeWait.timer);
+  episodeWait = null;
+  netBar.hide();
+  if (timedOut && video?.paused) {
+    toast('They’re not on this episode. Playing.');
+    applied = { paused: false, time: video.currentTime, until: Date.now() + 1500 };
+    video.play().catch(() => {});
+  }
+}
+// They've reached the episode we're waiting on: count us both in from here.
+function theyArrived(key) {
+  if (!episodeWait || !video || key !== showKey(location.href)) return;
+  const time = video.currentTime;
+  post({ type: 'countdown', time });
+  startCountdown(time);
+}
+
 // ---- Dropped connections ----
 // Losing either connection pauses the show with a bar until it's back. Then we line up again and, if it
 // was playing, whoever stayed connected counts you both back in.
@@ -949,8 +1013,13 @@ function showFollowBanner(url, title, from) {
   // We were watching the same thing and they moved on (clicked another video, next episode): follow.
   if (from && showKey(from) === showKey(location.href) && Date.now() - lastAutoFollow > 20000) {
     lastAutoFollow = Date.now();
-    toast(`Following them to ${title ? `“${title}”` : 'the next video'}`);
-    ask({ type: 'follow', url, auto: true }, (r) => r?.refused && showFollowBanner(url, title, null));
+    // Wait a moment first: this page may be moving to the next episode by itself (autoplay), and reloading
+    // it mid-load is what leaves streaming players stuck loading.
+    setTimeout(() => {
+      if (showKey(url) === showKey(location.href)) return; // got there on its own
+      toast(`Following them to ${title ? `“${title}”` : 'the next video'}`);
+      ask({ type: 'follow', url, auto: true }, (r) => r?.refused && showFollowBanner(url, title, null));
+    }, 6000);
     return;
   }
   ensureFont();

@@ -1,0 +1,14 @@
+[
+  { "scene": "intro", "text": "Meet Sinehan. A movie theater for two." },
+  { "scene": "start", "text": "No accounts. Pick a name, start a party, and your invite link is already copied." },
+  { "scene": "join", "text": "They tap the link and land on the same show, at the same spot." },
+  { "scene": "sync", "text": "Press play together. Pause or skip on either side, and the other follows." },
+  { "scene": "holds", "text": "If one of you hits an ad, the other waits. Then a three, two, one starts you together." },
+  { "scene": "together", "text": "Chat, react and video call without leaving the show. Hold hands from afar, or ask Bantay for a trick." },
+  { "scene": "reels", "text": "Not just movies. Swipe through Reels, and their phone follows." },
+  { "scene": "remote", "text": "Your phone becomes the remote, and the chat, from the couch." },
+  { "scene": "guides", "text": "Not sure what to watch? Ask Reddit for the best episodes, and tick them off together." },
+  { "scene": "appearance", "text": "Go glass, dark or light, and pick Bantay's coat." },
+  { "scene": "privacy", "text": "And Bantay keeps watch. No accounts, and your chats stay with you." },
+  { "scene": "outro", "text": "Same show. Same second. From two places. Sinehan, free for Chrome." }
+]

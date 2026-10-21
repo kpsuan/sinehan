@@ -920,6 +920,31 @@ const vstate = (p) =>
     check('the old tab no longer syncs', (await vstate(vB)).paused);
     await vA.evaluate(() => document.getElementById('v').pause());
 
+    // Next episode: both players move on by themselves, a moment apart (autoplay on streaming sites). They
+    // wait at the start for each other, then count in together, with no reloads.
+    await vA2.evaluate(() => document.getElementById('v').play());
+    await until(async () => !(await vstate(vB)).paused);
+    await sleep(1500);
+    await vA2.evaluate(() => history.pushState(null, '', '/other-ep2'));
+    check('next episode: the first one there waits for the other', await until(async () => (await vstate(vA2)).paused && (await shown(vA2, /waiting for them/i)), 5000));
+    await sleep(1000);
+    await vB.evaluate(() => history.pushState(null, '', '/other-ep2'));
+    check('…and once both are there, they start together', await until(async () => {
+      const a = await vstate(vA2);
+      const b = await vstate(vB);
+      return !a.paused && !b.paused && Math.abs(a.t - b.t) < 1;
+    }, 10000), await both());
+    check('…without reloading either page', vA2.url().endsWith('/other-ep2') && vB.url().endsWith('/other-ep2'));
+    // (back to /other for the tests after; paused long enough not to count as another episode change)
+    await vA2.evaluate(() => document.getElementById('v').pause());
+    await until(async () => (await vstate(vB)).paused);
+    await sleep(9000);
+    for (const v of [vA2, vB]) await v.evaluate(() => {
+      history.replaceState(null, '', '/other');
+      document.title = `${location.host}/other`;
+    });
+    await sleep(1500);
+
     // Not watching the same thing: a prompt instead of moving them.
     const WS = require('../server/node_modules/ws');
     const raw = new WS(RELAY);
