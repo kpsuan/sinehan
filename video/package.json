@@ -4,7 +4,8 @@
   "scripts": {
     "studio": "remotion studio src/index.tsx",
     "render": "remotion render src/index.tsx Sinehan out/sinehan.mp4",
-    "reel": "remotion render src/index.tsx Reel out/reel.mp4"
+    "reel": "remotion render src/index.tsx Reel out/reel.mp4",
+    "comic": "remotion render src/index.tsx Comic out/comic.mp4"
   },
   "dependencies": {
     "@remotion/cli": "4.0.532",
