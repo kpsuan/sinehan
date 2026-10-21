@@ -5,6 +5,7 @@
 //   node scripts/qa.mjs out/matisse.mp4
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { inflateSync } from 'node:zlib';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -20,9 +21,12 @@ const dir = join(ROOT, 'out', 'qa', name);
 rmSync(dir, { recursive: true, force: true });
 mkdirSync(dir, { recursive: true });
 
-// 10 samples a second, tiny (48×27): enough to judge blankness and colour, fast to read.
+// 10 samples a second, tiny (48×27): enough to judge blankness and colour, fast to read. PNGs, decoded here
+// (Remotion's ffmpeg has no raw-frame muxer; Node's zlib does the real work of PNG decoding).
 const FPS = 10;
-execFileSync(FFMPEG, ['-v', 'error', '-i', file, '-vf', `fps=${FPS},scale=48:27`, '-f', 'image2', '-pix_fmt', 'rgb24', '-c:v', 'ppm', join(dir, 'f%05d.ppm')]);
+const W = 48, H = 27;
+// (Output options, not filters: Remotion's ffmpeg build leaves the fps filter out.)
+execFileSync(FFMPEG, ['-v', 'error', '-i', file, '-r', String(FPS), '-s', `${W}x${H}`, '-f', 'image2', '-c:v', 'png', '-pix_fmt', 'rgb24', join(dir, 'f%05d.png')]);
 let meta = '';
 try {
   execFileSync(FFMPEG, ['-i', file], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -33,23 +37,49 @@ const hasAudio = /Stream #\d+:\d+.*Audio/.test(meta);
 const durationMatch = meta.match(/Duration: (\d+):(\d+):([\d.]+)/);
 const duration = durationMatch ? Number(durationMatch[1]) * 3600 + Number(durationMatch[2]) * 60 + Number(durationMatch[3]) : 0;
 
-// Read a binary PPM (P6).
-function readPPM(path) {
+// A minimal PNG reader for what ffmpeg writes here: 8-bit RGB, not interlaced. Returns RGB bytes.
+function readPNG(path) {
   const b = readFileSync(path);
-  let i = 0;
-  const tok = () => {
-    while (b[i] === 0x20 || b[i] === 0x0a || b[i] === 0x0d || b[i] === 0x09) i++;
-    const s = i;
-    while (!(b[i] === 0x20 || b[i] === 0x0a || b[i] === 0x0d || b[i] === 0x09)) i++;
-    return b.toString('ascii', s, i);
-  };
-  tok();
-  const w = Number(tok());
-  const h = Number(tok());
-  tok();
-  i++;
-  return { w, h, px: b.subarray(i) };
+  let i = 8;
+  const idat = [];
+  let w = 0, h = 0, channels = 3;
+  while (i < b.length) {
+    const len = b.readUInt32BE(i);
+    const type = b.toString('ascii', i + 4, i + 8);
+    const data = b.subarray(i + 8, i + 8 + len);
+    if (type === 'IHDR') {
+      w = data.readUInt32BE(0);
+      h = data.readUInt32BE(4);
+      channels = data[9] === 6 ? 4 : data[9] === 2 ? 3 : 1;
+    } else if (type === 'IDAT') idat.push(data);
+    i += 12 + len;
+  }
+  const src = inflateSync(Buffer.concat(idat));
+  const bpp = channels;
+  const stride = w * bpp;
+  const out = Buffer.alloc(w * h * 3);
+  let prev = Buffer.alloc(stride);
+  for (let y = 0; y < h; y++) {
+    const filter = src[y * (stride + 1)];
+    const line = Buffer.from(src.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1)));
+    for (let x = 0; x < stride; x++) {
+      const a = x >= bpp ? line[x - bpp] : 0, up = prev[x], c = x >= bpp ? prev[x - bpp] : 0;
+      let v = line[x];
+      if (filter === 1) v += a;
+      else if (filter === 2) v += up;
+      else if (filter === 3) v += (a + up) >> 1;
+      else if (filter === 4) {
+        const pp = a + up - c, pa = Math.abs(pp - a), pb = Math.abs(pp - up), pc = Math.abs(pp - c);
+        v += pa <= pb && pa <= pc ? a : pb <= pc ? up : c;
+      }
+      line[x] = v & 255;
+    }
+    for (let x = 0; x < w; x++) for (let k = 0; k < 3; k++) out[(y * w + x) * 3 + k] = line[x * bpp + Math.min(k, bpp - 1)];
+    prev = line;
+  }
+  return out;
 }
+const frames = readdirSync(dir).filter((f) => f.endsWith('.png')).sort().map((f) => readPNG(join(dir, f)));
 const rgb2hsv = (r, g, b) => {
   const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
   let h = 0;
@@ -58,10 +88,8 @@ const rgb2hsv = (r, g, b) => {
   return { h, s: max ? d / max : 0, v: max / 255 };
 };
 
-const frames = readdirSync(dir).filter((f) => f.endsWith('.ppm')).sort();
-const stats = frames.map((f) => {
-  const { w, h, px } = readPPM(join(dir, f));
-  const n = w * h;
+const stats = frames.map((px) => {
+  const n = W * H;
   let sum = [0, 0, 0], sq = [0, 0, 0], bluePurple = 0, dark = 0;
   for (let p = 0; p < n; p++) {
     const r = px[p * 3], g = px[p * 3 + 1], b = px[p * 3 + 2];

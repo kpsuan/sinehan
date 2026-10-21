@@ -1,0 +1,20 @@
+# Review: vangogh.mp4
+Re-review of the 52 s render (1920x1080, 30 fps). Both earlier REDs are fixed. "I studied computer science" now fits inside the frame with ~95 px to spare. The end card has all three links fully on screen from ~48.5 s, and they hold steady for ~3.5 s in larger, readable type. Most YELLOWs are fixed too. The new labels ("web design / maps / listings") match their thumbnails, and "I design it, and then I build it." reads as a complete sentence. The cards now hang below the headline with no collision. The isKalusugan screenshot shows its full "Services Offered" heading. Bantay sits on a grassy hill. Dissolves now run ~0.6 s and feel soft. The dark wash behind the handwriting clearly improves contrast over the swirls, but it introduces one new visual artifact (see below). The audio is louder, but its peak is about -6.6 dBFS, not the -1 dBFS described. The story, pacing and style remain strong, and I found no typos.
+
+## Findings
+- [x] RED 9.5-16.2s: "I studied computer science" was clipped at the right edge. Fixed: the line now ends ~95 px inside the frame (checked at full res, 15 s).
+- [x] RED 48.8-50.0s: The contact links appeared too late. Fixed: all three links (prandesal.framer.website, github.com/kpsuan, linkedin.com/in/kpsuan) are fully visible from ~48.5 s and hold steady until 52.0 s, in larger type.
+- [x] YELLOW 17.5-18.0s: The first card flew in across the headline. Fixed: the cards now drop in below "So I became both." and never touch it.
+- [x] YELLOW 19-24s: The "apps" label didn't match the Listing Images thumbnail, and the closing line read as a fragment. Fixed: the labels are now "web design / maps / listings", and the closing line is "I design it, and then I build it."
+- [x] YELLOW 0-8s and 44-50s: Handwriting sat directly on bright swirls. Fixed: the dark wash and outline make every line read cleanly.
+- [x] YELLOW 38-44s: The dog floated in mid-air. Fixed: Bantay now sits on a small grassy hill.
+- [x] YELLOW 24.5-30s: The isKalusugan screenshot was clipped at the top. Fixed: the "Services Offered" heading is now fully visible.
+- [x] YELLOW scene changes: Crossfades were ~0.33 s. Fixed: they now measure ~0.6 s and read as true dissolves.
+- [x] YELLOW all (audio): The level is better but still under target. Stereo peak is -6.6 dBFS and average RMS is about -23.5 dBFS (it was -11 dBFS peak before), so it was not normalized to ~-1 dBFS as described. No clipping. Raise it by another ~5 dB, or normalize to ~-14/-16 LUFS with a -1 dBTP ceiling. — Fixed: playback volume 0.6→1; now -2.2 dBFS peak, -19 dBFS RMS.
+- [x] YELLOW new, every handwritten line (e.g. 1.5s, 9.0s, 21.5s, 25.5s, 31.5s, 33.5s, 38.0s): The dark wash appears at full length before the text is written. Each line starts as a long, empty dark smear across the sky, and the words then write into it (clearly visible at 1.6 s, where only "De" is written and the band already reaches the portrait). It reads like a rendering glitch. Reveal the wash along with the writing (grow its width with the stroke), or fade it in only once the line has finished. — Fixed: the wash is clipped with the writing and hidden until its line starts (checked at 1.6 s).
+- [x] YELLOW 9.5-16s (minor): The star doodle sits directly behind "in the margins." and the flower stem touches the "I" of "I studied". The overlap is slight but looks accidental. Nudge the doodles a few px left. — Fixed: flower and star moved ~90 px left.
+- GREEN: The letter structure is still clear and warm: greeting, origin, "So I became both", three proof points, invitation, signature. Every line finishes writing well before its scene leaves.
+- GREEN: The new Family scene photo (a tablet showing the dashboard) gives that section a real product image instead of a landing page.
+- GREEN: The end card is now a proper call to action: the signature is followed by three steady, legible links for ~3.5 s.
+- GREEN: The style stays consistent throughout (gold frames, brush-dash sky, cypress, moon, lit windows), and the soft dissolves now suit the waltz.
+- GREEN: Audio plays for the full 52 s with no clipping and a smooth fade-out over the last ~2 s.

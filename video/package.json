@@ -7,6 +7,7 @@
     "reel": "remotion render src/index.tsx Reel out/reel.mp4",
     "comic": "remotion render src/index.tsx Comic out/comic.mp4",
     "matisse": "node scripts/synth.mjs 45 && remotion render src/index.tsx Matisse out/matisse.mp4",
+    "vangogh": "node scripts/synth-waltz.mjs 52 && remotion render src/index.tsx VanGogh out/vangogh.mp4",
     "qa": "node scripts/qa.mjs",
     "deliver": "node scripts/deliver.mjs"
   },
